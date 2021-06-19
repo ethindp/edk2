@@ -1,0 +1,32 @@
+# USBAudio application
+#
+# This application searches for USB audio devices and attempts to play a 440 Hz sound lasting exactly 1 second through it.
+#
+# Copyright (c) 2021 Ethin Probst.
+
+[Defines]
+        INF_VERSION                    = 1.25
+        BASE_NAME                      = UsbAudio
+        FILE_GUID=dd62c41c-f51e-4547-8a85-ff597335081d
+        MODULE_TYPE                    = UEFI_APPLICATION
+        VERSION_STRING                 = 1.0
+        ENTRY_POINT                    = UefiMain
+
+[Sources]
+        UsbAudio.c
+
+[Packages]
+        MdePkg/MdePkg.dec
+
+[LibraryClasses]
+        UefiApplicationEntryPoint
+        UefiLib
+        UefiUsbLib
+        PcdLib
+
+[Protocols]
+        gEfiUsbIoProtocolGuid
+
+[Pcd]
+        gEfiMdePkgTokenSpaceGuid.PcdUsbTransferTimeoutValue
+
