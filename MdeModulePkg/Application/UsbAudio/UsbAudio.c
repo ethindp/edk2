@@ -65,32 +65,36 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE imageHandle, IN EFI_SYSTEM_TABLE* st) {
     continue;
     }
     Print(L"Finding class-specific AC interface descriptor... ");
-    UINT8 RawHeader[8] = {0};
+    UINT8* Header = 0;
+        status = st->BootServices->AllocatePool(EfiBootServicesData, 65536, (void*)&Header);
+    if (EFI_ERROR(status))
+      goto failed;
+
     EFI_USB_DEVICE_REQUEST req = {0};
-    req.RequestType = (USB_DEV_GET_DESCRIPTOR_REQ_TYPE | USB_REQ_TYPE_CLASS);
+    req.RequestType = (USB_DEV_GET_DESCRIPTOR_REQ_TYPE | USB_REQ_TYPE_CLASS | USB_ENDPOINT_DIR_IN);
     req.Request = USB_REQ_GET_DESCRIPTOR;
-    req.Value = 0x2400;
+    req.Value = (0x24 << 8);
     req.Index = interfaceDescriptor.InterfaceNumber;
-    req.Length = 8;
-    status = UsbIo->UsbControlTransfer(UsbIo, &req, EfiUsbDataIn, PcdGet32 (PcdUsbTransferTimeoutValue), &RawHeader, 8, &UsbStatus);
-    if (EFI_ERROR(status))
-      goto failed;
-
-    EFI_USB_AUDIO_DESCRIPTOR_HEADER* Header = (EFI_USB_AUDIO_DESCRIPTOR_HEADER*)RawHeader;
-    UINT8* FullRawHeader = 0;
-    status = st->BootServices->AllocatePool(EfiBootServicesData, Header->TotalLength, (void*)&FullRawHeader);
-    if (EFI_ERROR(status))
-      goto failed;
-
-  Print(L"Length is %d, total length is %d, USB ADC version is %04x, %d interfaces in collection\n", Header->Length, Header->TotalLength, Header->Adc, Header->InCollection);
-  req.Length = Header->TotalLength;
-    status = UsbIo->UsbControlTransfer(UsbIo, &req, EfiUsbDataIn, PcdGet32 (PcdUsbTransferTimeoutValue), &FullRawHeader, Header->TotalLength, &UsbStatus);
+    req.Length = 2;
+    status = UsbIo->UsbControlTransfer(UsbIo, &req, EfiUsbDataIn, PcdGet32 (PcdUsbTransferTimeoutValue), &Header, req.Length, &UsbStatus);
     if (EFI_ERROR(status)) {
-      st->BootServices->FreePool(FullRawHeader);
+      st->BootServices->FreePool(Header);
+      goto failed;
+}
+  req.Length = (Header[6] << 8) | Header[5];
+    status = UsbIo->UsbControlTransfer(UsbIo, &req, EfiUsbDataIn, PcdGet32 (PcdUsbTransferTimeoutValue), &Header, req.Length, &UsbStatus);
+    if (EFI_ERROR(status)) {
+      st->BootServices->FreePool(Header);
       goto failed;
     }
+      Print(L"Length is %d, total length is %d, USB ADC version is %04x, %d interfaces in collection\n", Header[0], req.Length, Header[3], Header[7]);
     Print(L"Closing protocol... ");
     status = st->BootServices->CloseProtocol(handles[i], &gEfiUsbIoProtocolGuid, imageHandle, NULL);
+    if (EFI_ERROR(status))
+      goto failed;
+
+    Print(L"Freeing header pool... ");
+    status = st->BootServices->FreePool(Header);
     if (EFI_ERROR(status))
       goto failed;
 
