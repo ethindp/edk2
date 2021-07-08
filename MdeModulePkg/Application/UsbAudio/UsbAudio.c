@@ -70,24 +70,31 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE imageHandle, IN EFI_SYSTEM_TABLE* st) {
     if (EFI_ERROR(status))
       goto failed;
 
-    EFI_USB_DEVICE_REQUEST req = {0};
-    req.RequestType = (USB_DEV_GET_DESCRIPTOR_REQ_TYPE | USB_REQ_TYPE_CLASS | USB_ENDPOINT_DIR_IN);
-    req.Request = USB_REQ_GET_DESCRIPTOR;
-    req.Value = (0x24 << 8);
-    req.Index = interfaceDescriptor.InterfaceNumber;
-    req.Length = 2;
-    status = UsbIo->UsbControlTransfer(UsbIo, &req, EfiUsbDataIn, PcdGet32 (PcdUsbTransferTimeoutValue), &Header, req.Length, &UsbStatus);
+    for (UINTN i = 0; i < 0xFFFF; ++i)
+      Header[i] = 0;
+
+    status = UsbGetDescriptor(UsbIo, USB_DESC_TYPE_CONFIG, interfaceDescriptor.InterfaceNumber, 9, (void*)&Header, &UsbStatus);
     if (EFI_ERROR(status)) {
       st->BootServices->FreePool(Header);
       goto failed;
 }
-  req.Length = (Header[6] << 8) | Header[5];
-    status = UsbIo->UsbControlTransfer(UsbIo, &req, EfiUsbDataIn, PcdGet32 (PcdUsbTransferTimeoutValue), &Header, req.Length, &UsbStatus);
+    status = UsbGetDescriptor(UsbIo, USB_DESC_TYPE_CONFIG, interfaceDescriptor.InterfaceNumber, Header[2] | Header[3] << 8, (void*)&Header, &UsbStatus);
     if (EFI_ERROR(status)) {
       st->BootServices->FreePool(Header);
       goto failed;
     }
-      Print(L"Length is %d, total length is %d, USB ADC version is %04x, %d interfaces in collection\n", Header[0], req.Length, Header[3], Header[7]);
+    UINTN DescriptorPosition = 0;
+    for (UINTN i = 0; i < 0xFFFF; ++i) {
+      if (Header[i] == 0x24 && Header[i + 1] == 0x01) {
+        DescriptorPosition = i - 1;
+        break;
+      }
+    }
+    if (DescriptorPosition == 0) {
+      status = EFI_NOT_FOUND;
+      goto failed;
+    }
+      Print(L"Length is %d, total length is %d, total length of interface descriptor is %d, USB ADC version is %04x, %d interfaces in collection\n", Header[DescriptorPosition], Header[2] | Header[3] << 8, Header[DescriptorPosition + 3] | Header[DescriptorPosition + 4] << 8, Header[DescriptorPosition + 5] | Header[DescriptorPosition + 6] << 8, Header[DescriptorPosition + 7]);
     Print(L"Closing protocol... ");
     status = st->BootServices->CloseProtocol(handles[i], &gEfiUsbIoProtocolGuid, imageHandle, NULL);
     if (EFI_ERROR(status))
