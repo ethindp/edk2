@@ -73,12 +73,12 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE imageHandle, IN EFI_SYSTEM_TABLE* st) {
     for (UINTN i = 0; i < 0xFFFF; ++i)
       Header[i] = 0;
 
-    status = UsbGetDescriptor(UsbIo, USB_DESC_TYPE_CONFIG, interfaceDescriptor.InterfaceNumber, 9, (void*)&Header, &UsbStatus);
+    status = UsbGetDescriptor(UsbIo, (USB_DESC_TYPE_CONFIG << 8) | 0, 0, 9, (void*)Header, &UsbStatus);
     if (EFI_ERROR(status)) {
       st->BootServices->FreePool(Header);
       goto failed;
 }
-    status = UsbGetDescriptor(UsbIo, USB_DESC_TYPE_CONFIG, interfaceDescriptor.InterfaceNumber, Header[2] | Header[3] << 8, (void*)&Header, &UsbStatus);
+    status = UsbGetDescriptor(UsbIo, (USB_DESC_TYPE_CONFIG << 8) | 0, 0, Header[2] | Header[3] << 8, (void*)Header, &UsbStatus);
     if (EFI_ERROR(status)) {
       st->BootServices->FreePool(Header);
       goto failed;
@@ -94,7 +94,7 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE imageHandle, IN EFI_SYSTEM_TABLE* st) {
       status = EFI_NOT_FOUND;
       goto failed;
     }
-      Print(L"Length is %d, total length is %d, total length of interface descriptor is %d, USB ADC version is %04x, %d interfaces in collection\n", Header[DescriptorPosition], Header[2] | Header[3] << 8, Header[DescriptorPosition + 3] | Header[DescriptorPosition + 4] << 8, Header[DescriptorPosition + 5] | Header[DescriptorPosition + 6] << 8, Header[DescriptorPosition + 7]);
+      Print(L"Length is %d, total length is %d, total length of interface descriptor is %d, USB ADC version is %04x, %d interfaces in collection\n", Header[DescriptorPosition], (Header[3] << 8) | Header[2], (Header[DescriptorPosition + 6] << 8) | Header[DescriptorPosition + 5], (Header[DescriptorPosition + 4] << 8) | Header[DescriptorPosition + 3], Header[DescriptorPosition + 7]);
     Print(L"Closing protocol... ");
     status = st->BootServices->CloseProtocol(handles[i], &gEfiUsbIoProtocolGuid, imageHandle, NULL);
     if (EFI_ERROR(status))
