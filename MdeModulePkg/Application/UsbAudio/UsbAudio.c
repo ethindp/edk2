@@ -20,9 +20,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Protocol/UsbIo.h>
 #include <IndustryStandard/Usb.h>
 #include "Descriptors.h"
-
-static const char* DstToString(EFI_USB_AUDIO_DESCRIPTOR_SUBTYPE);
-static const char* TtToString(EFI_USB_AUDIO_TERMINAL_TYPE);
+#include "sine.h"
 
 EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE imageHandle, IN EFI_SYSTEM_TABLE* st) {
   Print(L"Attempting to find USB IO protocol\n");
@@ -117,15 +115,20 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE imageHandle, IN EFI_SYSTEM_TABLE* st) {
     Print(L"Length is %d, total length is %d, total length of interface descriptor is %d, USB ADC version is %04x, %d interfaces in collection\n", Header[DescriptorPosition], (Header[3] << 8) | Header[2], (Header[DescriptorPosition + 6] << 8) | Header[DescriptorPosition + 5], (Header[DescriptorPosition + 4] << 8) | Header[DescriptorPosition + 3], Header[DescriptorPosition + 7]);
     for (UINTN i = 0; i < Header[DescriptorPosition + 7]; ++i)
       Print(L"Interface %d: No. %d\n", i, Header[DescriptorPosition + 8 + i]);
-
-    while (1) {
-      DescriptorPosition += Header[DescriptorPosition];
-      UINT8* Descriptor = Header + DescriptorPosition;
-      if (Descriptor[1] == EfiUsbAudioAcUndefined || Descriptor[1] == EfiUsbAudioAcHeader)
-        break;
-
-      if (Descriptor[1] == EfiUsbAudioAcInputTerminal || Descriptor[1] == EfiUsbAudioAcOutputTerminal) Print(L"Found terminal %d, type %a, TT %a\n", Descriptor[3], DstToString(Descriptor[1]), TtToString((Descriptor[5] << 8) | Descriptor[4]));
-      else Print(L"Found unit %d, type %a\n", Descriptor[3], DstToString(Descriptor[1]));
+    for (UINTN i = 0; i < Header[DescriptorPosition + 7]; ++i) {
+      status = UsbSetInterface(UsbIo, Header[DescriptorPosition + 8 + i], 0, &UsbStatus);
+      if (EFI_ERROR(status))
+        goto failed;
+    }
+    for (UINTN i = 0; i < Header[DescriptorPosition + 7]; ++i) {
+      status = UsbSetInterface(UsbIo, Header[DescriptorPosition + 8 + i], 1, &UsbStatus);
+      if (EFI_ERROR(status))
+        goto failed;
+    }
+    if (interfaceDescriptor.InterfaceSubClass == 0x02) {
+      status = UsbIo->UsbIsochronousTransfer(UsbIo, 0x00|0x80, SINE_SAMPLES, 48000, &UsbStatus);
+      if (EFI_ERROR(status))
+        goto failed;
     }
     Print(L"Closing protocol... ");
     status = st->BootServices->CloseProtocol(handles[i], &gEfiUsbIoProtocolGuid, imageHandle, NULL);
@@ -156,83 +159,5 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE imageHandle, IN EFI_SYSTEM_TABLE* st) {
   UsbIo = NULL;
   Print(L"%r (%04x)\n", status, UsbStatus);
   return EFI_ABORTED;
-}
-
-
-static const char* DstToString(EFI_USB_AUDIO_DESCRIPTOR_SUBTYPE subtype) {
-  switch (subtype) {
-    case EfiUsbAudioAcUndefined: return "undefined";
-    case EfiUsbAudioAcHeader: return "header";
-    case EfiUsbAudioAcInputTerminal: return "input terminal";
-    case EfiUsbAudioAcOutputTerminal: return "output terminal";
-    case EfiUsbAudioAcMixerUnit: return "mixer unit";
-    case EfiUsbAudioAcSelectorUnit: return "selector unit";
-    case EfiUsbAudioAcFeatureUnit: return "feature unit";
-    case EfiUsbAudioAcProcessingUnit: return "processing unit";
-    case EfiUsbAudioAcExtensionUnit: return "extension unit";
-    default: return "unknown";
-  }
-}
-
-static const char* TtToString(EFI_USB_AUDIO_TERMINAL_TYPE tt) {
-  switch (tt) {
-    case EfiUsbAudioUsbUndefined:
-    case EfiUsbAudioInUndefined:
-    case EfiUsbAudioOutUndefined:
-    case EfiUsbAudioBiUndefined:
-    case EfiUsbAudioTelUndefined:
-    case EfiUsbAudioExtUndefined:
-    case EfiUsbAudioEmbUndefined: return "undefined";
-    case EfiUsbAudioUsbStreaming: return "streaming";
-    case EfiUsbAudioUsbVendorSpecific: return "vendor-specific";
-    case EfiUsbAudioInMicrophone: return "microphone";
-    case EfiUsbAudioInDesktopMicrophone: return "desktop microphone";
-    case EfiUsbAudioInPersonalMicrophone: return "personal microphone";
-    case EfiUsbAudioInOmniDirectionalMicrophone: return "omnidirectional microphone";
-    case EfiUsbAudioInMicrophoneArray: return "microphone array";
-    case EfiUsbAudioInProcessingMicrophoneArray: return "processing microphone array";
-    case EfiUsbAudioOutSpeaker: return "speaker";
-    case EfiUsbAudioOutHeadphones: return "headphones";
-    case EfiUsbAudioOutHeadMountedDisplayAudio: return "head-mounted display";
-    case EfiUsbAudioOutDesktopSpeaker: return "desktop speaker";
-    case EfiUsbAudioOutRoomSpeaker: return "room speaker";
-    case EfiUsbAudioOutCommunicationSpeaker: return "communication speaker";
-    case EfiUsbAudioOutLfeSpeaker: return "lfe";
-    case EfiUsbAudioBiHandset: return "handset";
-    case EfiUsbAudioBiHeadset: return "headset";
-    case EfiUsbAudioBiSpeakerphoneNoEcho: return "speakerphone (no echo cancellation)";
-    case EfiUsbAudioBiEchoSuppressingSpeakerphone: return "speakerphone (echo suppression)";
-    case EfiUsbAudioBiEchoCancellingSpeakerphone: return "speakerphone (echo cancellation)";
-    case EfiUsbAudioTelPhoneLine: return "phone line";
-    case EfiUsbAudioTelTelephone: return "telephone";
-    case EfiUsbAudioTelDownLinePhone: return "down-line phone";
-    case EfiUsbAudioExtAnalogConnector: return "analog connector";
-    case EfiUsbAudioExtDigitalAudioInterface: return "digital audio interface";
-    case EfiUsbAudioExtLineConnector: return "line connector";
-    case EfiUsbAudioExtLegacyAudioConnector: return "legacy audio connector";
-    case EfiUsbAudioExtSpdifInterface: return "s/pdif interface";
-    case EfiUsbAudioExt1394DaStream: return "IEEE 1394 digital audio stream";
-    case EfiUsbAudioExt1394DvStreamSoundtrack: return "IEEE 1394 digital video stream soundtrack";
-    case EfiUsbAudioEmbLevelCalibrationNoiseSource: return "level callibration noise source";
-    case EfiUsbAudioEmbEqualizationNoise: return "equalization noise";
-    case EfiUsbAudioEmbCdPlayer: return "cd player";
-    case EfiUsbAudioEmbDat: return "dat";
-    case EfiUsbAudioEmbDcc: return "dcc";
-    case EfiUsbAudioEmbMiniDisk: return "minidisk";
-    case EfiUsbAudioEmbAnalogTape: return "analog tape";
-    case EfiUsbAudioEmbPhonograph: return "phonograph";
-    case EfiUsbAudioEmbVcrAudio: return "vcr audio";
-    case EfiUsbAudioEmbVideoDisk: return "video disk";
-    case EfiUsbAudioEmbDvdAudio: return "dvd";
-    case EfiUsbAudioEmbTvTunerAudio: return "tv tuner";
-    case EfiUsbAudioEmbSatelliteReceiverAudio: return "satellite receiver";
-    case EfiUsbAudioEmbCableTunerAudio: return "cable tuner";
-    case EfiUsbAudioEmbDssAudio: return "dss";
-    case EfiUsbAudioEmbRadioReceiver: return "radio receiver";
-    case EfiUsbAudioEmbRadioTransmitter: return "radio transmitter";
-    case EfiUsbAudioEmbMultiTrackRecorder: return "multitrack recorder";
-    case EfiUsbAudioEmbSynthesizer: return "synthesizer";
-    default: return "unknown";
-  }
 }
 
