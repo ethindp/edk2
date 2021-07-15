@@ -38,8 +38,10 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE imageHandle, IN EFI_SYSTEM_TABLE* st) {
   for (; i < numHandles; ++i) {
     Print(L"Trying to open handle %d (%x)... ", i, handles[i]);
     status = st->BootServices->OpenProtocol(handles[i], &gEfiUsbIoProtocolGuid, (void**)&UsbIo, imageHandle, NULL, EFI_OPEN_PROTOCOL_EXCLUSIVE);
-    if (EFI_ERROR(status))
-      goto failed;
+    if (EFI_ERROR(status)) {
+      Print(L"%r, skipping\n", status);
+      continue;
+    }
 
     Print(L"OK\n");
     Print(L"Resetting port... ");
@@ -80,7 +82,7 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE imageHandle, IN EFI_SYSTEM_TABLE* st) {
         return EFI_ABORTED;
       }
     }
-    Print(L"Finding class-specific AC interface descriptor... ");
+    Print(L"Reading descriptor data\n");
     UINT8* Header = 0;
         status = st->BootServices->AllocatePool(EfiBootServicesData, 65536, (void*)&Header);
     if (EFI_ERROR(status))
@@ -89,44 +91,45 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE imageHandle, IN EFI_SYSTEM_TABLE* st) {
     for (UINTN i = 0; i < 0xFFFF; ++i)
       Header[i] = 0;
 
+    status = UsbGetDescriptor(UsbIo, (USB_DESC_TYPE_DEVICE << 8) | 0, 0, 2, (void*)Header, &UsbStatus);
+    if (EFI_ERROR(status)) {
+      st->BootServices->FreePool(Header);
+      goto failed;
+}
+    status = UsbGetDescriptor(UsbIo, (USB_DESC_TYPE_DEVICE << 8) | 0, 0, Header[0], (void*)Header, &UsbStatus);
+    if (EFI_ERROR(status)) {
+      st->BootServices->FreePool(Header);
+      goto failed;
+    }
+    Print(L"Device descriptor: device has %d configurations\n", Header[17]);
+    Print(L"Configuring device... ");
+    status = UsbSetConfiguration(UsbIo, Header[17] - 1, &UsbStatus);
+    if (EFI_ERROR(status))
+      goto failed;
+
+    Print(L"Ok\n");
+    Print(L"Reading configuration information... ");
+    for (UINTN i = 0; i < 0xFFFF; ++i) Header[i] = 0;
     status = UsbGetDescriptor(UsbIo, (USB_DESC_TYPE_CONFIG << 8) | 0, 0, 9, (void*)Header, &UsbStatus);
     if (EFI_ERROR(status)) {
       st->BootServices->FreePool(Header);
       goto failed;
 }
-    status = UsbGetDescriptor(UsbIo, (USB_DESC_TYPE_CONFIG << 8) | 0, 0, Header[2] | Header[3] << 8, (void*)Header, &UsbStatus);
+    status = UsbGetDescriptor(UsbIo, (USB_DESC_TYPE_CONFIG << 8) | 0, 0, (Header[3] << 8) | Header[2], (void*)Header, &UsbStatus);
     if (EFI_ERROR(status)) {
       st->BootServices->FreePool(Header);
       goto failed;
     }
-    UINTN DescriptorPosition = 0;
-    for (UINTN i = 0; i < 0xFFFF; ++i) {
-      if (Header[i] == 0x24 && Header[i + 1] == 0x01) {
-        DescriptorPosition = i - 1;
-        break;
-      }
-    }
-    if (DescriptorPosition == 0) {
-      st->BootServices->FreePool(Header);
-      status = EFI_NOT_FOUND;
-      goto failed;
-    }
-    Print(L"\n");
-    Print(L"Length is %d, total length is %d, total length of interface descriptor is %d, USB ADC version is %04x, %d interfaces in collection\n", Header[DescriptorPosition], (Header[3] << 8) | Header[2], (Header[DescriptorPosition + 6] << 8) | Header[DescriptorPosition + 5], (Header[DescriptorPosition + 4] << 8) | Header[DescriptorPosition + 3], Header[DescriptorPosition + 7]);
-    for (UINTN i = 0; i < Header[DescriptorPosition + 7]; ++i)
-      Print(L"Interface %d: No. %d\n", i, Header[DescriptorPosition + 8 + i]);
-    for (UINTN i = 0; i < Header[DescriptorPosition + 7]; ++i) {
-      status = UsbSetInterface(UsbIo, Header[DescriptorPosition + 8 + i], 0, &UsbStatus);
+    Print(L"Ok\n");
+    Print(L"Setting interface alternate settings\n");
+    for (UINT16 interface = 0; interface < (UINT16)Header[4]; ++interface) {
+      status = UsbSetInterface(UsbIo, interface, 1, &UsbStatus);
       if (EFI_ERROR(status))
-        goto failed;
-    }
-    for (UINTN i = 0; i < Header[DescriptorPosition + 7]; ++i) {
-      status = UsbSetInterface(UsbIo, Header[DescriptorPosition + 8 + i], 1, &UsbStatus);
-      if (EFI_ERROR(status))
-        goto failed;
+        Print(L"Skipping interface %d: no alternate settings\n", interface);
     }
     if (interfaceDescriptor.InterfaceSubClass == 0x02) {
-      status = UsbIo->UsbIsochronousTransfer(UsbIo, 0x00|0x80, SINE_SAMPLES, 48000, &UsbStatus);
+      Print(L"Initiating stream... ");
+      status = UsbIo->UsbIsochronousTransfer(UsbIo, 0x81, SINE_SAMPLES, 48000, &UsbStatus);
       if (EFI_ERROR(status))
         goto failed;
     }
@@ -135,6 +138,7 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE imageHandle, IN EFI_SYSTEM_TABLE* st) {
     if (EFI_ERROR(status))
       goto failed;
 
+    Print(L"Ok\n");
     Print(L"Freeing header pool... ");
     status = st->BootServices->FreePool(Header);
     if (EFI_ERROR(status))
