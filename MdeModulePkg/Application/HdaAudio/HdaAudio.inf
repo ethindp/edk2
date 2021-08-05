@@ -1,0 +1,34 @@
+# Intel HDA Audio application
+#
+# This application tries to find an Intel HDA audio device and plays a sound through it.
+#
+# Copyright (c) 2021 Ethin Probst.
+
+[Defines]
+        INF_VERSION                    = 1.25
+        BASE_NAME                      = HdaAudio
+        FILE_GUID=4853891c-e993-482c-9f8d-200c831ab88e
+        MODULE_TYPE                    = UEFI_APPLICATION
+        VERSION_STRING                 = 0.1.0
+        ENTRY_POINT                    = UefiMain
+
+[Sources]
+        HdaAudio.c
+        HdaAudio.h
+        Sine.h
+
+[Packages]
+        MdePkg/MdePkg.dec
+        MdeModulePkg/MdeModulePkg.dec
+
+[LibraryClasses]
+        UefiApplicationEntryPoint
+        UefiLib
+        TimerLib
+        UefiBootServicesTableLib
+
+[Protocols]
+        gEfiPciIoProtocolGuid
+
+[Pcd]
+
