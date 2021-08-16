@@ -11,7 +11,7 @@ Copyright (C) 2021 Ethin Probst
 // For a list of all registers and any associated notes, see
 // https://wiki.osdev.org/Intel_High_Definition_Audio
 typedef enum {
-  HdaGcap = 0x00,
+  HdaGloblCaps = 0x00,
   HdaVerMin = 0x02,
   HdaVerMaj = 0x03,
   HdaOutPayCap = 0x04,
@@ -45,17 +45,76 @@ typedef enum {
   HdaImmCmdStatus = 0x68,
   HdaDplLo = 0x70,
   HdaDplHi = 0x74,
-  HdaStreamControl = 0x80,
-  HdaStreamStatus = 0x83,
-  HdaStreamLinkPosInBuf = 0x84,
-  HdaStreamCyclicBufferLength = 0x88,
-  HdaStreamLastValidIndex = 0x8C,
-  HdaStreamFifoSize = 0x90,
-  HdaStreamFormat = 0x92,
-  HdaStreamBdlLo = 0x98,
-  HdaStreamBdlHi = 0x9C,
+  HdaStreamControl = 0x00,
+  HdaStreamStatus = 0x03,
+  HdaStreamLinkPosInBuf = 0x04,
+  HdaStreamCyclicBufferLength = 0x08,
+  HdaStreamLastValidIndex = 0x0C,
+  HdaStreamFifoSize = 0x10,
+  HdaStreamFormat = 0x12,
+  HdaStreamBdlLo = 0x18,
+  HdaStreamBdlHi = 0x1C,
   HdaRegMax = MAX_UINT64
 } HDA_REGISTER;
+
+typedef enum {
+  HdaVerbGetParameter = 0xF00,
+  HdaVerbGetSelectedInput = 0xF01,
+  HdaVerbSetSelectedInput = 0x701,
+  HdaVerbGetStreamChannel = 0xF06,
+  HdaVerbSetStreamChannel = 0x706,
+  HdaVerbGetPinWidgetControl = 0xF07,
+  HdaVerbSetPinWidgetControl = 0x707,
+  HdaVerbGetVolumeControl = 0xF0F,
+  HdaVerbSetVolumeControl = 0x70F,
+  HdaVerbGetConfigurationDefault = 0xF1C,
+  HdaVerbGetConverterChannelCount = 0xF2D,
+  HdaVerbSetConverterChannelCount = 0x72D,
+  HdaVerbFunctionReset = 0x7FF,
+  HdaVerbSetAmplifierGain = 0x03,
+  HdaVerbSetStreamFormat = 0x02,
+  HdaVerbSetPowerState = 0x705,
+  HdaVerbMax = MAX_UINT16
+} HDA_CODEC_VERB;
+
+typedef enum {
+  HdaParamVendorDevId,
+  HdaParamRevId = 0x02,
+  HdaParamNodeCount = 0x04,
+  HdaParamFunctionGroupType,
+  HdaParamAudioGroupCapabilities = 0x08,
+  HdaParamAudioWidgetCapabilities,
+  HdaParamSupportedPcmRates,
+  HdaParamSupportedFormats,
+  HdaParamPinCapabilities,
+  HdaParamInputAmplifierCapabilities,
+  HdaParamConnectionListLength,
+  HdaParamSupportedPowerStates,
+  HdaParamProcessingCapabilities,
+  HdaParamGpioCount,
+  HdaParamOutputAmplifierCapabilities,
+  HdaParamVolumeCapabilities,
+  HdaParamMax = MAX_UINT8
+} HDA_GET_PARAMETER_VERB_PARAMETER;
+
+typedef enum {
+  HdaFunctionGroupTypeReserved,
+  HdaFunctionGroupTypeAudio,
+  HdaFunctionGroupTypeVendorSpecMotem
+} HDA_FUNCTION_GROUP_TYPE;
+
+typedef enum {
+  HdaWidgetTypeAudioOut,
+  HdaWidgetTypeAutioIn,
+  HdaWidgetTypeAudioMixer,
+  HdaWidgetTypeAudioSelector,
+  HdaWidgetTypePinComplex,
+  HdaWidgetTypePowerWidget,
+  HdaWidgetTypeVolumeKnob,
+  HdaWidgetTypeBeepGenerator,
+  HdaWidgetTypeVendor = 0xF,
+  HdaWidgetTypeMax = MAX_UINT8
+} HDA_WIDGET_TYPE;
 
 #pragma pack(push)
 #pragma pack(1)
@@ -123,7 +182,7 @@ typedef union {
     UINT8 Run:1;
     UINT8 Rsvd:6;
   } Bits;
-  UINT8 raw;
+  UINT8 Raw;
 } HDA_CORB_CONTROL;
 
 typedef union {
@@ -202,18 +261,10 @@ typedef struct {
   UINT32 rsvd;
 } HDA_STREAM_DMA_POSITION;
 
-typedef union {
-  struct {
-    UINT32 InterruptOnCompletion:1;
-    UINT32 rsvd;
-  } Bits;
-  UINT32 Raw;
-} HDA_BDLE_CONFIG;
-
 typedef struct {
   UINT64 Address;
   UINT32 Length;
-  HDA_BDLE_CONFIG Config;
+  UINT32 Config;
 } HDA_BUFFER_DESCRIPTOR_LIST_ENTRY;
 
 typedef union {
@@ -238,15 +289,18 @@ typedef union {
 typedef union {
   struct {
     UINT32 Response:21;
-    UINT32 Subtag:5;
+    UINT32 SubTag:5;
     UINT32 Tag:6;
-  } UnsolicitedResponse;
-  UINT32 SolicitedResponse;
+  };
+  UINT32 Raw;
 } HDA_RIRB_RESPONSE_CONTENTS;
 
-typedef struct {
-  HDA_RIRB_RESPONSE_CONTENTS Contents;
-  HDA_RIRB_RESP_EX Info;
+typedef union {
+  struct {
+    HDA_RIRB_RESPONSE_CONTENTS Contents;
+    HDA_RIRB_RESP_EX Info;
+  } Response;
+  UINT64 Raw;
 } HDA_RIRB_RESPONSE;
 
 typedef union {
@@ -262,13 +316,32 @@ typedef union {
   UINT16 Raw;
 } HDA_STREAM_FORMAT_DESCRIPTOR;
 
+typedef struct {
+  UINT32 VendorDeviceId;
+  UINT32 RevisionId;
+  UINT32 NodeCount;
+  UINT32 FunctionGroupType;
+  UINT32 AudioGroupCaps;
+  UINT32 AudioWidgetCaps;
+  UINT32 SupPcmRates;
+  UINT32 SupFmts;
+  UINT32 PinCaps;
+  UINT32 InAmpCaps;
+  UINT32 ConnListLen;
+  UINT32 SupPowerStates;
+  UINT32 ProcCaps;
+  UINT32 GpioCount;
+  UINT32 OutAmpCaps;
+  UINT32 VolCaps;
+} HDA_NODE;
+
 #pragma pack(pop)
 
 typedef struct {
   /// Handle to this HDA controller if required
   EFI_HANDLE Handle;
   /// The pointer to the allocated EFI_PCI_IO_PROTOCOL protocol instance for this device
-  PciIo* PciIo;
+  EFI_PCI_IO_PROTOCOL* PciIo;
   /// Size of the CORB in bytes
   UINTN CorbBytes;
   /// Size of the RIRB in bytes
@@ -286,22 +359,42 @@ typedef struct {
   /// Physical address to the RIRB
   EFI_PHYSICAL_ADDRESS RirbPhysAddress;
   /// Pointer to the CORB in virtual memory
-  HDA_CORB_ENTRY* Corb;
+  UINT32* Corb;
   /// Pointer to the RIRB in virtual memory
-  HDA_RIRB_RESPONSE* Rirb;
+  UINT64* Rirb;
+  /// BDL mappings and lists
+  UINTN InputBdlBytes[16];
+  UINTN OutputBdlBytes[16];
+  UINTN BidirectionalBdlBytes[16];
+  EFI_PHYSICAL_ADDRESS InputBdlPhysAddress[16];
+  EFI_PHYSICAL_ADDRESS OutputBdlPhysAddress[16];
+  EFI_PHYSICAL_ADDRESS BidirectionalBdlPhysAddress[16];
+  VOID* InputBdlMapping[16];
+  VOID* OutputBdlMapping[16];
+  VOID* BidirectionalBdlMapping[16];
+  HDA_BUFFER_DESCRIPTOR_LIST_ENTRY InputBdl[256];
+  HDA_BUFFER_DESCRIPTOR_LIST_ENTRY OutputBdl[256];
+  HDA_BUFFER_DESCRIPTOR_LIST_ENTRY BidirectionalBdl[256];
+  /// Stream DMA positions
+  UINTN StreamPositionsBytes;
+  VOID* StreamPositionsMapping;
+  EFI_PHYSICAL_ADDRESS StreamPositionsPhysAddress;
+  HDA_STREAM_DMA_POSITION* StreamPositions;
+  /// HDA nodes (there can be up to 4096)
+  HDA_NODE Nodes[16][16];
   /// Current CORB write pointer
   UINT8 CorbWritePtr;
   /// Current RIRB read pointer
   UINT8 RirbReadPtr;
-  /// List of node IDs
-  UINT8 Nodes[15];
+  /// List of nodes that are present
+  UINT16 DetectedNodes;
 } HDA_CONTROLLER;
 
 // HDA vendor ID/device list
 // Necessary to find an HDA controller, apparently
 // Taken from http://wiki.kolibrios.org/wiki/Intel_High_Definition_Audio
 // {vendor ID, device ID}
-static UINT16 HDA_DEVICES[][] = {
+static UINT16 HDA_DEVICES[42][2] = {
   {0x8086, 0x2668},
   {0x8086, 0x269A},
   {0x8086, 0x27D8},
