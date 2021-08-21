@@ -90,7 +90,7 @@ EFI_HANDLE HdaFindController(IN EFI_HANDLE* Handles, UINTN NumHandles) {
     EFI_PCI_IO_PROTOCOL* PciIo = NULL;
     HdaCheckForError(gBS->OpenProtocol(Handles[i], &gEfiPciIoProtocolGuid, (VOID**)&PciIo, gImageHandle, NULL, EFI_OPEN_PROTOCOL_GET_PROTOCOL), NULL);
     PCI_TYPE00 Pci = {0};
-    HdaCheckForError(PciIo->Pci.Read(PciIo, EfiPciIoWidthUint8, 0x0000, sizeof(Pci), &Pci), NULL);
+    HdaCheckForError(PciIo->Pci.Read(PciIo, EfiPciIoWidthUint8, PCI_VENDOR_ID_OFFSET, sizeof(Pci), &Pci), NULL);
     for (UINTN j = 0; j < sizeof(HDA_DEVICES)/sizeof(HDA_DEVICES[0]); ++j)
       if (Pci.Hdr.VendorId == HDA_DEVICES[j][0] && Pci.Hdr.DeviceId == HDA_DEVICES[j][1]) {
         HdaCheckForError(gBS->CloseProtocol(Handles[i], &gEfiPciIoProtocolGuid, gImageHandle, NULL), NULL);
@@ -113,6 +113,10 @@ static HDA_CONTROLLER* HdaInstantiateAndReset(IN EFI_HANDLE Handle) {
   Controller->Handle = Handle;
   Print(L"Exclusively opening handle %04x\n", Handle);
   HdaCheckForError(gBS->OpenProtocol(Handle, &gEfiPciIoProtocolGuid, (VOID**)&Controller->PciIo, gImageHandle, NULL, EFI_OPEN_PROTOCOL_EXCLUSIVE), NULL);
+  UINT16 CommandReg = 0;
+  HdaCheckForError(Controller->PciIo->Pci.Read(Controller->PciIo, EfiPciIoWidthUint16, PCI_COMMAND_OFFSET, 1, (VOID*)&CommandReg), Controller);
+  CommandReg |= (1 << 10);
+  HdaCheckForError(Controller->PciIo->Pci.Write(Controller->PciIo, EfiPciIoWidthUint16, PCI_COMMAND_OFFSET, 1, (VOID**)&CommandReg), Controller);
   HDA_GLOBAL_CONTROL Gctl = {0};
   Gctl.Bits.ControllerReset = 1;
   Print(L"Writing global control: %02x\n", Gctl.Raw);
@@ -158,10 +162,12 @@ static VOID HdaAllocateCorb(IN OUT HDA_CONTROLLER* Controller) {
   CorbCtl.Bits.MemErrIntEnable = 0;
   CorbCtl.Bits.Run = 0;
   Print(L"Reset corbctl: %x\n", CorbCtl.Raw);
+  Print(L"WRPCI: PciIo=%08x, width=%d, bar=%d, offset=%d, count=%d, vaddr=%08x (val=%x)\n", (UINTN)&Controller->PciIo, EfiPciIoWidthUint8, 0, HdaCorbCtl, 1, (UINTN)&CorbCtl.Raw, CorbCtl.Raw);
   HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint8, 0, HdaCorbCtl, 1, (VOID**)&CorbCtl.Raw), Controller);
   HDA_CORB_RDPTR ReadPointer = {0};
   ReadPointer.Bits.Reset = 1;
   Print(L"Reset corbrp: %x\n", ReadPointer.Raw);
+  Print(L"WRPCI: PciIo=%08x, width=%d, bar=%d, offset=%d, count=%d, vaddr=%08x (val=%x)\n", (UINTN)&Controller->PciIo, EfiPciIoWidthUint16, 0, HdaCorbReadPtr, 1, (UINTN)&ReadPointer.Raw, ReadPointer.Raw);
   HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaCorbReadPtr, 1, (VOID**)&ReadPointer.Raw), Controller);
   Print(L"Waiting\n");
   do
