@@ -79,12 +79,20 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE imageHandle, IN EFI_SYSTEM_TABLE* st) {
   // Enumerate through all codecs and initialize them
   HdaCreateNodeTree(Controller);
   // Initialize BDLs
+  Controller->OutputBdlBytes[0] = sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256;
+  Controller->OutputBdlBytes[1] = sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256;
+  HdaCheckForError(Controller->PciIo->Map(Controller->PciIo, EfiPciIoOperationBusMasterCommonBuffer, (VOID*)&Controller->OutputBdl[0], &Controller->OutputBdlBytes[0], &Controller->OutputBdlPhysAddress[0], (VOID**)&Controller->OutputBdlMapping[0]), Controller);
+  HdaCheckForError(Controller->PciIo->Map(Controller->PciIo, EfiPciIoOperationBusMasterCommonBuffer, (VOID*)&Controller->OutputBdl[1], &Controller->OutputBdlBytes[1], &Controller->OutputBdlPhysAddress[1], (VOID**)&Controller->OutputBdlMapping[1]), Controller);
+  ASSERT(Controller->OutputBdlBytes[0] == sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256);
+  ASSERT(Controller->OutputBdlBytes[1] == sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256);
   Controller->OutputBdl[0].Address = (UINT64)&SINE_SAMPLES;
   Controller->OutputBdl[0].Length = (sizeof(SINE_SAMPLES)/sizeof(SINE_SAMPLES[0]))/2;
   Controller->OutputBdl[0].Config = 0;
   Controller->OutputBdl[1].Address = Controller->OutputBdl[0].Address + Controller->OutputBdl[0].Length;
   Controller->OutputBdl[1].Length = Controller->OutputBdl[0].Length;
   Controller->OutputBdl[1].Config = 0;
+  HdaCheckForError(Controller->PciIo->Unmap(Controller->PciIo, Controller->OutputBdlMapping[0]), Controller);
+  HdaCheckForError(Controller->PciIo->Unmap(Controller->PciIo, Controller->OutputBdlMapping[1]), Controller);
   UINT32 LastValidIndex =2;
   HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint32, 0, HdaStreamLastValidIndex, 1, (VOID*)&LastValidIndex), Controller);
   UINT32 BdlSize = sizeof(SINE_SAMPLES)/sizeof(SINE_SAMPLES[0]);
@@ -201,15 +209,10 @@ static VOID HdaAllocateCorb(IN OUT HDA_CONTROLLER* Controller) {
   // Second, allocate our CORB
   Print(L"Alloc corb: Addr %08x, 1024 bytes, %d pages\n", (UINTN)&Controller->Corb, EFI_SIZE_TO_PAGES(1024));
   HdaCheckForError(Controller->PciIo->AllocateBuffer(Controller->PciIo, AllocateAnyPages, EfiBootServicesData, EFI_SIZE_TO_PAGES(1024), (VOID*)&Controller->Corb, 0), Controller);
-  // Now map it
-  Controller->CorbBytes = 1024;
-  HdaCheckForError(Controller->PciIo->Map(Controller->PciIo, EfiPciIoOperationBusMasterCommonBuffer, (VOID*)&Controller->Corb, &Controller->CorbBytes, &Controller->CorbPhysAddress, (VOID**)&Controller->CorbMapping), Controller);
-  ASSERT(Controller->CorbBytes == 1024);
-  Print(L"Map corb: vaddr %08x, paddr %08x, size %d, %d pages, mapping at %08x\n", (UINTN)&Controller->Corb, Controller->CorbPhysAddress, Controller->CorbBytes, EFI_SIZE_TO_PAGES(Controller->CorbBytes), (UINTN)&Controller->CorbMapping);
   // Set CORB address
   // This depends on the address being 64-bits wide. 128-bit addresses are not supported. 32-bit addresses may work.
-  UINT32 CorbLo = (UINT32)((Controller->CorbPhysAddress & 0xFFFFFFFF00000000LL) >> 32);
-  UINT32 CorbHi = (UINT32)(Controller->CorbPhysAddress & 0xFFFFFFFFLL);
+  UINT32 CorbLo = (UINT32)BitFieldRead64((UINT64)&Controller->Corb, 0, 31);
+  UINT32 CorbHi = (UINT32)BitFieldRead64((UINT64)&Controller->Corb, 32, 63);
   Print(L"Set corblbase: %04x\n", CorbLo);
   HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint32, 0, HdaCorbLo, 1, (VOID**)&CorbLo), Controller);
   Print(L"Set corbubase: %04x\n", CorbHi);
@@ -243,15 +246,10 @@ static VOID HdaAllocateRirb(IN OUT HDA_CONTROLLER* Controller) {
   // Next, allocate our RIRB
   Print(L"Alloc rirb: vaddr %08x, %d bytes, %d pages\n", (UINTN)&Controller->Rirb, 2048, EFI_SIZE_TO_PAGES(2048));
   HdaCheckForError(Controller->PciIo->AllocateBuffer(Controller->PciIo, AllocateAnyPages, EfiBootServicesData, EFI_SIZE_TO_PAGES(2048), (VOID*)&Controller->Rirb, 0), Controller);
-  // Now map it
-  Controller->RirbBytes = 2048;
-  HdaCheckForError(Controller->PciIo->Map(Controller->PciIo, EfiPciIoOperationBusMasterCommonBuffer, (VOID*)&Controller->Rirb, &Controller->RirbBytes, &Controller->RirbPhysAddress, (VOID**)&Controller->RirbMapping), Controller);
-  ASSERT(Controller->RirbBytes == 2048);
-  Print(L"Map rirb: vaddr %08x, paddr %08x, size %d, %d pages, mapping at %08x\n", (UINTN)&Controller->Rirb, Controller->RirbPhysAddress, Controller->RirbBytes, EFI_SIZE_TO_PAGES(Controller->RirbBytes), (UINTN)&Controller->RirbMapping);
   // Set RIRB address
   // This depends on the address being 64-bits wide. 128-bit addresses are not supported. 32-bit addresses may work.
-  UINT32 RirbLo = (UINT32)((Controller->RirbPhysAddress & 0xFFFFFFFF00000000LL) >> 32);
-  UINT32 RirbHi = (UINT32)(Controller->RirbPhysAddress & 0xFFFFFFFFLL);
+  UINT32 RirbLo = (UINT32)BitFieldRead64((UINT64)&Controller->Rirb, 0, 31);
+  UINT32 RirbHi = (UINT32)BitFieldRead64((UINT64)&Controller->Rirb, 32, 63);
   Print(L"Set rirblbase: %04x\n", RirbLo);
   HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint32, 0, HdaRirbLo, 1, (VOID**)&RirbLo), Controller);
   Print(L"Set rirbubase: %04x\n", RirbHi);
@@ -285,8 +283,6 @@ static VOID HdaFreeCorb(IN OUT HDA_CONTROLLER* Controller) {
   ReadPointer.Bits.Reset = 0;
   Print(L"Set corbrp: %x\n", ReadPointer.Raw);
   HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaCorbReadPtr, 1, (VOID**)&ReadPointer.Raw), Controller);
-  Print(L"Unmap corb: vaddr %08x\n", (UINTN)&Controller->CorbMapping);
-  HdaCheckForError(Controller->PciIo->Unmap(Controller->PciIo, Controller->CorbMapping), Controller);
   Print(L"Free corb: vaddr %08x, size %d, %d pages\n", (UINTN)&Controller->Corb, Controller->CorbBytes, EFI_SIZE_TO_PAGES(Controller->CorbBytes));
   HdaCheckForError(Controller->PciIo->FreeBuffer(Controller->PciIo, EFI_SIZE_TO_PAGES(Controller->CorbBytes), (VOID*)Controller->Corb), Controller);
 }
@@ -302,13 +298,14 @@ static VOID HdaFreeRirb(IN OUT HDA_CONTROLLER* Controller) {
   WritePointer.Bits.Reset = 1;
   Print(L"Set rirbwp: %x\n", WritePointer.Raw);
   HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaRirbWritePtr, 1, (VOID**)&WritePointer.Raw), Controller);
-  Print(L"Unmap rirb: vaddr %08x\n", (UINTN)&Controller->RirbMapping);
-  HdaCheckForError(Controller->PciIo->Unmap(Controller->PciIo, Controller->RirbMapping), Controller);
   Print(L"Free rirb: vaddr %08x, size %d, %d pages\n", (UINTN)&Controller->Rirb, Controller->RirbBytes, EFI_SIZE_TO_PAGES(Controller->RirbBytes));
   HdaCheckForError(Controller->PciIo->FreeBuffer(Controller->PciIo, EFI_SIZE_TO_PAGES(Controller->RirbBytes), (VOID*)Controller->Rirb), Controller);
 }
 
 static UINT32 HdaWriteCommand(IN OUT HDA_CONTROLLER* Controller, IN UINT32 CodecAddress, IN UINT32 NodeId, IN UINT32 Command, IN UINT32 Data) {
+  Controller->CorbBytes = 1024;
+  HdaCheckForError(Controller->PciIo->Map(Controller->PciIo, EfiPciIoOperationBusMasterCommonBuffer, (VOID*)&Controller->Corb, &Controller->CorbBytes, &Controller->CorbPhysAddress, (VOID**)&Controller->CorbMapping), Controller);
+  ASSERT(Controller->CorbBytes == 1024);
   HDA_CORB_ENTRY Entry = {0};
   Entry.Bits.CodecAddress = CodecAddress;
   Entry.Bits.NodeId = NodeId;
@@ -316,8 +313,9 @@ static UINT32 HdaWriteCommand(IN OUT HDA_CONTROLLER* Controller, IN UINT32 Codec
   Entry.Bits.Data = Data;
   Print(L"Manifest corb entry: %04x\n", Entry.Raw);
   Controller->Corb[Controller->CorbWritePtr] = Entry.Raw;
-      Print(L"Set corbwp: %x\n", Controller->CorbWritePtr);
-    Controller->CorbWritePtr += 1;
+  Print(L"Set corbwp: %x\n", Controller->CorbWritePtr);
+  Controller->CorbWritePtr += 1;
+  HdaCheckForError(Controller->PciIo->Unmap(Controller->PciIo, Controller->CorbMapping), Controller);
   HDA_CORB_WRPTR WritePointer = {0};
   WritePointer.Bits.WritePtr = Controller->CorbWritePtr;
   HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaCorbWritePtr, 1, (VOID**)&WritePointer.Raw), Controller);
@@ -327,10 +325,14 @@ static UINT32 HdaWriteCommand(IN OUT HDA_CONTROLLER* Controller, IN UINT32 Codec
     HdaCheckForError(Controller->PciIo->Mem.Read(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaCorbWritePtr, 1, (VOID**)&WritePointer.Raw), Controller);
     HdaCheckForError(Controller->PciIo->Mem.Read(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaCorbReadPtr, 1, (VOID**)&ReadPointer.Raw), Controller);
   } while (ReadPointer.Raw == WritePointer.Raw);
+  Controller->RirbBytes = 2048;
+  HdaCheckForError(Controller->PciIo->Map(Controller->PciIo, EfiPciIoOperationBusMasterCommonBuffer, (VOID*)&Controller->Rirb, &Controller->RirbBytes, &Controller->RirbPhysAddress, (VOID**)&Controller->RirbMapping), Controller);
+  ASSERT(Controller->RirbBytes == 2048);
   Print(L"Read resp: %04x\n", Controller->Rirb[Controller->RirbReadPtr]);
   UINT32 Resp = Controller->Rirb[Controller->RirbReadPtr];
     Controller->RirbReadPtr++;
   Print(L"Set rirbrp: %x\n", Controller->RirbReadPtr);
+  HdaCheckForError(Controller->PciIo->Unmap(Controller->PciIo, Controller->RirbMapping), Controller);
   return Resp;
 }
 
@@ -348,12 +350,8 @@ static VOID HdaAllocateStreams(IN OUT HDA_CONTROLLER* Controller) {
   for (UINT64 InputStream = 0; InputStream < Gcap.Bits.InputStreams; ++InputStream) {
     Print(L"Alloc instrm %d: vaddr %08x, %d bytes, %d pages\n", InputStream, (UINTN)&Controller->InputBdl[InputStream], sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256, EFI_SIZE_TO_PAGES(sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256));
     HdaCheckForError(Controller->PciIo->AllocateBuffer(Controller->PciIo, AllocateAnyPages, EfiBootServicesData, EFI_SIZE_TO_PAGES(sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256), (VOID*)&Controller->InputBdl[InputStream], 0), Controller);
-    Controller->InputBdlBytes[InputStream] = sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256;
-    HdaCheckForError(Controller->PciIo->Map(Controller->PciIo, EfiPciIoOperationBusMasterCommonBuffer, (VOID*)&Controller->InputBdl[InputStream], &Controller->InputBdlBytes[InputStream], &Controller->InputBdlPhysAddress[InputStream], (VOID**)&Controller->InputBdlMapping[InputStream]), Controller);
-    ASSERT(Controller->InputBdlBytes[InputStream] == sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256);
-    Print(L"Map instrm %d: vaddr %08x, paddr %08x, mapping at %08x, %d bytes, %d pages\n", InputStream, (UINTN)&Controller->InputBdl[InputStream], Controller->InputBdlPhysAddress[InputStream], (UINTN)&Controller->InputBdlMapping[InputStream], Controller->InputBdlBytes[InputStream], EFI_SIZE_TO_PAGES(Controller->InputBdlBytes[InputStream]));
-    UINT32 BdlLo = (UINT32)((Controller->InputBdlPhysAddress[InputStream] & 0xFFFFFFFF00000000LL) >> 32);
-    UINT32 BdlHi = (UINT32)(Controller->InputBdlPhysAddress[InputStream] & 0xFFFFFFFFLL);
+    UINT32 BdlLo = (UINT32)BitFieldRead64((UINT64)&Controller->InputBdl[InputStream], 0, 31);
+    UINT32 BdlHi = (UINT32)BitFieldRead64((UINT64)&Controller->InputBdl[InputStream], 32, 63);
     Print(L"Set sd%dbdlbase (%x): %x\n", InputStream, HdaCalcIssOffset(InputStream, HdaStreamBdlLo), BdlLo);
     HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint32, 0, HdaCalcIssOffset(InputStream, HdaStreamBdlLo), 1, (VOID**)&BdlLo), Controller);
     Print(L"Set sd%dbdlubase (%x): %x\n", InputStream, HdaCalcIssOffset(InputStream, HdaStreamBdlHi), BdlHi);
@@ -362,12 +360,8 @@ static VOID HdaAllocateStreams(IN OUT HDA_CONTROLLER* Controller) {
   for (UINT64 OutputStream = 0; OutputStream < Gcap.Bits.OutputStreams; ++OutputStream) {
     Print(L"Alloc outstrm %d: vaddr %08x, %d bytes, %d pages\n", OutputStream, (UINTN)&Controller->OutputBdl[OutputStream], sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256, EFI_SIZE_TO_PAGES(sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256));
     HdaCheckForError(Controller->PciIo->AllocateBuffer(Controller->PciIo, AllocateAnyPages, EfiBootServicesData, EFI_SIZE_TO_PAGES(sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256), (VOID*)&Controller->OutputBdl[OutputStream], 0), Controller);
-    Controller->OutputBdlBytes[OutputStream] = sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256;
-    HdaCheckForError(Controller->PciIo->Map(Controller->PciIo, EfiPciIoOperationBusMasterCommonBuffer, (VOID*)&Controller->OutputBdl[OutputStream], &Controller->OutputBdlBytes[OutputStream], &Controller->OutputBdlPhysAddress[OutputStream], (VOID**)&Controller->OutputBdlMapping[OutputStream]), Controller);
-    ASSERT(Controller->OutputBdlBytes[OutputStream] == sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256);
-    Print(L"Map outstrm %d: vaddr %08x, paddr %08x, mapping at %08x, %d bytes, %d pages\n", OutputStream, (UINTN)&Controller->OutputBdl[OutputStream], Controller->OutputBdlPhysAddress[OutputStream], (UINTN)&Controller->OutputBdlMapping[OutputStream], Controller->OutputBdlBytes[OutputStream], EFI_SIZE_TO_PAGES(Controller->OutputBdlBytes[OutputStream]));
-    UINT32 BdlLo = (UINT32)((Controller->OutputBdlPhysAddress[OutputStream] & 0xFFFFFFFF00000000LL) >> 32);
-    UINT32 BdlHi = (UINT32)(Controller->OutputBdlPhysAddress[OutputStream] & 0xFFFFFFFFLL);
+    UINT32 BdlLo = (UINT32)BitFieldRead64((UINT64)&Controller->OutputBdl[OutputStream], 0, 31);
+    UINT32 BdlHi = (UINT32)BitFieldRead64((UINT64)&Controller->OutputBdl[OutputStream], 32, 63);
     Print(L"Set sd%dbdlbase (%x): %x\n", OutputStream, HdaCalcOssOffset(Controller, OutputStream, HdaStreamBdlLo), BdlLo);
     HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint32, 0, HdaCalcOssOffset(Controller, OutputStream, HdaStreamBdlLo), 1, (VOID**)&BdlLo), Controller);
     Print(L"Set sd%dbdlubase (%x): %x\n", OutputStream, HdaCalcOssOffset(Controller, OutputStream, HdaStreamBdlHi), BdlHi);
@@ -376,12 +370,8 @@ static VOID HdaAllocateStreams(IN OUT HDA_CONTROLLER* Controller) {
   for (UINT64 BidirectionalStream = 0; BidirectionalStream < Gcap.Bits.BidirectionalStreams; ++BidirectionalStream) {
     Print(L"Alloc bistrm %d: vaddr %08x, %d bytes, %d pages\n", BidirectionalStream, (UINTN)&Controller->BidirectionalBdl[BidirectionalStream], sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256, EFI_SIZE_TO_PAGES(sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256));
     HdaCheckForError(Controller->PciIo->AllocateBuffer(Controller->PciIo, AllocateAnyPages, EfiBootServicesData, EFI_SIZE_TO_PAGES(sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256), (VOID*)&Controller->BidirectionalBdl[BidirectionalStream], 0), Controller);
-    Controller->BidirectionalBdlBytes[BidirectionalStream] = sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256;
-    HdaCheckForError(Controller->PciIo->Map(Controller->PciIo, EfiPciIoOperationBusMasterCommonBuffer, (VOID*)&Controller->BidirectionalBdl[BidirectionalStream], &Controller->BidirectionalBdlBytes[BidirectionalStream], &Controller->BidirectionalBdlPhysAddress[BidirectionalStream], (VOID**)&Controller->BidirectionalBdlMapping[BidirectionalStream]), Controller);
-    ASSERT(Controller->BidirectionalBdlBytes[BidirectionalStream] == sizeof(HDA_BUFFER_DESCRIPTOR_LIST_ENTRY)*256);
-    Print(L"Map strm %d: vaddr %08x, paddr %08x, mapping at %08x, %d bytes, %d pages\n", BidirectionalStream, (UINTN)&Controller->BidirectionalBdl[BidirectionalStream], Controller->BidirectionalBdlPhysAddress[BidirectionalStream], (UINTN)&Controller->BidirectionalBdlMapping[BidirectionalStream], Controller->BidirectionalBdlBytes[BidirectionalStream], EFI_SIZE_TO_PAGES(Controller->BidirectionalBdlBytes[BidirectionalStream]));
-    UINT32 BdlLo = (UINT32)((Controller->BidirectionalBdlPhysAddress[BidirectionalStream] & 0xFFFFFFFF00000000LL) >> 32);
-    UINT32 BdlHi = (UINT32)(Controller->BidirectionalBdlPhysAddress[BidirectionalStream] & 0xFFFFFFFFLL);
+    UINT32 BdlLo = (UINT32)BitFieldRead64((UINT64)&Controller->BidirectionalBdl[BidirectionalStream], 0, 31);
+    UINT32 BdlHi = (UINT32)BitFieldRead64((UINT64)&Controller->BidirectionalBdl[BidirectionalStream], 32, 63);
     Print(L"Set sd%dbdlbase (%x): %x\n", BidirectionalStream, HdaCalcBssOffset(Controller, BidirectionalStream, HdaStreamBdlLo), BdlLo);
     HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint32, 0, HdaCalcBssOffset(Controller, BidirectionalStream, HdaStreamBdlLo), 1, (VOID**)&BdlLo), Controller);
     Print(L"Set sd%dbdlubase (%x): %x\n", BidirectionalStream, HdaCalcBssOffset(Controller, BidirectionalStream, HdaStreamBdlHi), BdlHi);
@@ -396,28 +386,20 @@ static VOID HdaAllocateStreams(IN OUT HDA_CONTROLLER* Controller) {
   // Todo: see if we can allocate the streams in a single pass too, get rid of those for loops (possible O(3n) excluding complexity of called routines)
   Print(L"Alloc strmpos: vaddr %08x, %d bytes, %d pages\n", (UINTN)&Controller->StreamPositions, sizeof(HDA_STREAM_DMA_POSITION)*(Gcap.Bits.InputStreams + Gcap.Bits.OutputStreams + Gcap.Bits.BidirectionalStreams), EFI_SIZE_TO_PAGES(sizeof(HDA_STREAM_DMA_POSITION)*(Gcap.Bits.InputStreams + Gcap.Bits.OutputStreams + Gcap.Bits.BidirectionalStreams)));
   HdaCheckForError(Controller->PciIo->AllocateBuffer(Controller->PciIo, AllocateAnyPages, EfiBootServicesData, EFI_SIZE_TO_PAGES(sizeof(HDA_STREAM_DMA_POSITION)*(Gcap.Bits.InputStreams + Gcap.Bits.OutputStreams + Gcap.Bits.BidirectionalStreams)), (VOID*)&Controller->StreamPositions, 0), Controller);
-  Controller->StreamPositionsBytes = sizeof(HDA_STREAM_DMA_POSITION)*(Gcap.Bits.InputStreams + Gcap.Bits.OutputStreams + Gcap.Bits.BidirectionalStreams);
-  HdaCheckForError(Controller->PciIo->Map(Controller->PciIo, EfiPciIoOperationBusMasterCommonBuffer, (VOID*)&Controller->StreamPositions, &Controller->StreamPositionsBytes, &Controller->StreamPositionsPhysAddress, (VOID**)&Controller->StreamPositionsMapping), Controller);
-  ASSERT(Controller->StreamPositionsBytes == sizeof(HDA_STREAM_DMA_POSITION)*(Gcap.Bits.InputStreams + Gcap.Bits.OutputStreams + Gcap.Bits.BidirectionalStreams));
-  Print(L"Map strmpos: vaddr %08x, paddr %08x, mapping at %08x, %d bytes, %d pages\n", (UINTN)&Controller->StreamPositions, Controller->StreamPositionsPhysAddress, (UINTN)&Controller->StreamPositionsMapping, Controller->StreamPositionsBytes, EFI_SIZE_TO_PAGES(Controller->StreamPositionsBytes));
 }
 
 static VOID HdaFreeStreams(IN OUT HDA_CONTROLLER* Controller) {
   HDA_GLOBAL_CAPABILITIES Gcap = {0};
   HdaCheckForError(Controller->PciIo->Mem.Read(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaGloblCaps, 1, (VOID**)&Gcap.Raw), Controller);
   for (UINTN Stream = 0; Stream < Gcap.Bits.InputStreams; ++Stream) {
-    HdaCheckForError(Controller->PciIo->Unmap(Controller->PciIo, Controller->InputBdlMapping[Stream]), Controller);
     HdaCheckForError(Controller->PciIo->FreeBuffer(Controller->PciIo, EFI_SIZE_TO_PAGES(Controller->InputBdlBytes[Stream]), (VOID*)&Controller->InputBdl[Stream]), Controller);
   }
   for (UINTN Stream = 0; Stream < Gcap.Bits.InputStreams; ++Stream) {
-    HdaCheckForError(Controller->PciIo->Unmap(Controller->PciIo, Controller->OutputBdlMapping[Stream]), Controller);
     HdaCheckForError(Controller->PciIo->FreeBuffer(Controller->PciIo, EFI_SIZE_TO_PAGES(Controller->OutputBdlBytes[Stream]), (VOID*)&Controller->OutputBdl[Stream]), Controller);
   }
   for (UINTN Stream = 0; Stream < Gcap.Bits.InputStreams; ++Stream) {
-    HdaCheckForError(Controller->PciIo->Unmap(Controller->PciIo, Controller->BidirectionalBdlMapping[Stream]), Controller);
     HdaCheckForError(Controller->PciIo->FreeBuffer(Controller->PciIo, EFI_SIZE_TO_PAGES(Controller->BidirectionalBdlBytes[Stream]), (VOID*)&Controller->BidirectionalBdl[Stream]), Controller);
   }
-  HdaCheckForError(Controller->PciIo->Unmap(Controller->PciIo, Controller->StreamPositionsMapping), Controller);
   HdaCheckForError(Controller->PciIo->FreeBuffer(Controller->PciIo, EFI_SIZE_TO_PAGES(Controller->StreamPositionsBytes), (VOID*)&Controller->StreamPositions), Controller);
 }
 
