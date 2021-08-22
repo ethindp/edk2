@@ -116,6 +116,11 @@ typedef enum {
   HdaWidgetTypeMax = MAX_UINT8
 } HDA_WIDGET_TYPE;
 
+typedef enum {
+  HdaCmdShort,
+  HdaCmdLong
+} HDA_VERB_TYPE;
+
 #pragma pack(push)
 #pragma pack(1)
 typedef union {
@@ -269,11 +274,17 @@ typedef struct {
 
 typedef union {
   struct {
-    UINT32 Data:8;
-    UINT32 Command:11;
+    UINT32 Payload:8;
+    UINT32 Command:12;
     UINT32 NodeId:8;
     UINT32 CodecAddress:4;
-  } Bits;
+  } Short;
+  struct {
+    UINT32 Payload:16;
+    UINT32 Command:4;
+    UINT32 NodeId:8;
+    UINT32 CodecAddress:4;
+  } Long;
   UINT32 Raw;
 } HDA_CORB_ENTRY;
 

@@ -20,34 +20,26 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <IndustryStandard/Pci.h>
 #include "HdaAudio.h"
 #include "Sine.h"
+#define HDA_USE_IMM
 
 static EFI_HANDLE HdaFindController(IN EFI_HANDLE*, UINTN);
 static HDA_CONTROLLER* HdaInstantiateAndReset(IN EFI_HANDLE);
 static VOID HdaCheckForError(IN EFI_STATUS, IN OUT HDA_CONTROLLER*);
 static VOID HdaEnumerateNodeIds(IN OUT HDA_CONTROLLER*);
 static VOID HdaConfigureWakeEventsAndInterrupts(IN OUT HDA_CONTROLLER*);
+#ifndef HDA_USE_IMM
 static VOID HdaAllocateCorb(IN OUT HDA_CONTROLLER*);
 static VOID HdaFreeCorb(IN OUT HDA_CONTROLLER*);
 static VOID HdaAllocateRirb(IN OUT HDA_CONTROLLER*);
 static VOID HdaFreeRirb(IN OUT HDA_CONTROLLER*);
-static UINT32 HdaWriteCommand(IN OUT HDA_CONTROLLER*, IN UINT32, IN UINT32, IN UINT32, IN UINT32);
+#endif
+static UINT32 HdaWriteCommand(IN OUT HDA_CONTROLLER*, IN UINT32, IN UINT32, IN UINT32, IN UINT32, IN HDA_VERB_TYPE);
 static VOID HdaAllocateStreams(IN OUT HDA_CONTROLLER*);
 static VOID HdaFreeStreams(IN OUT HDA_CONTROLLER*);
 static UINT64 HdaCalcIssOffset(IN UINT64 StreamIndex, IN UINT64 RegisterOffset);
 static UINT64 HdaCalcOssOffset(IN HDA_CONTROLLER* Controller, IN UINT64 StreamIndex, IN UINT64 RegisterOffset);
 static UINT64 HdaCalcBssOffset(IN HDA_CONTROLLER* Controller, IN UINT64 StreamIndex, IN UINT64 RegisterOffset);
 static VOID HdaCreateNodeTree(IN OUT HDA_CONTROLLER*);
-
-static EFI_HANDLE HdaFindController(IN EFI_HANDLE*, UINTN);
-static HDA_CONTROLLER* HdaInstantiateAndReset(IN EFI_HANDLE);
-static VOID HdaCheckForError(const IN EFI_STATUS);
-static VOID HdaEnumerateCodecs(IN OUT HDA_CONTROLLER*);
-static VOID HdaConfigureWakeEvents(IN OUT HDA_CONTROLLER*);
-static VOID HdaAllocateCorb(IN OUT HDA_CONTROLLER*);
-static VOID HdaFreeCorb(IN OUT HDA_CONTROLLER*);
-static VOID HdaAllocateRirb(IN OUT HDA_CONTROLLER*);
-static VOID HdaFreeRirb(IN OUT HDA_CONTROLLER*);
-static VOID HdaWriteCommand(IN OUT HDA_CONTROLLER*, IN UINT32, IN UINT32, IN UINT32, IN UINT32, OUT HDA_RIRB_RESPONSE*);
 
 EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE imageHandle, IN EFI_SYSTEM_TABLE* st) {
    gImageHandle = imageHandle;
@@ -80,11 +72,16 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE imageHandle, IN EFI_SYSTEM_TABLE* st) {
   // Disable wake events and interrupts
   Print(L"Disabling wake events and interrupts\n");
   HdaConfigureWakeEventsAndInterrupts(Controller);
-  // Allocate and map the CORB and RIRB
-  Print(L"Allocating corb\n");
-  HdaAllocateCorb(Controller);
-  Print(L"Allocating rirb\n");
-  HdaAllocateRirb(Controller);
+  // Use the immediate interface if available
+  // Otherwise, allocate and map the CORB and RIRB
+  UINT16 ImmStatus = 0;
+  HdaCheckForError(Controller->PciIo->Mem.Read(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaImmCmdStatus, 1, (VOID*)&ImmStatus), Controller);
+  #ifndef HDA_USE_IMM
+    Print(L"Allocating corb\n");
+    HdaAllocateCorb(Controller);
+    Print(L"Allocating rirb\n");
+    HdaAllocateRirb(Controller);
+  #endif
   Print(L"Allocating streams\n");
   HdaAllocateStreams(Controller);
   // Enumerate through all codecs and initialize them
@@ -108,7 +105,11 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE imageHandle, IN EFI_SYSTEM_TABLE* st) {
   HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint32, 0, HdaStreamLastValidIndex, 1, (VOID*)&LastValidIndex), Controller);
   UINT32 BdlSize = sizeof(SINE_SAMPLES)/sizeof(SINE_SAMPLES[0]);
   HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint32, 0, HdaCalcOssOffset(Controller, 0, HdaStreamCyclicBufferLength), 1, (VOID*)&BdlSize), Controller);
-  HdaWriteCommand(Controller, 0, 0x10, HdaVerbSetStreamChannel, 0x10);
+  for (UINTN i = 0; i < 16; ++i)
+    for (UINTN j = 0; j < 16; ++j)
+      if (BitFieldRead32(Controller->Nodes[i][j].FunctionGroupType, 0, 7) == HdaFunctionGroupTypeAudio && BitFieldRead32(Controller->Nodes[i][j].AudioWidgetCaps, 20, 23) == HdaWidgetTypeAudioOut)
+        Print(L"Found audio output codec: nid %08x, cad %08x\n", i, j);
+
   UINT32 StreamControlData = 0x100000;
   HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint32, 0, HdaCalcOssOffset(Controller, 0, HdaStreamControl), 1, (VOID*)&StreamControlData), Controller);
   UINT16 FifoSize = 4;
@@ -117,17 +118,28 @@ EFI_STATUS EFIAPI UefiMain(IN EFI_HANDLE imageHandle, IN EFI_SYSTEM_TABLE* st) {
   Format.Pcm.Channels = 1;
   Format.Pcm.BitsPerSample = 1;
   HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaCalcOssOffset(Controller, 0, HdaStreamFormat), 1, (VOID*)&Format.Raw), Controller);
-  // Where do all these magic numbers come from?
-  HdaWriteCommand(Controller, 0, 0x10, HdaVerbSetStreamFormat, Format.Raw);
-  HdaWriteCommand(Controller, 0, 0x11, HdaVerbSetStreamFormat, Format.Raw);
+  for (UINTN i = 0; i < 16; ++i)
+    for (UINTN j = 0; j < 16; ++j)
+      if (BitFieldRead32(Controller->Nodes[i][j].FunctionGroupType, 0, 7) == HdaFunctionGroupTypeAudio && BitFieldRead32(Controller->Nodes[i][j].AudioWidgetCaps, 20, 23) == HdaWidgetTypeAudioOut) {
+        HdaWriteCommand(Controller, i, j, HdaVerbSetStreamFormat, Format.Raw, HdaCmdShort);
+        // Construct our set amplifier request
+        UINT16 Data = 0;
+        Data |= (1 << 12) | (1 << 13) | (1 << 14) | (1 << 15); // Set all channels
+        Data = BitFieldWrite16(Data, 0, 6, (UINT16)BitFieldRead32(Controller->Nodes[i][j].OutAmpCaps, 0, 6));
+        HdaWriteCommand(Controller, i, j, HdaVerbSetAmplifierGain, Data, HdaCmdLong);
+    }
   StreamControlData = 0x100002;
   HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint32, 0, HdaCalcOssOffset(Controller, 0, HdaStreamControl), 1, (VOID*)&StreamControlData), Controller);
+  UINT32 StreamSync = 0;
+  HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint32, 0, HdaStrmSync, 1, (VOID*)&StreamSync), Controller);
   Print(L"Freeing streams\n");
   HdaFreeStreams(Controller);
-  Print(L"Freeing corb\n");
-  HdaFreeCorb(Controller);
-  Print(L"Freeing rirb\n");
-  HdaFreeRirb(Controller);
+  #ifndef HDA_USE_IMM
+    Print(L"Freeing corb\n");
+    HdaFreeCorb(Controller);
+    Print(L"Freeing rirb\n");
+    HdaFreeRirb(Controller);
+  #endif
   Print(L"Freeing controller buffer\n");
   HdaCheckForError(gBS->FreePool(Controller), NULL);
   return EFI_SUCCESS;
@@ -199,6 +211,7 @@ static VOID HdaConfigureWakeEventsAndInterrupts(IN OUT HDA_CONTROLLER* Controlle
   HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint32, 0, HdaIntCtl, 1, (VOID**)&Interrupts), Controller);
 }
 
+#ifndef HDA_USE_IMM
 static VOID HdaAllocateCorb(IN OUT HDA_CONTROLLER* Controller) {
   // First, reset the read pointer
   HDA_CORB_CONTROL CorbCtl = {0};
@@ -312,39 +325,84 @@ static VOID HdaFreeRirb(IN OUT HDA_CONTROLLER* Controller) {
   Print(L"Free rirb: vaddr %08x, size %d, %d pages\n", (UINTN)&Controller->Rirb, Controller->RirbBytes, EFI_SIZE_TO_PAGES(Controller->RirbBytes));
   HdaCheckForError(Controller->PciIo->FreeBuffer(Controller->PciIo, EFI_SIZE_TO_PAGES(Controller->RirbBytes), (VOID*)Controller->Rirb), Controller);
 }
+#endif
 
-static UINT32 HdaWriteCommand(IN OUT HDA_CONTROLLER* Controller, IN UINT32 CodecAddress, IN UINT32 NodeId, IN UINT32 Command, IN UINT32 Data) {
-  Controller->CorbBytes = 1024;
-  HdaCheckForError(Controller->PciIo->Map(Controller->PciIo, EfiPciIoOperationBusMasterCommonBuffer, (VOID*)&Controller->Corb, &Controller->CorbBytes, &Controller->CorbPhysAddress, (VOID**)&Controller->CorbMapping), Controller);
-  ASSERT(Controller->CorbBytes == 1024);
+static UINT32 HdaWriteCommand(IN OUT HDA_CONTROLLER* Controller, IN UINT32 CodecAddress, IN UINT32 NodeId, IN UINT32 Command, IN UINT32 Data, HDA_VERB_TYPE VerbType) {
   HDA_CORB_ENTRY Entry = {0};
-  Entry.Bits.CodecAddress = CodecAddress;
-  Entry.Bits.NodeId = NodeId;
-  Entry.Bits.Command = Command;
-  Entry.Bits.Data = Data;
-  Print(L"Manifest corb entry: %04x\n", Entry.Raw);
-  Controller->Corb[Controller->CorbWritePtr] = Entry.Raw;
-  Print(L"Set corbwp: %x\n", Controller->CorbWritePtr);
-  Controller->CorbWritePtr += 1;
-  HdaCheckForError(Controller->PciIo->Unmap(Controller->PciIo, Controller->CorbMapping), Controller);
-  HDA_CORB_WRPTR WritePointer = {0};
-  WritePointer.Bits.WritePtr = Controller->CorbWritePtr;
-  HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaCorbWritePtr, 1, (VOID**)&WritePointer.Raw), Controller);
-  HDA_CORB_RDPTR ReadPointer = {0};
-  Print(L"Waiting\n");
-  do {
-    HdaCheckForError(Controller->PciIo->Mem.Read(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaCorbWritePtr, 1, (VOID**)&WritePointer.Raw), Controller);
-    HdaCheckForError(Controller->PciIo->Mem.Read(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaCorbReadPtr, 1, (VOID**)&ReadPointer.Raw), Controller);
-  } while (ReadPointer.Raw == WritePointer.Raw);
-  Controller->RirbBytes = 2048;
-  HdaCheckForError(Controller->PciIo->Map(Controller->PciIo, EfiPciIoOperationBusMasterCommonBuffer, (VOID*)&Controller->Rirb, &Controller->RirbBytes, &Controller->RirbPhysAddress, (VOID**)&Controller->RirbMapping), Controller);
-  ASSERT(Controller->RirbBytes == 2048);
-  Print(L"Read resp: %04x\n", Controller->Rirb[Controller->RirbReadPtr]);
-  UINT32 Resp = Controller->Rirb[Controller->RirbReadPtr];
-    Controller->RirbReadPtr++;
-  Print(L"Set rirbrp: %x\n", Controller->RirbReadPtr);
-  HdaCheckForError(Controller->PciIo->Unmap(Controller->PciIo, Controller->RirbMapping), Controller);
-  return Resp;
+  if (VerbType == HdaCmdShort) {
+    Entry.Short.CodecAddress = CodecAddress % (1 << 4);
+    Entry.Short.NodeId = NodeId % (1 << 8);
+    Entry.Short.Command = Command % (1 << 12);
+    Entry.Short.Payload = Data % (1 << 8);
+  } else {
+    Entry.Long.CodecAddress = CodecAddress % (1 << 4);
+    Entry.Long.NodeId = NodeId % (1 << 8);
+    Entry.Long.Command = Command % (1 << 4);
+    Entry.Long.Payload = Data % (1 << 16);
+  }
+  // Disable indirect node addressing if present
+  if (Entry.Raw & (1 << 27)) {
+    Print(L"Warning: verb %04x uses indirect node addressing; changing to ", Entry.Raw);
+    Entry.Raw &= ~(1 << 27);
+    Print(L"%04x\n", Entry.Raw);
+  }
+  #ifdef HDA_USE_IMM
+    // Write constructed verb in immediate command output
+    Print(L"Queueing verb: %04x\n", Entry.Raw);
+    HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint32, 0, HdaImmCmdOut, 1, (VOID**)&Entry.Raw), Controller);
+    // Set ICB bit (bit 0 of immediate command status) to allow for command processing
+    Print(L"Setting ICB\n");
+    UINT16 ImmStatus = 0;
+    HdaCheckForError(Controller->PciIo->Mem.Read(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaImmCmdStatus, 1, (VOID*)&ImmStatus), Controller);
+    ImmStatus |= (1 << 0);
+    HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaImmCmdStatus, 1, (VOID*)&ImmStatus), Controller);
+    EFI_EVENT Event;
+    HdaCheckForError(gBS->CreateEvent(EVT_TIMER, TPL_NOTIFY, NULL, NULL, &Event), Controller);
+    HdaCheckForError(gBS->SetTimer(Event, TimerRelative, 10000), Controller);
+    Print(L"Waiting on IRV\n");
+    do {
+      if (gBS->CheckEvent(Event) == EFI_SUCCESS)
+        break;
+      HdaCheckForError(Controller->PciIo->Mem.Read(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaImmCmdStatus, 1, (VOID*)&ImmStatus), Controller);
+    }while (!BitFieldRead16(ImmStatus, 1, 1));
+    if (gBS->CheckEvent(Event) == EFI_SUCCESS) {
+      HdaCheckForError(gBS->CloseEvent(Event), Controller);
+      Print(L"Timed out while waiting for response\n");
+      return MAX_UINT32;
+    }
+    HdaCheckForError(gBS->CloseEvent(Event), Controller);
+    UINT32 Resp = 0;
+    HdaCheckForError(Controller->PciIo->Mem.Read(Controller->PciIo, EfiPciIoWidthUint32, 0, HdaImmRespIn, 1, (VOID*)&Resp), Controller);
+    HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaImmCmdStatus, 1, (VOID*)&ImmStatus), Controller);
+    Print(L"Read resp: %04x\n", Resp);
+    return Resp;
+  #else
+    Controller->CorbBytes = 1024;
+    HdaCheckForError(Controller->PciIo->Map(Controller->PciIo, EfiPciIoOperationBusMasterCommonBuffer, (VOID*)&Controller->Corb, &Controller->CorbBytes, &Controller->CorbPhysAddress, (VOID**)&Controller->CorbMapping), Controller);
+    ASSERT(Controller->CorbBytes == 1024);
+    Controller->Corb[Controller->CorbWritePtr] = Entry.Raw;
+    Print(L"Set corbwp: %x\n", Controller->CorbWritePtr);
+    Controller->CorbWritePtr += 1;
+    HdaCheckForError(Controller->PciIo->Unmap(Controller->PciIo, Controller->CorbMapping), Controller);
+    HDA_CORB_WRPTR WritePointer = {0};
+    WritePointer.Bits.WritePtr = Controller->CorbWritePtr;
+    HdaCheckForError(Controller->PciIo->Mem.Write(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaCorbWritePtr, 1, (VOID**)&WritePointer.Raw), Controller);
+    HDA_CORB_RDPTR ReadPointer = {0};
+    Print(L"Waiting\n");
+    do {
+      HdaCheckForError(Controller->PciIo->Mem.Read(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaCorbWritePtr, 1, (VOID**)&WritePointer.Raw), Controller);
+      HdaCheckForError(Controller->PciIo->Mem.Read(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaCorbReadPtr, 1, (VOID**)&ReadPointer.Raw), Controller);
+    } while (ReadPointer.Raw == WritePointer.Raw);
+    Controller->RirbBytes = 2048;
+    HdaCheckForError(Controller->PciIo->Map(Controller->PciIo, EfiPciIoOperationBusMasterCommonBuffer, (VOID*)&Controller->Rirb, &Controller->RirbBytes, &Controller->RirbPhysAddress, (VOID**)&Controller->RirbMapping), Controller);
+    ASSERT(Controller->RirbBytes == 2048);
+    Print(L"Read resp: %04x\n", Controller->Rirb[Controller->RirbReadPtr]);
+    UINT32 Resp = Controller->Rirb[Controller->RirbReadPtr];
+      Controller->RirbReadPtr++;
+    Print(L"Set rirbrp: %x\n", Controller->RirbReadPtr);
+    HdaCheckForError(Controller->PciIo->Unmap(Controller->PciIo, Controller->RirbMapping), Controller);
+    return Resp;
+  #endif
 }
 
 static VOID HdaCheckForError(IN EFI_STATUS Status, IN OUT HDA_CONTROLLER* Controller) {
@@ -434,72 +492,33 @@ static VOID HdaCreateNodeTree(IN OUT HDA_CONTROLLER* Controller) {
   for (UINT32 NodeId = 0; NodeId < 16; ++NodeId) {
     if (Controller->DetectedNodes & (1 << NodeId)) {
       for (UINT32 CodecAddress = 0; CodecAddress < (1 << 4); ++CodecAddress) {
-        UINT32 Resp = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamVendorDevId);
+        UINT32 Resp = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamVendorDevId, HdaCmdShort);
         // This is our check to see if the codec even exists.
         // If it has no vendor/dev id, we bail out.
-        if (Resp == 0x0000)
+        // If the codec doesn't exist or the codec did not respond in time, we bail out.
+        if (Resp == 0x0000 || Resp == MAX_UINT32)
           continue;
         Controller->Nodes[NodeId][CodecAddress].VendorDeviceId = Resp;
-        Controller->Nodes[NodeId][CodecAddress].RevisionId = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamRevId);
-        Controller->Nodes[NodeId][CodecAddress].NodeCount = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamNodeCount);
-        Controller->Nodes[NodeId][CodecAddress].FunctionGroupType = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamFunctionGroupType);
-        Controller->Nodes[NodeId][CodecAddress].AudioGroupCaps = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamAudioGroupCapabilities);
-        Controller->Nodes[NodeId][CodecAddress].AudioWidgetCaps = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamAudioWidgetCapabilities);
-        Controller->Nodes[NodeId][CodecAddress].SupPcmRates = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamSupportedPcmRates);
-        Controller->Nodes[NodeId][CodecAddress].SupFmts = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamSupportedFormats);
-        Controller->Nodes[NodeId][CodecAddress].PinCaps = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamPinCapabilities);
-        Controller->Nodes[NodeId][CodecAddress].InAmpCaps = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamInputAmplifierCapabilities);
-        Controller->Nodes[NodeId][CodecAddress].ConnListLen = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamConnectionListLength);
-        Controller->Nodes[NodeId][CodecAddress].SupPowerStates = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamSupportedPowerStates);
-        Controller->Nodes[NodeId][CodecAddress].ProcCaps = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamProcessingCapabilities);
-        Controller->Nodes[NodeId][CodecAddress].GpioCount = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamGpioCount);
-        Controller->Nodes[NodeId][CodecAddress].OutAmpCaps = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamOutputAmplifierCapabilities);
-        Controller->Nodes[NodeId][CodecAddress].VolCaps = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamVolumeCapabilities);
-        Controller->Nodes[NodeId][CodecAddress].NodeCount &= 0xFF;
-        Controller->Nodes[NodeId][CodecAddress].FunctionGroupType &= 0xFF;
-        HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbSetPowerState, 0x0);
-        // Todo: This is a widget-dependent verb, so figure out how to identify it at runtime
-        HdaWriteCommand(Controller, CodecAddress, NodeId, 0x3B0, 0x0);
+        Controller->Nodes[NodeId][CodecAddress].RevisionId = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamRevId, HdaCmdShort);
+        Controller->Nodes[NodeId][CodecAddress].NodeCount = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamNodeCount, HdaCmdShort);
+        Controller->Nodes[NodeId][CodecAddress].FunctionGroupType = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamFunctionGroupType, HdaCmdShort);
+        Controller->Nodes[NodeId][CodecAddress].AudioGroupCaps = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamAudioGroupCapabilities, HdaCmdShort);
+        Controller->Nodes[NodeId][CodecAddress].AudioWidgetCaps = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamAudioWidgetCapabilities, HdaCmdShort);
+        Controller->Nodes[NodeId][CodecAddress].SupPcmRates = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamSupportedPcmRates, HdaCmdShort);
+        Controller->Nodes[NodeId][CodecAddress].SupFmts = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamSupportedFormats, HdaCmdShort);
+        Controller->Nodes[NodeId][CodecAddress].PinCaps = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamPinCapabilities, HdaCmdShort);
+        Controller->Nodes[NodeId][CodecAddress].InAmpCaps = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamInputAmplifierCapabilities, HdaCmdShort);
+        Controller->Nodes[NodeId][CodecAddress].ConnListLen = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamConnectionListLength, HdaCmdShort);
+        Controller->Nodes[NodeId][CodecAddress].SupPowerStates = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamSupportedPowerStates, HdaCmdShort);
+        Controller->Nodes[NodeId][CodecAddress].ProcCaps = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamProcessingCapabilities, HdaCmdShort);
+        Controller->Nodes[NodeId][CodecAddress].GpioCount = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamGpioCount, HdaCmdShort);
+        Controller->Nodes[NodeId][CodecAddress].OutAmpCaps = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamOutputAmplifierCapabilities, HdaCmdShort);
+        Controller->Nodes[NodeId][CodecAddress].VolCaps = HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbGetParameter, HdaParamVolumeCapabilities, HdaCmdShort);
+        HdaWriteCommand(Controller, CodecAddress, NodeId, HdaVerbSetPowerState, 0x0, HdaCmdShort);
       }
     } else
       continue;
   }
-}
-
-EFI_HANDLE HdaFindController(IN EFI_HANDLE* Handles, UINTN NumHandles) {
-  for (UINTN i = 0; i < NumHandles; ++i) {
-    EFI_PCI_IO_PROTOCOL* PciIo = NULL;
-    HdaCheckForError(gBS->OpenProtocol(Handles[i], &gEfiPciIoProtocolGuid, (VOID**)&PciIo, gImageHandle, NULL, EFI_OPEN_PROTOCOL_GET_PROTOCOL));
-    PCI_TYPE00 Pci = {0};
-    HdaCheckForError(PciIo->Pci.Read(PciIo, EfiPciIoWidthUint8, 0x0000, sizeof(Pci), &Pci));
-    if (IS_CLASS2(&Pci, 0x04, 0x03) || IS_CLASS3(&Pci, 0x04, 0x03, 0x01))
-      for (UINTN j = 0; j < sizeof(HDA_DEVICES)/sizeof(HDA_DEVICES[0]); ++j)
-        if (Pci.Hdr.VendorId == HDA_DEVICES[j][0] && Pci.Hdr.DeviceId == HDA_DEVICES[j][1]) {
-          HdaCheckForError(gBS->CloseProtocol(Handles[i], &gEfiPciIoProtocolGuid, gImageHandle, NULL));
-          return Handles[i];
-        }
-    else {
-      Print(L"No HDA devices found; aborting\n");
-      HdaCheckForError(EFI_ABORTED);
-    }
-  }
-
-///
-/// Resets the HDA controller and allocates an HDA_CONTROLLER struct that is returned to the caller
-///
-static HDA_CONTROLLER* HdaInstantiateAndReset(IN EFI_HANDLE Handle) {
-  HDA_CONTROLLER* Controller = NULL;
-  HdaCheckForError(gBS->AllocatePool(EfiBootServicesData, sizeof(HDA_CONTROLLER), (VOID**)&Controller));
-  ZeroMem(Controller);
-  Controller->Handle = Handle;
-  HdaCheckForError(gBS->OpenProtocol(Handles[i], &gEfiPciIoProtocolGuid, (VOID**)&Controller->PciIo, gImageHandle, NULL, EFI_OPEN_PROTOCOL_EXCLUSIVE));
-  HDA_GLOBAL_CONTROL Gctl = {0};
-  Gctl.Bits.ControllerReset = 1;
-  HdaCheckForError(Controller->PciIo->Mem.Write(PciIo, EfiPciIoWidthUint32, 0, HdaGloblCtl, 1, (VOID**)&Controller.Raw));
-  do
-    HdaCheckForError(Controller->PciIo->Mem.Read(PciIo, EfiPciIoWidthUint32, 0, HdaGloblCtl, 1, (VOID**)&Controller.Raw));
-  while (!Gctl.Bits.ControllerReset);
-  return Controller;
 }
 
 
