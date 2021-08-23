@@ -25,7 +25,7 @@ typedef enum {
   HdaIntCtl = 0x20,
   HdaIntStatus = 0x24,
   HdaWallClock = 0x30,
-  HdaStrmSync = 0x34,
+  HdaStrmSync = 0x38,
   HdaCorbLo = 0x40,
   HdaCorbHi = 0x44,
   HdaCorbWritePtr = 0x48,
@@ -383,9 +383,9 @@ typedef struct {
   VOID* InputBdlMapping[16];
   VOID* OutputBdlMapping[16];
   VOID* BidirectionalBdlMapping[16];
-  HDA_BUFFER_DESCRIPTOR_LIST_ENTRY InputBdl[256];
-  HDA_BUFFER_DESCRIPTOR_LIST_ENTRY OutputBdl[256];
-  HDA_BUFFER_DESCRIPTOR_LIST_ENTRY BidirectionalBdl[256];
+  HDA_BUFFER_DESCRIPTOR_LIST_ENTRY InputBdl[16][256];
+  HDA_BUFFER_DESCRIPTOR_LIST_ENTRY OutputBdl[16][256];
+  HDA_BUFFER_DESCRIPTOR_LIST_ENTRY BidirectionalBdl[16][256];
   /// Stream DMA positions
   UINTN StreamPositionsBytes;
   VOID* StreamPositionsMapping;
