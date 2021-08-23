@@ -467,8 +467,8 @@ static VOID HdaFreeStreams(IN OUT HDA_CONTROLLER* Controller) {
 static UINT64 HdaCalcOssOffset(IN HDA_CONTROLLER* Controller, IN UINT64 StreamIndex, IN UINT64 RegisterOffset) {
   HDA_GLOBAL_CAPABILITIES Gcap = {0};
   HdaCheckForError(Controller->PciIo->Mem.Read(Controller->PciIo, EfiPciIoWidthUint16, 0, HdaGloblCaps, 1, (VOID**)&Gcap.Raw), Controller);
-  UINT16 IssCount = ((Gcap.Raw >> 8) & 0xF);
-  return (0x80 + (IssCount * 0x20) + (StreamIndex * 0x20)) + RegisterOffset;
+  UINT16 IssCount = BitFieldRead16(Gcap.Raw, 12, 15);
+  return RegisterOffset + (0x80 + (IssCount * 0x20) + (StreamIndex * 0x20));
 }
 
 static VOID HdaCreateNodeTree(IN OUT HDA_CONTROLLER* Controller) {
