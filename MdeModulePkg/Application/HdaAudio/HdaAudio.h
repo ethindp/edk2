@@ -79,7 +79,7 @@ typedef enum {
 
 typedef enum {
   HdaParamVendorDevId,
-  HdaParamRevId = 0x02,
+  HdaParamRevisionId = 0x02,
   HdaParamNodeCount = 0x04,
   HdaParamFunctionGroupType,
   HdaParamAudioGroupCapabilities = 0x08,
@@ -344,7 +344,7 @@ typedef struct {
   UINT32 GpioCount;
   UINT32 OutAmpCaps;
   UINT32 VolCaps;
-} HDA_NODE;
+} HDA_CODEC;
 
 #pragma pack(pop)
 
@@ -392,13 +392,13 @@ typedef struct {
   EFI_PHYSICAL_ADDRESS StreamPositionsPhysAddress;
   HDA_STREAM_DMA_POSITION* StreamPositions;
   /// HDA nodes (there can be up to 4096)
-  HDA_NODE Nodes[16][16];
+  HDA_CODEC* Codecs[16][256];
   /// Current CORB write pointer
   UINT8 CorbWritePtr;
   /// Current RIRB read pointer
   UINT8 RirbReadPtr;
   /// List of nodes that are present
-  UINT16 DetectedNodes;
+  UINT16 DetectedCodecs;
 } HDA_CONTROLLER;
 
 // HDA vendor ID/device list
