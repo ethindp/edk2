@@ -27,6 +27,9 @@
 #  VALID_ARCHITECTURES           = IA32 X64
 #
 
+[BuildOptions]
+        GCC:*_*_*_CC_FLAGS = -Wno-error=vla-parameter
+
 [Sources]
   GuidedSectionExtraction.c
   BrotliDecUefiSupport.c

@@ -178,7 +178,7 @@ struct _EHC_QTD {
 // Interrupt QHs are linked to periodic frame list in the reversed
 // 2^N tree. Each interrupt QH is linked to the list starting at
 // frame 0. There is a dummy interrupt QH linked to each frame as
-// a sentinental whose polling interval is 1. Synchronous interrupt
+// a sentinel whose polling interval is 1. Synchronous interrupt
 // transfer is linked after this dummy QH.
 //
 // For control/bulk transfer, only synchronous (in the sense of UEFI)

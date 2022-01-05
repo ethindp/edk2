@@ -1,0 +1,32 @@
+# VirtIO sound Audio application
+#
+# This application searches for a Virtio-SND audio device and initializes it.
+#
+# Copyright (c) 2021 Ethin Probst.
+
+[Defines]
+        INF_VERSION                    = 1.25
+        BASE_NAME                      = VirtioAudio
+        FILE_GUID=62e589b1-1c96-4fd9-8600-43a07cebd761
+        MODULE_TYPE                    = UEFI_APPLICATION
+        VERSION_STRING                 = 1.0
+        ENTRY_POINT                    = UefiMain
+
+[Sources]
+        VirtioAudio.c
+
+[Packages]
+        MdePkg/MdePkg.dec
+        OvmfPkg/OvmfPkg.dec
+
+[LibraryClasses]
+        UefiApplicationEntryPoint
+        UefiLib
+        PcdLib
+        VirtioLib
+
+[Protocols]
+        gVirtioDeviceProtocolGuid
+
+[Pcd]
+

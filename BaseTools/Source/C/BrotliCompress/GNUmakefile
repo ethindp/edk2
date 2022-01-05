@@ -39,3 +39,4 @@ include $(MAKEROOT)/Makefiles/app.makefile
 
 TOOL_INCLUDE = -I ./brotli/c/include
 LIBS += -lm
+BUILD_CFLAGS += -Wno-error=vla-parameter

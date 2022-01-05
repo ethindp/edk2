@@ -1,0 +1,54 @@
+Remote debugging using :1234
+0x000000007e4b9517 in ?? ()
+add symbol table from file "Build/MdeModule/DEBUG_GCC5/X64/UsbAudio.debug"
+Reading symbols from Build/MdeModule/DEBUG_GCC5/X64/UsbAudio.debug...
+Expanding full symbols from Build/MdeModule/DEBUG_GCC5/X64/UsbAudio.debug...
+add symbol table from file "Build/MdeModule/DEBUG_GCC5/X64/UsbAudio.debug"
+Not confirmed.
+add symbol table from file "Build/MdeModule/DEBUG_GCC5/X64/UsbAudio.debug" at
+	.text_addr = 0x7e4b8000
+Reading symbols from Build/MdeModule/DEBUG_GCC5/X64/UsbAudio.debug...
+Expanding full symbols from Build/MdeModule/DEBUG_GCC5/X64/UsbAudio.debug...
+#0  0x000000007e4b9517 in UefiMain (st=0x7f9ee018, imageHandle=0x7e4f7518) at /home/ethin/source/edk/edk2/MdeModulePkg/Application/UsbAudio/UsbAudio.c:72
+#1  ProcessModuleEntryPointList (SystemTable=0x7f9ee018, ImageHandle=0x7e4f7518) at /home/ethin/source/edk/edk2/Build/MdeModule/DEBUG_GCC5/X64/MdeModulePkg/Application/UsbAudio/UsbAudio/DEBUG/AutoGen.c:300
+#2  _ModuleEntryPoint (ImageHandle=0x7e4f7518, SystemTable=0x7f9ee018) at /home/ethin/source/edk/edk2/MdePkg/Library/UefiApplicationEntryPoint/ApplicationEntryPoint.c:59
+#3  0x000000007fead316 in ?? ()
+#4  0x000000007e4f7518 in ?? ()
+#5  0x000000007feab5c7 in ?? ()
+#6  0x000000007fea3520 in ?? ()
+#7  0x0000000101000000 in ?? ()
+#8  0x0000000000000030 in ?? ()
+#9  0x000000007e4f6018 in ?? ()
+#10 0x000000007e60a918 in ?? ()
+#11 0x000000000000011d in ?? ()
+#12 0x000000007fea3528 in ?? ()
+#13 0x000000007e4f7818 in ?? ()
+#14 0x000000007e4f7c98 in ?? ()
+#15 0x000000007fea3538 in ?? ()
+#16 0x000000007e3abfca in ?? ()
+#17 0x000000007e4f7418 in ?? ()
+#18 0x000000007fea3528 in ?? ()
+#19 0x0000000000000000 in ?? ()
+1	/** @file
+2	  GCC inline implementation of BaseLib processor specific functions.
+3	
+4	  Copyright (c) 2006 - 2020, Intel Corporation. All rights reserved.<BR>
+5	  Portions copyright (c) 2008 - 2009, Apple Inc. All rights reserved.<BR>
+6	  SPDX-License-Identifier: BSD-2-Clause-Patent
+7	
+8	**/
+9	
+10	
+72	} else if (interfaceDescriptor.InterfaceClass == 0x01 && interfaceDescriptor.InterfaceSubClass == 0x03) {
+No symbol "Index" in current context.
+UsbIo = 0x0
+interfaceDescriptor = {Length = 0 '\000', DescriptorType = 8 '\b', InterfaceNumber = 1 '\001', AlternateSetting = 0 '\000', NumEndpoints = 0 '\000', InterfaceClass = 0 '\000', InterfaceSubClass = 0 '\000', InterfaceProtocol = 0 '\000', 
+  Interface = 0 '\000'}
+i = 2118887920
+numHandles = 264
+handles = 0x4
+status = <optimized out>
+_ModuleEntryPoint + 576 in section .text of /home/ethin/source/edk/edk2/Build/MdeModule/DEBUG_GCC5/X64/UsbAudio.debug
+Detaching from program: /home/ethin/source/edk/edk2/Build/MdeModule/DEBUG_GCC5/X64/UsbAudio.efi, process 1
+Ending remote debugging.
+[Inferior 1 (process 1) detached]
