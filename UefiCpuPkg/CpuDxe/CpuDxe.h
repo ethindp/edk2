@@ -1,18 +1,18 @@
 /** @file
   CPU DXE Module to produce CPU ARCH Protocol and CPU MP Protocol.
 
-  Copyright (c) 2008 - 2019, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2008 - 2023, Intel Corporation. All rights reserved.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _CPU_DXE_H_
-#define _CPU_DXE_H_
+#pragma once
 
 #include <PiDxe.h>
 
 #include <Protocol/Cpu.h>
 #include <Protocol/MpService.h>
+#include <Register/Intel/Cpuid.h>
 #include <Register/Intel/Msr.h>
 
 #include <Ppi/SecPlatformInformation.h>
@@ -28,7 +28,6 @@
 #include <Library/DebugLib.h>
 #include <Library/MtrrLib.h>
 #include <Library/LocalApicLib.h>
-#include <Library/UefiCpuLib.h>
 #include <Library/UefiLib.h>
 #include <Library/CpuExceptionHandlerLib.h>
 #include <Library/HobLib.h>
@@ -295,5 +294,3 @@ PageFaultExceptionHandler (
 
 extern BOOLEAN  mIsAllocatingPageTable;
 extern UINTN    mNumberOfProcessors;
-
-#endif

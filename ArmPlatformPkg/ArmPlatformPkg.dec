@@ -19,7 +19,7 @@
 #                   Comments are used for Keywords and Module Types.
 #
 # Supported Module Types:
-#  BASE SEC PEI_CORE PEIM DXE_CORE DXE_DRIVER DXE_RUNTIME_DRIVER DXE_SMM_DRIVER DXE_SAL_DRIVER UEFI_DRIVER UEFI_APPLICATION
+#  BASE SEC PEI_CORE PEIM DXE_CORE DXE_DRIVER DXE_RUNTIME_DRIVER DXE_SMM_DRIVER UEFI_DRIVER UEFI_APPLICATION
 #
 ################################################################################
 [Includes.common]
@@ -38,10 +38,6 @@
   #
   LcdPlatformLib|Include/Library/LcdPlatformLib.h
 
-  ##  @libraryclass  Provides a Nor flash interface.
-  #
-  NorFlashPlatformLib|Include/Library/NorFlashPlatformLib.h
-
   ##  @libraryclass  Provides an interface to the clock of a PL011 device.
   #
   PL011UartClockLib|Include/Library/PL011UartClockLib.h
@@ -54,10 +50,6 @@
   gArmPlatformTokenSpaceGuid   = { 0x9c0aaed4, 0x74c5, 0x4043, { 0xb4, 0x17, 0xa3, 0x22, 0x38, 0x14, 0xce, 0x76 } }
 
 [PcdsFeatureFlag.common]
-  gArmPlatformTokenSpaceGuid.PcdSendSgiToBringUpSecondaryCores|FALSE|BOOLEAN|0x00000004
-
-  gArmPlatformTokenSpaceGuid.PcdNorFlashCheckBlockLocked|FALSE|BOOLEAN|0x0000003C
-
   # Disable the GOP controller on ExitBootServices(). By default the value is FALSE,
   # we assume the OS will handle the FrameBuffer from the UEFI GOP information.
   gArmPlatformTokenSpaceGuid.PcdGopDisableOnExitBootServices|FALSE|BOOLEAN|0x0000003D
@@ -69,7 +61,6 @@
   # Stack for CPU Cores in Non Secure Mode
   gArmPlatformTokenSpaceGuid.PcdCPUCoresStackBase|0|UINT64|0x00000009
   gArmPlatformTokenSpaceGuid.PcdCPUCorePrimaryStackSize|0x10000|UINT32|0x00000037
-  gArmPlatformTokenSpaceGuid.PcdCPUCoreSecondaryStackSize|0x1000|UINT32|0x0000000A
 
   # Size of the region used by UEFI in permanent memory (Reserved 128MB by default)
   gArmPlatformTokenSpaceGuid.PcdSystemMemoryUefiRegionSize|0x08000000|UINT32|0x00000015
@@ -94,6 +85,7 @@
   gArmPlatformTokenSpaceGuid.PcdSerialDbgRegisterBase|0x00000000|UINT64|0x00000030
   gArmPlatformTokenSpaceGuid.PcdSerialDbgUartBaudRate|0x00000000|UINT64|0x00000031
   gArmPlatformTokenSpaceGuid.PcdSerialDbgUartClkInHz|0x00000000|UINT32|0x00000032
+  gArmPlatformTokenSpaceGuid.PcdSerialDbgInterrupt|0x00000000|UINT32|0x00000041
 
   ## PL061 GPIO
   gArmPlatformTokenSpaceGuid.PcdPL061GpioBase|0x0|UINT32|0x00000025

@@ -6,13 +6,13 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _EFI_PCI_BUS_H_
-#define _EFI_PCI_BUS_H_
+#pragma once
 
 #include <PiDxe.h>
 
 #include <Protocol/LoadedImage.h>
 #include <Protocol/PciHostBridgeResourceAllocation.h>
+#include <Protocol/PciHostBridgeFixedResource.h>
 #include <Protocol/PciIo.h>
 #include <Protocol/LoadFile2.h>
 #include <Protocol/PciRootBridgeIo.h>
@@ -51,7 +51,6 @@ typedef struct _PCI_BAR        PCI_BAR;
 
 #define     EFI_PCI_IOV_POLICY_ARI    0x0001
 #define     EFI_PCI_IOV_POLICY_SRIOV  0x0002
-#define     EFI_PCI_IOV_POLICY_MRIOV  0x0004
 
 typedef enum {
   PciBarTypeUnknown = 0,
@@ -98,6 +97,11 @@ struct _PCI_BAR {
   UINT64          Alignment;
   PCI_BAR_TYPE    BarType;
   BOOLEAN         BarTypeFixed;
+  //
+  // TRUE if the BAR is described by an Enhanced Allocation entry, meaning
+  // its BaseAddress is fixed by hardware and must not be reassigned.
+  //
+  BOOLEAN         AddressFixed;
   UINT16          Offset;
 };
 
@@ -134,6 +138,20 @@ struct _PCI_BAR {
 #define PPB_PMEM32_RANGE  4
 #define PPB_PMEM64_RANGE  5
 #define PPB_MEM64_RANGE   0xFF
+
+//
+// Indices into PCI_IO_DEVICE::EaWindow[]
+//
+#define PCI_EA_WINDOW_IO    0
+#define PCI_EA_WINDOW_MEM   1
+#define PCI_EA_WINDOW_PMEM  2
+#define PCI_EA_WINDOW_MAX   3
+
+//
+// Primary bus number assigned to a PCI-PCI bridge whose fixed bus numbers,
+// described by its Enhanced Allocation capability, could not be assigned.
+//
+#define PCI_EA_UNASSIGNED_PRIMARY_BUS  0xFF
 
 #define P2C_BAR_0  0
 #define P2C_MEM_1  1
@@ -262,13 +280,13 @@ struct _PCI_IO_DEVICE {
   EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR            *BusNumberRanges;
 
   BOOLEAN                                      IsPciExp;
+  BOOLEAN                                      IsAriEnabled;
   //
   // For SR-IOV
   //
   UINT8                                        PciExpressCapabilityOffset;
   UINT32                                       AriCapabilityOffset;
   UINT32                                       SrIovCapabilityOffset;
-  UINT32                                       MrIovCapabilityOffset;
   PCI_BAR                                      VfPciBar[PCI_MAX_BAR];
   UINT32                                       SystemPageSize;
   UINT16                                       InitialVFs;
@@ -281,6 +299,23 @@ struct _PCI_IO_DEVICE {
   UINT16                                       BridgeIoAlignment;
   UINT32                                       ResizableBarOffset;
   UINT32                                       ResizableBarNumber;
+  //
+  // Fixed windows of a PCI-PCI bridge described by Enhanced Allocation
+  // entries with BEI 6, indexed by PCI_EA_WINDOW_xxx. An entry is only valid
+  // if its Length is non-zero.
+  //
+  PCI_BAR                                      EaWindow[PCI_EA_WINDOW_MAX];
+  //
+  // Offset of the Enhanced Allocation capability, or 0 if not implemented.
+  //
+  UINT8                                        EaCapabilityOffset;
+  //
+  // Fixed secondary and subordinate bus numbers of a PCI-PCI bridge described
+  // by its Enhanced Allocation capability. Only valid if EaFixedSecondaryBus
+  // is non-zero.
+  //
+  UINT8                                        EaFixedSecondaryBus;
+  UINT8                                        EaFixedSubordinateBus;
 };
 
 #define PCI_IO_DEVICE_FROM_PCI_IO_THIS(a) \
@@ -389,5 +424,3 @@ PciBusDriverBindingStop (
   IN  UINTN                        NumberOfChildren,
   IN  EFI_HANDLE                   *ChildHandleBuffer
   );
-
-#endif

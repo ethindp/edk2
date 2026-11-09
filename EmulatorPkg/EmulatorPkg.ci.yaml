@@ -5,10 +5,13 @@
 # used for code analysis.
 #
 # Copyright (c) Microsoft Corporation
-# Copyright (c) 2020, Intel Corporation. All rights reserved.<BR>
+# Copyright (c) 2020 - 2022, Intel Corporation. All rights reserved.<BR>
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 ##
 {
+    "PrEval": {
+        "DscPath": "EmulatorPkg.dsc",
+    },
     ## options defined .pytool/Plugin/LicenseCheck
     "LicenseCheck": {
         "IgnoreFiles": []
@@ -55,7 +58,6 @@
             "EmulatorPkg/EmulatorPkg.dec",
             "NetworkPkg/NetworkPkg.dec",
             "RedfishPkg/RedfishPkg.dec",
-            "EmbeddedPkg/EmbeddedPkg.dec", ## is this one OK??
         ],
         # For host based unit tests
         "AcceptableDependencies-HOST_APPLICATION":[
@@ -68,8 +70,15 @@
 
     ## options defined .pytool/Plugin/DscCompleteCheck
     "DscCompleteCheck": {
-        "IgnoreInf": [""],
-        "DscPath": ""  # Don't support this test
+        "IgnoreInf": [
+        # Only built when REDFISH_ENABLE is TRUE
+        "EmulatorPkg/Application/RedfishPlatformConfig/RedfishPlatformConfig.inf",
+        # Only built when REDFISH_ENABLE is TRUE
+        "EmulatorPkg/Library/RedfishPlatformCredentialLib/RedfishPlatformCredentialLib.inf",
+        # Only built when REDFISH_ENABLE is TRUE
+        "EmulatorPkg/Library/RedfishPlatformHostInterfaceLib/RedfishPlatformHostInterfaceLib.inf",
+        ],
+        "DscPath": "EmulatorPkg.dsc"
     },
 
     ## options defined .pytool/Plugin/HostUnitTestDscCompleteCheck
@@ -105,5 +114,11 @@
         ],           # words to extend to the dictionary for this package
         "IgnoreStandardPaths": [],   # Standard Plugin defined paths that should be ignore
         "AdditionalIncludePaths": [] # Additional paths to spell check (wildcards supported)
+    },
+
+    ## options defined .pytool/Plugin/MarkdownLintCheck
+    "MarkdownLintCheck": {
+        "AuditOnly": False,          # If True, log all errors and then mark as skipped
+        "IgnoreFiles": []            # package root relative file, folder, or glob pattern to ignore
     }
 }

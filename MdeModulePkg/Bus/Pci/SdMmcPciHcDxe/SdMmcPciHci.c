@@ -8,6 +8,7 @@
 
   Copyright (c) 2018-2019, NVIDIA CORPORATION. All rights reserved.
   Copyright (c) 2015 - 2020, Intel Corporation. All rights reserved.<BR>
+  Copyright (C) 2023, Apple Inc. All rights reserved.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
@@ -30,7 +31,7 @@ DumpCapabilityReg (
   //
   // Dump Capability Data
   //
-  DEBUG ((DEBUG_INFO, " == Slot [%d] Capability is 0x%x ==\n", Slot, Capability));
+  DEBUG ((DEBUG_INFO, " == Slot [%d] Capability is 0x%llx ==\n", Slot, *(UINT64 *)Capability));
   DEBUG ((DEBUG_INFO, "   Timeout Clk Freq  %d%a\n", Capability->TimeoutFreq, (Capability->TimeoutUnit) ? "MHz" : "KHz"));
   DEBUG ((DEBUG_INFO, "   Base Clk Freq     %dMHz\n", Capability->BaseClkFreq));
   DEBUG ((DEBUG_INFO, "   Max Blk Len       %dbytes\n", 512 * (1 << Capability->MaxBlkLen)));
@@ -59,12 +60,13 @@ DumpCapabilityReg (
   DEBUG ((DEBUG_INFO, "   SDR50  Support    %a\n", Capability->Sdr50 ? "TRUE" : "FALSE"));
   DEBUG ((DEBUG_INFO, "   SDR104 Support    %a\n", Capability->Sdr104 ? "TRUE" : "FALSE"));
   DEBUG ((DEBUG_INFO, "   DDR50  Support    %a\n", Capability->Ddr50 ? "TRUE" : "FALSE"));
+  DEBUG ((DEBUG_INFO, "   UHS-II Support    %a\n", Capability->UhsII ? "TRUE" : "FALSE"));
   DEBUG ((DEBUG_INFO, "   Driver Type A     %a\n", Capability->DriverTypeA ? "TRUE" : "FALSE"));
   DEBUG ((DEBUG_INFO, "   Driver Type C     %a\n", Capability->DriverTypeC ? "TRUE" : "FALSE"));
   DEBUG ((DEBUG_INFO, "   Driver Type D     %a\n", Capability->DriverTypeD ? "TRUE" : "FALSE"));
   DEBUG ((DEBUG_INFO, "   Driver Type 4     %a\n", Capability->DriverType4 ? "TRUE" : "FALSE"));
   if (Capability->TimerCount == 0) {
-    DEBUG ((DEBUG_INFO, "   Retuning TimerCnt Disabled\n", 2 * (Capability->TimerCount - 1)));
+    DEBUG ((DEBUG_INFO, "   Retuning TimerCnt Disabled\n"));
   } else {
     DEBUG ((DEBUG_INFO, "   Retuning TimerCnt %dseconds\n", 2 * (Capability->TimerCount - 1)));
   }
@@ -72,6 +74,8 @@ DumpCapabilityReg (
   DEBUG ((DEBUG_INFO, "   SDR50 Tuning      %a\n", Capability->TuningSDR50 ? "TRUE" : "FALSE"));
   DEBUG ((DEBUG_INFO, "   Retuning Mode     Mode %d\n", Capability->RetuningMod + 1));
   DEBUG ((DEBUG_INFO, "   Clock Multiplier  M = %d\n", Capability->ClkMultiplier + 1));
+  DEBUG ((DEBUG_INFO, "   ADMA3 Support     %a\n", Capability->Adma3 ? "TRUE" : "FALSE"));
+  DEBUG ((DEBUG_INFO, "   1.8V VDD2         %a\n", Capability->Vdd2Voltage18 ? "TRUE" : "FALSE"));
   DEBUG ((DEBUG_INFO, "   HS 400            %a\n", Capability->Hs400 ? "TRUE" : "FALSE"));
   return;
 }
@@ -498,7 +502,7 @@ SdMmcHcReset (
       DEBUG ((
         DEBUG_WARN,
         "%a: SD/MMC pre reset notifier callback failed - %r\n",
-        __FUNCTION__,
+        __func__,
         Status
         ));
       return Status;
@@ -556,7 +560,7 @@ SdMmcHcReset (
       DEBUG ((
         DEBUG_WARN,
         "%a: SD/MMC post reset notifier callback failed - %r\n",
-        __FUNCTION__,
+        __func__,
         Status
         ));
     }
@@ -942,7 +946,7 @@ SdMmcHcClockSupply (
       DEBUG ((
         DEBUG_ERROR,
         "%a: SD/MMC switch clock freq post notifier callback failed - %r\n",
-        __FUNCTION__,
+        __func__,
         Status
         ));
       return Status;
@@ -1234,7 +1238,7 @@ SdMmcHcInitHost (
       DEBUG ((
         DEBUG_WARN,
         "%a: SD/MMC pre init notifier callback failed - %r\n",
-        __FUNCTION__,
+        __func__,
         Status
         ));
       return Status;
@@ -1286,7 +1290,7 @@ SdMmcHcInitHost (
       DEBUG ((
         DEBUG_WARN,
         "%a: SD/MMC post init notifier callback failed - %r\n",
-        __FUNCTION__,
+        __func__,
         Status
         ));
     }
@@ -1375,7 +1379,7 @@ SdMmcHcUhsSignaling (
       DEBUG ((
         DEBUG_ERROR,
         "%a: SD/MMC uhs signaling notifier callback failed - %r\n",
-        __FUNCTION__,
+        __func__,
         Status
         ));
       return Status;
@@ -1471,8 +1475,8 @@ BuildAdmaDescTable (
 {
   EFI_PHYSICAL_ADDRESS  Data;
   UINT64                DataLen;
-  UINT64                Entries;
-  UINT32                Index;
+  UINTN                 Entries;
+  UINTN                 Index;
   UINT64                Remaining;
   UINT64                Address;
   UINTN                 TableSize;
@@ -1535,8 +1539,8 @@ BuildAdmaDescTable (
     AdmaMaxDataPerLine = ADMA_MAX_DATA_PER_LINE_26B;
   }
 
-  Entries        = DivU64x32 ((DataLen + AdmaMaxDataPerLine - 1), AdmaMaxDataPerLine);
-  TableSize      = (UINTN)MultU64x32 (Entries, DescSize);
+  Entries        = (UINTN)DivU64x32 ((DataLen + AdmaMaxDataPerLine - 1), AdmaMaxDataPerLine);
+  TableSize      = Entries * DescSize;
   Trb->AdmaPages = (UINT32)EFI_SIZE_TO_PAGES (TableSize);
   Status         = PciIo->AllocateBuffer (
                             PciIo,

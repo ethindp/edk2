@@ -43,7 +43,9 @@
   MdeModulePkg/MdeModulePkg.dec
 
 [LibraryClasses]
+  BaseLib
   DebugLib
+  DevicePathLib
   PeiServicesLib
   MemoryAllocationLib
   BaseMemoryLib
@@ -56,6 +58,7 @@
   gEdkiiPeiNvmExpressHostControllerPpiGuid       ## CONSUMES
   gEdkiiIoMmuPpiGuid                             ## CONSUMES
   gEfiEndOfPeiSignalPpiGuid                      ## CONSUMES
+  gEdkiiPeiPciDevicePpiGuid                      ## CONSUMES
   gEdkiiPeiNvmExpressPassThruPpiGuid             ## SOMETIMES_PRODUCES
   gEfiPeiVirtualBlockIoPpiGuid                   ## SOMETIMES_PRODUCES
   gEfiPeiVirtualBlockIo2PpiGuid                  ## SOMETIMES_PRODUCES
@@ -66,7 +69,6 @@
 
 [Depex]
   gEfiPeiMemoryDiscoveredPpiGuid AND
-  gEdkiiPeiNvmExpressHostControllerPpiGuid AND
   gEfiPeiMasterBootModePpiGuid
 
 [UserExtensions.TianoCore."ExtraFiles"]

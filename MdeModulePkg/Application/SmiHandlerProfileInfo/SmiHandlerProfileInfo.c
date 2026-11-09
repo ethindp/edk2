@@ -610,7 +610,12 @@ DumpSmiHandler (
 
         Print (L">\n");
         ImageStruct = GetImageFromRef ((UINTN)SmiHandlerStruct->ImageRef);
-        NameString  = GetDriverNameString (ImageStruct);
+        if (ImageStruct != NULL) {
+          NameString = GetDriverNameString (ImageStruct);
+        } else {
+          NameString = "\0";
+        }
+
         Print (L"      <Module RefId=\"0x%x\" Name=\"%a\">\n", SmiHandlerStruct->ImageRef, NameString);
         if ((ImageStruct != NULL) && (ImageStruct->PdbStringOffset != 0)) {
           Print (L"      <Pdb>%a</Pdb>\n", (UINT8 *)ImageStruct + ImageStruct->PdbStringOffset);
@@ -667,7 +672,7 @@ SmiHandlerProfileInfoEntrypoint (
   //
   // Dump all image
   //
-  Print (L"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
+  Print (L"<?xml version=\"1.0\" encoding=\"utf-16\"?>\n");
   Print (L"<SmiHandlerProfile>\n");
   Print (L"<ImageDatabase>\n");
   Print (L"  <!-- SMM image loaded -->\n");

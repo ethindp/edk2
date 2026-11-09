@@ -8,8 +8,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
     - Universal Payload Specification 0.75 (https://universalpayload.github.io/documentation/)
 **/
 
-#ifndef UNIVERSAL_PAYLOAD_H_
-#define UNIVERSAL_PAYLOAD_H_
+#pragma once
 
 /**
   Main entry point to Universal Payload.
@@ -18,7 +17,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 typedef  VOID (EFIAPI *UNIVERSAL_PAYLOAD_ENTRY)(VOID *HobList);
 
-#define UNIVERSAL_PAYLOAD_IDENTIFIER                    SIGNATURE_32('U', 'P', 'L', 'D')
+#define UNIVERSAL_PAYLOAD_IDENTIFIER                    SIGNATURE_32('P', 'L', 'D', 'H')
 #define UNIVERSAL_PAYLOAD_INFO_SEC_NAME                 ".upld_info"
 #define UNIVERSAL_PAYLOAD_EXTRA_SEC_NAME_PREFIX         ".upld."
 #define UNIVERSAL_PAYLOAD_EXTRA_SEC_NAME_PREFIX_LENGTH  (sizeof (UNIVERSAL_PAYLOAD_EXTRA_SEC_NAME_PREFIX) - 1)
@@ -55,5 +54,3 @@ typedef struct {
 
 **/
 #define UNIVERSAL_PAYLOAD_SIZEOF_THROUGH_FIELD(TYPE, Field)  (OFFSET_OF(TYPE, Field) + sizeof (((TYPE *) 0)->Field))
-
-#endif // UNIVERSAL_PAYLOAD_H_

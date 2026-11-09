@@ -7,13 +7,13 @@
 
 Copyright (c) 2006 - 2021, Intel Corporation. All rights reserved.<BR>
 Portions Copyright (c) 2020, Hewlett Packard Enterprise Development LP. All rights reserved.<BR>
+Copyright (c) 2022, Loongson Technology Corporation Limited. All rights reserved.<BR>
 
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef __UEFI_SPEC_H__
-#define __UEFI_SPEC_H__
+#pragma once
 
 #include <Uefi/UefiMultiPhase.h>
 
@@ -105,9 +105,34 @@ typedef enum {
 #define EFI_MEMORY_CPU_CRYPTO  0x0000000000080000ULL
 
 //
+// If this flag is set, the memory region is present and capable of having
+// memory dynamically removed from the platform. This attribute serves as
+// a hint to the OS prior to its ACPI subsystem initialization to avoid
+// allocating this memory for core OS data or code that cannot be dynamically
+// relocated at runtime. If this flag is clear, the memory region is not
+// capable of being dynamically removed from the platform at runtime.
+//
+#define EFI_MEMORY_HOT_PLUGGABLE  0x0000000000100000
+
+//
 // Runtime memory attribute
 //
 #define EFI_MEMORY_RUNTIME  0x8000000000000000ULL
+
+//
+// If this flag is set, the memory region is
+// described with additional ISA-specific memory attributes
+// as specified in EFI_MEMORY_ISA_MASK.
+//
+#define EFI_MEMORY_ISA_VALID  0x4000000000000000ULL
+
+//
+// Defines the bits reserved for describing optional ISA-specific cacheability
+// attributes that are not covered by the standard UEFI Memory Attributes cacheability
+// bits (EFI_MEMORY_UC, EFI_MEMORY_WC, EFI_MEMORY_WT, EFI_MEMORY_WB and EFI_MEMORY_UCE).
+// See Calling Conventions for further ISA-specific enumeration of these bits.
+//
+#define EFI_MEMORY_ISA_MASK  0x0FFFF00000000000ULL
 
 //
 // Attributes bitmasks, grouped by type
@@ -304,6 +329,9 @@ EFI_STATUS
                                 map that requires a mapping.
   @retval EFI_NOT_FOUND         A virtual address was supplied for an address that is not found
                                 in the memory map.
+  @retval EFI_UNSUPPORTED       This call is not supported by this platform at the time the call is made.
+                                The platform should describe this runtime service as unsupported at runtime
+                                via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 typedef
@@ -394,11 +422,14 @@ EFI_STATUS
                                      for the new virtual address mappings being applied.
 
   @retval EFI_SUCCESS           The pointer pointed to by Address was modified.
-  @retval EFI_INVALID_PARAMETER 1) Address is NULL.
-                                2) *Address is NULL and DebugDisposition does
-                                not have the EFI_OPTIONAL_PTR bit set.
   @retval EFI_NOT_FOUND         The pointer pointed to by Address was not found to be part
                                 of the current memory map. This is normally fatal.
+  @retval EFI_INVALID_PARAMETER Address is NULL.
+  @retval EFI_INVALID_PARAMETER *Address is NULL and DebugDisposition does
+                                not have the EFI_OPTIONAL_PTR bit set.
+  @retval EFI_UNSUPPORTED       This call is not supported by this platform at the time the call is made.
+                                The platform should describe this runtime service as unsupported at runtime
+                                via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 typedef
@@ -464,8 +495,8 @@ EFI_STATUS
 (EFIAPI *EFI_CREATE_EVENT)(
   IN  UINT32                       Type,
   IN  EFI_TPL                      NotifyTpl,
-  IN  EFI_EVENT_NOTIFY             NotifyFunction,
-  IN  VOID                         *NotifyContext,
+  IN  EFI_EVENT_NOTIFY             NotifyFunction OPTIONAL,
+  IN  VOID                         *NotifyContext OPTIONAL,
   OUT EFI_EVENT                    *Event
   );
 
@@ -663,6 +694,10 @@ VOID
   @retval EFI_INVALID_PARAMETER  The DataSize is not too small and Data is NULL.
   @retval EFI_DEVICE_ERROR       The variable could not be retrieved due to a hardware error.
   @retval EFI_SECURITY_VIOLATION The variable could not be retrieved due to an authentication failure.
+  @retval EFI_UNSUPPORTED        After ExitBootServices() has been called, this return code may be returned
+                                 if no variable storage is supported. The platform should describe this
+                                 runtime service as unsupported at runtime via an EFI_RT_PROPERTIES_TABLE
+                                 configuration table.
 
 **/
 typedef
@@ -699,6 +734,10 @@ EFI_STATUS
   @retval EFI_INVALID_PARAMETER Null-terminator is not found in the first VariableNameSize bytes of
                                 the input VariableName buffer.
   @retval EFI_DEVICE_ERROR      The variable could not be retrieved due to a hardware error.
+  @retval EFI_UNSUPPORTED       After ExitBootServices() has been called, this return code may be returned
+                                if no variable storage is supported. The platform should describe this
+                                runtime service as unsupported at runtime via an EFI_RT_PROPERTIES_TABLE
+                                configuration table.
 
 **/
 typedef
@@ -737,10 +776,13 @@ EFI_STATUS
   @retval EFI_DEVICE_ERROR       The variable could not be retrieved due to a hardware error.
   @retval EFI_WRITE_PROTECTED    The variable in question is read-only.
   @retval EFI_WRITE_PROTECTED    The variable in question cannot be deleted.
-  @retval EFI_SECURITY_VIOLATION The variable could not be written due to EFI_VARIABLE_TIME_BASED_AUTHENTICATED_WRITE_ACESS being set,
+  @retval EFI_SECURITY_VIOLATION The variable could not be written due to EFI_VARIABLE_TIME_BASED_AUTHENTICATED_WRITE_ACCESS being set,
                                  but the AuthInfo does NOT pass the validation check carried out by the firmware.
 
   @retval EFI_NOT_FOUND          The variable trying to be updated or deleted was not found.
+  @retval EFI_UNSUPPORTED        This call is not supported by this platform at the time the call is made.
+                                 The platform should describe this runtime service as unsupported at runtime
+                                 via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 typedef
@@ -793,6 +835,9 @@ typedef struct {
   @retval EFI_SUCCESS           The operation completed successfully.
   @retval EFI_INVALID_PARAMETER Time is NULL.
   @retval EFI_DEVICE_ERROR      The time could not be retrieved due to hardware error.
+  @retval EFI_UNSUPPORTED       This call is not supported by this platform at the time the call is made.
+                                The platform should describe this runtime service as unsupported at runtime
+                                via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 typedef
@@ -810,6 +855,9 @@ EFI_STATUS
   @retval EFI_SUCCESS           The operation completed successfully.
   @retval EFI_INVALID_PARAMETER A time field is out of range.
   @retval EFI_DEVICE_ERROR      The time could not be set due due to hardware error.
+  @retval EFI_UNSUPPORTED       This call is not supported by this platform at the time the call is made.
+                                The platform should describe this runtime service as unsupported at runtime
+                                via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 typedef
@@ -830,7 +878,9 @@ EFI_STATUS
   @retval EFI_INVALID_PARAMETER Pending is NULL.
   @retval EFI_INVALID_PARAMETER Time is NULL.
   @retval EFI_DEVICE_ERROR      The wakeup time could not be retrieved due to a hardware error.
-  @retval EFI_UNSUPPORTED       A wakeup timer is not supported on this platform.
+  @retval EFI_UNSUPPORTED       This call is not supported by this platform at the time the call is made.
+                                The platform should describe this runtime service as unsupported at runtime
+                                via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 typedef
@@ -852,7 +902,9 @@ EFI_STATUS
                                 Enable is FALSE, then the wakeup alarm was disabled.
   @retval EFI_INVALID_PARAMETER A time field is out of range.
   @retval EFI_DEVICE_ERROR      The wakeup time could not be set due to a hardware error.
-  @retval EFI_UNSUPPORTED       A wakeup timer is not supported on this platform.
+  @retval EFI_UNSUPPORTED       This call is not supported by this platform at the time the call is made.
+                                The platform should describe this runtime service as unsupported at runtime
+                                via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 typedef
@@ -897,7 +949,7 @@ EFI_STATUS
 (EFIAPI *EFI_IMAGE_LOAD)(
   IN  BOOLEAN                      BootPolicy,
   IN  EFI_HANDLE                   ParentImageHandle,
-  IN  EFI_DEVICE_PATH_PROTOCOL     *DevicePath,
+  IN  EFI_DEVICE_PATH_PROTOCOL     *DevicePath   OPTIONAL,
   IN  VOID                         *SourceBuffer OPTIONAL,
   IN  UINTN                        SourceSize,
   OUT EFI_HANDLE                   *ImageHandle
@@ -1074,6 +1126,9 @@ EFI_STATUS
   @retval EFI_SUCCESS           The next high monotonic count was returned.
   @retval EFI_INVALID_PARAMETER HighCount is NULL.
   @retval EFI_DEVICE_ERROR      The device is not functioning properly.
+  @retval EFI_UNSUPPORTED       This call is not supported by this platform at the time the call is made.
+                                The platform should describe this runtime service as unsupported at runtime
+                                via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 typedef
@@ -1322,7 +1377,7 @@ EFI_STATUS
   @retval EFI_UNSUPPORTED       Handle does not support Protocol.
   @retval EFI_INVALID_PARAMETER One or more parameters are invalid.
   @retval EFI_ACCESS_DENIED     Required attributes can't be supported in current environment.
-  @retval EFI_ALREADY_STARTED   Item on the open list already has requierd attributes whose agent
+  @retval EFI_ALREADY_STARTED   Item on the open list already has required attributes whose agent
                                 handle is the same as AgentHandle.
 
 **/
@@ -1368,7 +1423,7 @@ EFI_STATUS
   );
 
 ///
-/// EFI Oprn Protocol Information Entry
+/// EFI Open Protocol Information Entry
 ///
 typedef struct {
   EFI_HANDLE    AgentHandle;
@@ -1647,7 +1702,7 @@ typedef struct {
   ///
   UINT32      Flags;
   ///
-  /// Size in bytes of the capsule.
+  /// Size in bytes of the capsule (including capsule header).
   ///
   UINT32      CapsuleImageSize;
 } EFI_CAPSULE_HEADER;
@@ -1682,7 +1737,7 @@ typedef struct {
   @param[in]  CapsuleHeaderArray Virtual pointer to an array of virtual pointers to the capsules
                                  being passed into update capsule.
   @param[in]  CapsuleCount       Number of pointers to EFI_CAPSULE_HEADER in
-                                 CaspuleHeaderArray.
+                                 CapsuleHeaderArray.
   @param[in]  ScatterGatherList  Physical pointer to a set of
                                  EFI_CAPSULE_BLOCK_DESCRIPTOR that describes the
                                  location in physical memory of a set of capsules.
@@ -1700,6 +1755,9 @@ typedef struct {
                                 in runtime. The caller may resubmit the capsule prior to ExitBootServices().
   @retval EFI_OUT_OF_RESOURCES  When ExitBootServices() has not been previously called then this error indicates
                                 the capsule is compatible with this platform but there are insufficient resources to process.
+  @retval EFI_UNSUPPORTED       This call is not supported by this platform at the time the call is made.
+                                The platform should describe this runtime service as unsupported at runtime
+                                via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 typedef
@@ -1716,8 +1774,8 @@ EFI_STATUS
   @param[in]   CapsuleHeaderArray  Virtual pointer to an array of virtual pointers to the capsules
                                    being passed into update capsule.
   @param[in]   CapsuleCount        Number of pointers to EFI_CAPSULE_HEADER in
-                                   CaspuleHeaderArray.
-  @param[out]  MaxiumCapsuleSize   On output the maximum size that UpdateCapsule() can
+                                   CapsuleHeaderArray.
+  @param[out]  MaximumCapsuleSize  On output the maximum size that UpdateCapsule() can
                                    support as an argument to UpdateCapsule() via
                                    CapsuleHeaderArray and ScatterGatherList.
   @param[out]  ResetType           Returns the type of reset required for the capsule update.
@@ -1731,6 +1789,9 @@ EFI_STATUS
                                 in runtime. The caller may resubmit the capsule prior to ExitBootServices().
   @retval EFI_OUT_OF_RESOURCES  When ExitBootServices() has not been previously called then this error indicates
                                 the capsule is compatible with this platform but there are insufficient resources to process.
+  @retval EFI_UNSUPPORTED       This call is not supported by this platform at the time the call is made.
+                                The platform should describe this runtime service as unsupported at runtime
+                                via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 typedef
@@ -1787,21 +1848,24 @@ EFI_STATUS
 //
 // EFI Runtime Services Table
 //
-#define EFI_SYSTEM_TABLE_SIGNATURE      SIGNATURE_64 ('I','B','I',' ','S','Y','S','T')
-#define EFI_2_80_SYSTEM_TABLE_REVISION  ((2 << 16) | (80))
-#define EFI_2_70_SYSTEM_TABLE_REVISION  ((2 << 16) | (70))
-#define EFI_2_60_SYSTEM_TABLE_REVISION  ((2 << 16) | (60))
-#define EFI_2_50_SYSTEM_TABLE_REVISION  ((2 << 16) | (50))
-#define EFI_2_40_SYSTEM_TABLE_REVISION  ((2 << 16) | (40))
-#define EFI_2_31_SYSTEM_TABLE_REVISION  ((2 << 16) | (31))
-#define EFI_2_30_SYSTEM_TABLE_REVISION  ((2 << 16) | (30))
-#define EFI_2_20_SYSTEM_TABLE_REVISION  ((2 << 16) | (20))
-#define EFI_2_10_SYSTEM_TABLE_REVISION  ((2 << 16) | (10))
-#define EFI_2_00_SYSTEM_TABLE_REVISION  ((2 << 16) | (00))
-#define EFI_1_10_SYSTEM_TABLE_REVISION  ((1 << 16) | (10))
-#define EFI_1_02_SYSTEM_TABLE_REVISION  ((1 << 16) | (02))
-#define EFI_SYSTEM_TABLE_REVISION       EFI_2_70_SYSTEM_TABLE_REVISION
-#define EFI_SPECIFICATION_VERSION       EFI_SYSTEM_TABLE_REVISION
+#define EFI_SYSTEM_TABLE_SIGNATURE       SIGNATURE_64 ('I','B','I',' ','S','Y','S','T')
+#define EFI_2_110_SYSTEM_TABLE_REVISION  ((2 << 16) | (110))
+#define EFI_2_100_SYSTEM_TABLE_REVISION  ((2 << 16) | (100))
+#define EFI_2_90_SYSTEM_TABLE_REVISION   ((2 << 16) | (90))
+#define EFI_2_80_SYSTEM_TABLE_REVISION   ((2 << 16) | (80))
+#define EFI_2_70_SYSTEM_TABLE_REVISION   ((2 << 16) | (70))
+#define EFI_2_60_SYSTEM_TABLE_REVISION   ((2 << 16) | (60))
+#define EFI_2_50_SYSTEM_TABLE_REVISION   ((2 << 16) | (50))
+#define EFI_2_40_SYSTEM_TABLE_REVISION   ((2 << 16) | (40))
+#define EFI_2_31_SYSTEM_TABLE_REVISION   ((2 << 16) | (31))
+#define EFI_2_30_SYSTEM_TABLE_REVISION   ((2 << 16) | (30))
+#define EFI_2_20_SYSTEM_TABLE_REVISION   ((2 << 16) | (20))
+#define EFI_2_10_SYSTEM_TABLE_REVISION   ((2 << 16) | (10))
+#define EFI_2_00_SYSTEM_TABLE_REVISION   ((2 << 16) | (00))
+#define EFI_1_10_SYSTEM_TABLE_REVISION   ((1 << 16) | (10))
+#define EFI_1_02_SYSTEM_TABLE_REVISION   ((1 << 16) | (02))
+#define EFI_SYSTEM_TABLE_REVISION        EFI_2_70_SYSTEM_TABLE_REVISION
+#define EFI_SPECIFICATION_VERSION        EFI_SYSTEM_TABLE_REVISION
 
 #define EFI_RUNTIME_SERVICES_SIGNATURE  SIGNATURE_64 ('R','U','N','T','S','E','R','V')
 #define EFI_RUNTIME_SERVICES_REVISION   EFI_SPECIFICATION_VERSION
@@ -1990,7 +2054,8 @@ typedef struct {
   UINT32                             FirmwareRevision;
   ///
   /// The handle for the active console input device. This handle must support
-  /// EFI_SIMPLE_TEXT_INPUT_PROTOCOL and EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL.
+  /// EFI_SIMPLE_TEXT_INPUT_PROTOCOL and EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL. If
+  /// there is no active console, these protocols must still be present.
   ///
   EFI_HANDLE                         ConsoleInHandle;
   ///
@@ -1999,7 +2064,9 @@ typedef struct {
   ///
   EFI_SIMPLE_TEXT_INPUT_PROTOCOL     *ConIn;
   ///
-  /// The handle for the active console output device.
+  /// The handle for the active console output device. This handle must support the
+  /// EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL. If there is no active console, these protocols
+  /// must still be present.
   ///
   EFI_HANDLE                         ConsoleOutHandle;
   ///
@@ -2009,7 +2076,8 @@ typedef struct {
   EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL    *ConOut;
   ///
   /// The handle for the active standard error console device.
-  /// This handle must support the EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL.
+  /// This handle must support the EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL. If there
+  /// is no active console, this protocol must still be present.
   ///
   EFI_HANDLE                         StandardErrorHandle;
   ///
@@ -2195,12 +2263,13 @@ typedef struct {
 //
 // EFI File location to boot from on removable media devices
 //
-#define EFI_REMOVABLE_MEDIA_FILE_NAME_IA32     L"\\EFI\\BOOT\\BOOTIA32.EFI"
-#define EFI_REMOVABLE_MEDIA_FILE_NAME_IA64     L"\\EFI\\BOOT\\BOOTIA64.EFI"
-#define EFI_REMOVABLE_MEDIA_FILE_NAME_X64      L"\\EFI\\BOOT\\BOOTX64.EFI"
-#define EFI_REMOVABLE_MEDIA_FILE_NAME_ARM      L"\\EFI\\BOOT\\BOOTARM.EFI"
-#define EFI_REMOVABLE_MEDIA_FILE_NAME_AARCH64  L"\\EFI\\BOOT\\BOOTAA64.EFI"
-#define EFI_REMOVABLE_MEDIA_FILE_NAME_RISCV64  L"\\EFI\\BOOT\\BOOTRISCV64.EFI"
+#define EFI_REMOVABLE_MEDIA_FILE_NAME_IA32         L"\\EFI\\BOOT\\BOOTIA32.EFI"
+#define EFI_REMOVABLE_MEDIA_FILE_NAME_IA64         L"\\EFI\\BOOT\\BOOTIA64.EFI"
+#define EFI_REMOVABLE_MEDIA_FILE_NAME_X64          L"\\EFI\\BOOT\\BOOTX64.EFI"
+#define EFI_REMOVABLE_MEDIA_FILE_NAME_EBC          L"\\EFI\\BOOT\\BOOTARM.EFI"
+#define EFI_REMOVABLE_MEDIA_FILE_NAME_AARCH64      L"\\EFI\\BOOT\\BOOTAA64.EFI"
+#define EFI_REMOVABLE_MEDIA_FILE_NAME_RISCV64      L"\\EFI\\BOOT\\BOOTRISCV64.EFI"
+#define EFI_REMOVABLE_MEDIA_FILE_NAME_LOONGARCH64  L"\\EFI\\BOOT\\BOOTLOONGARCH64.EFI"
 
 #if !defined (EFI_REMOVABLE_MEDIA_FILE_NAME)
   #if   defined (MDE_CPU_IA32)
@@ -2208,12 +2277,13 @@ typedef struct {
   #elif defined (MDE_CPU_X64)
 #define EFI_REMOVABLE_MEDIA_FILE_NAME  EFI_REMOVABLE_MEDIA_FILE_NAME_X64
   #elif defined (MDE_CPU_EBC)
-  #elif defined (MDE_CPU_ARM)
-#define EFI_REMOVABLE_MEDIA_FILE_NAME  EFI_REMOVABLE_MEDIA_FILE_NAME_ARM
+#define EFI_REMOVABLE_MEDIA_FILE_NAME  EFI_REMOVABLE_MEDIA_FILE_NAME_EBC
   #elif defined (MDE_CPU_AARCH64)
 #define EFI_REMOVABLE_MEDIA_FILE_NAME  EFI_REMOVABLE_MEDIA_FILE_NAME_AARCH64
   #elif defined (MDE_CPU_RISCV64)
 #define EFI_REMOVABLE_MEDIA_FILE_NAME  EFI_REMOVABLE_MEDIA_FILE_NAME_RISCV64
+  #elif defined (MDE_CPU_LOONGARCH64)
+#define EFI_REMOVABLE_MEDIA_FILE_NAME  EFI_REMOVABLE_MEDIA_FILE_NAME_LOONGARCH64
   #else
     #error Unknown Processor Type
   #endif
@@ -2227,5 +2297,3 @@ typedef struct {
 #include <Uefi/UefiPxe.h>
 #include <Uefi/UefiGpt.h>
 #include <Uefi/UefiInternalFormRepresentation.h>
-
-#endif

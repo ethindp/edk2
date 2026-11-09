@@ -1,12 +1,14 @@
 /** @file
 Implementation of SMM CPU Services Protocol.
 
-Copyright (c) 2011 - 2015, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2011 - 2024, Intel Corporation. All rights reserved.<BR>
+Copyright (C) 2025 Advanced Micro Devices, Inc. All rights reserved.
+
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#include "PiSmmCpuDxeSmm.h"
+#include "PiSmmCpuCommon.h"
 
 //
 // SMM CPU Service Protocol instance
@@ -18,6 +20,13 @@ EFI_SMM_CPU_SERVICE_PROTOCOL  mSmmCpuService = {
   SmmRemoveProcessor,
   SmmWhoAmI,
   SmmRegisterExceptionHandler
+};
+
+//
+// EDKII SMM CPU Rendezvous Service Protocol instance
+//
+EDKII_SMM_CPU_RENDEZVOUS_PROTOCOL  mSmmCpuRendezvousService = {
+  SmmCpuRendezvous
 };
 
 /**
@@ -91,7 +100,7 @@ SmmSwitchBsp (
   }
 
   if ((gSmmCpuPrivate->Operation[ProcessorNumber] != SmmCpuNone) ||
-      (gSmst->CurrentlyExecutingCpu == ProcessorNumber))
+      (gMmst->CurrentlyExecutingCpu == ProcessorNumber))
   {
     return EFI_UNSUPPORTED;
   }
@@ -162,6 +171,16 @@ SmmAddProcessor (
         &gSmmCpuPrivate->ProcessorInfo[Index].Location.Package,
         &gSmmCpuPrivate->ProcessorInfo[Index].Location.Core,
         &gSmmCpuPrivate->ProcessorInfo[Index].Location.Thread
+        );
+
+      GetProcessorLocation2ByApicId (
+        (UINT32)ProcessorId,
+        &gSmmCpuPrivate->ProcessorInfo[Index].ExtendedInformation.Location2.Package,
+        &gSmmCpuPrivate->ProcessorInfo[Index].ExtendedInformation.Location2.Die,
+        &gSmmCpuPrivate->ProcessorInfo[Index].ExtendedInformation.Location2.Tile,
+        &gSmmCpuPrivate->ProcessorInfo[Index].ExtendedInformation.Location2.Module,
+        &gSmmCpuPrivate->ProcessorInfo[Index].ExtendedInformation.Location2.Core,
+        &gSmmCpuPrivate->ProcessorInfo[Index].ExtendedInformation.Location2.Thread
         );
 
       *ProcessorNumber                 = Index;
@@ -350,6 +369,7 @@ SmmRegisterExceptionHandler (
   @param ImageHandle The firmware allocated handle for the EFI image.
 
   @retval EFI_SUCCESS    EFI SMM CPU Services Protocol was installed successfully.
+  @retval OTHER          Fail to install Protocol.
 **/
 EFI_STATUS
 InitializeSmmCpuServices (
@@ -358,12 +378,78 @@ InitializeSmmCpuServices (
 {
   EFI_STATUS  Status;
 
-  Status = gSmst->SmmInstallProtocolInterface (
+  Status = gMmst->MmInstallProtocolInterface (
                     &Handle,
                     &gEfiSmmCpuServiceProtocolGuid,
                     EFI_NATIVE_INTERFACE,
                     &mSmmCpuService
                     );
   ASSERT_EFI_ERROR (Status);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Status = gMmst->MmInstallProtocolInterface (
+                    &Handle,
+                    &gEdkiiSmmCpuRendezvousProtocolGuid,
+                    EFI_NATIVE_INTERFACE,
+                    &mSmmCpuRendezvousService
+                    );
+  ASSERT_EFI_ERROR (Status);
+  return Status;
+}
+
+/**
+  Wait for all processors enterring SMM until all CPUs are already synchronized or not.
+
+  If BlockingMode is False, timeout value is zero.
+
+  @param This          A pointer to the EDKII_SMM_CPU_RENDEZVOUS_PROTOCOL instance.
+  @param BlockingMode  Blocking mode or non-blocking mode.
+
+  @retval EFI_SUCCESS  All available APs arrived.
+  @retval EFI_TIMEOUT  Wait for all APs until timeout.
+
+**/
+EFI_STATUS
+EFIAPI
+SmmCpuRendezvous (
+  IN EDKII_SMM_CPU_RENDEZVOUS_PROTOCOL  *This,
+  IN BOOLEAN                            BlockingMode
+  )
+{
+  EFI_STATUS  Status;
+
+  //
+  // Return success immediately if all CPUs are already synchronized.
+  //
+  if (mSmmMpSyncData->AllApArrivedWithException) {
+    Status = EFI_SUCCESS;
+    goto ON_EXIT;
+  }
+
+  if (!BlockingMode) {
+    Status = EFI_TIMEOUT;
+    goto ON_EXIT;
+  }
+
+  if ((mSmmMpSyncData->EffectiveSyncMode != MmCpuSyncModeTradition) && !SmmCpuFeaturesNeedConfigureMtrrs ()) {
+    //
+    // There are some APs outside SMM, Wait for all available APs to arrive.
+    //
+    SmmWaitForApArrival ();
+    Status = mSmmMpSyncData->AllApArrivedWithException ? EFI_SUCCESS : EFI_TIMEOUT;
+  } else {
+    //
+    // BSP has already waitted for APs to arrive SMM if SmmCpuSyncMode selected or need config MTRR.
+    //
+    Status = EFI_TIMEOUT;
+  }
+
+ON_EXIT:
+  if (!mSmmMpSyncData->AllApArrivedWithException) {
+    DEBUG ((DEBUG_INFO, "EdkiiSmmWaitForAllApArrival: Timeout to wait all APs arrival\n"));
+  }
+
   return Status;
 }

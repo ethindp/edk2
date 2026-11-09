@@ -3,106 +3,182 @@
 # The makefile can be invoked with
 # HOST_ARCH = x86_64 or x64 for EM64T build
 # HOST_ARCH = ia32 or IA32 for IA32 build
-# HOST_ARCH = Arm or ARM for ARM build
 #
-# Copyright (c) 2007 - 2018, Intel Corporation. All rights reserved.<BR>
+# Copyright (c) 2007 - 2025, Intel Corporation. All rights reserved.<BR>
 # SPDX-License-Identifier: BSD-2-Clause-Patent
+
+# Set SEP to the platform specific path separator
+ifeq (Windows, $(findstring Windows,$(OS)))
+  SHELL := cmd.exe
+  SEP:=$(shell echo \)
+else
+  SEP:=/
+endif
+
+EDK2_PATH ?= $(MAKEROOT)/../../..
+ifndef PYTHON_COMMAND
+  ifeq (Windows, $(findstring Windows,$(OS)))
+    #
+    # Try using the Python Launcher for Windows to find an interpreter.
+    #
+    CHECK_PY := $(shell where py.exe || echo NotFound)
+    ifeq ($(CHECK_PY),NotFound)
+      #
+      # PYTHON_HOME is the old method of specifying a Python interpreter on Windows.
+      # Check if an interpreter can be found using PYTHON_HOME.
+      #
+      ifdef PYTHON_HOME
+        ifndef (,$(wildcard $(PYTHON_HOME)$(SEP)python.exe)) # Make sure the file exists
+          PYTHON_COMMAND := $(PYTHON_HOME)$(SEP)python.exe
+        else
+          $(error Unable to find a Python interpreter, if one is installed, set the PYTHON_COMMAND environment variable!)
+        endif
+      endif
+    else
+      PYTHON_COMMAND := $(shell py -3 -c "import sys; print(sys.executable)")
+      ifdef (,$(wildcard $(PYTHON_COMMAND))) # Make sure the file exists
+        $(error Unable to find a Python interpreter, if one is installed, set the PYTHON_COMMAND environment variable!)
+      endif
+    endif
+    undefine CHECK_PY
+    PYTHON_COMMAND := "$(PYTHON_COMMAND)"
+  else # UNIX
+    PYTHON_COMMAND := $(shell /usr/bin/env python3 -c "import sys; print(sys.executable)")
+    ifdef (,$(wildcard $(PYTHON_COMMAND))) # Make sure the file exists
+      PYTHON_COMMAND := $(shell /usr/bin/env python -c "import sys; print(sys.executable)")
+      ifdef (,$(wildcard $(PYTHON_COMMAND))) # Make sure the file exists
+        undefine PYTHON_COMMAND
+      endif
+    endif
+    ifndef PYTHON_COMMAND
+      $(error Unable to find a Python interpreter, if one is installed, set the PYTHON_COMMAND environment variable!)
+    endif
+  endif
+  export PYTHON_COMMAND
+endif
+
+# GnuMakeUtils.py is able to handle forward slashes in file paths on Windows systems
+GNU_MAKE_UTILS_PY := $(PYTHON_COMMAND) $(MAKEROOT)$(SEP)Makefiles$(SEP)GnuMakeUtils.py
+CP := $(GNU_MAKE_UTILS_PY) cp
+MV := $(GNU_MAKE_UTILS_PY) mv
+RM := $(GNU_MAKE_UTILS_PY) rm
+MD := $(GNU_MAKE_UTILS_PY) md
+RD := $(GNU_MAKE_UTILS_PY) rd
 
 ifndef HOST_ARCH
   #
-  # If HOST_ARCH is not defined, then we use 'uname -m' to attempt
+  # If HOST_ARCH is not defined, then we use 'GnuMakeUtils.py' to attempt
   # try to figure out the appropriate HOST_ARCH.
   #
-  uname_m = $(shell uname -m)
-  $(info Attempting to detect HOST_ARCH from 'uname -m': $(uname_m))
-  ifneq (,$(strip $(filter $(uname_m), x86_64 amd64)))
-    HOST_ARCH=X64
+  GET_GNU_HOST_ARCH_PY:=$(MAKEROOT)$(SEP)Makefiles$(SEP)GnuMakeUtils.py get_host_arch
+  ifeq (Windows, $(findstring Windows,$(OS)))
+    HOST_ARCH:=$(shell if defined PYTHON_COMMAND $(PYTHON_COMMAND) $(GET_GNU_HOST_ARCH_PY))
+  else
+    HOST_ARCH:=$(shell if command -v $(PYTHON_COMMAND) >/dev/null 1; then $(PYTHON_COMMAND) $(GET_GNU_HOST_ARCH_PY); else python $(GET_GNU_HOST_ARCH_PY); fi)
   endif
-  ifeq ($(patsubst i%86,IA32,$(uname_m)),IA32)
-    HOST_ARCH=IA32
+  ifeq ($(HOST_ARCH),)
+    $(info HOST_ARCH detection failed.)
+    undefine HOST_ARCH
   endif
-  ifneq (,$(findstring aarch64,$(uname_m)))
-    HOST_ARCH=AARCH64
-  else ifneq (,$(findstring arm64,$(uname_m)))
-    HOST_ARCH=AARCH64
-  else ifneq (,$(findstring arm,$(uname_m)))
-    HOST_ARCH=ARM
+  ifeq ($(HOST_ARCH),Unknown)
+    $(info HOST_ARCH detection failed.)
+    undefine HOST_ARCH
   endif
-  ifneq (,$(findstring riscv64,$(uname_m)))
-    HOST_ARCH=RISCV64
-  endif
-  ifndef HOST_ARCH
-    $(info Could not detected HOST_ARCH from uname results)
-    $(error HOST_ARCH is not defined!)
-  endif
-  $(info Detected HOST_ARCH of $(HOST_ARCH) using uname.)
+endif
+ifndef HOST_ARCH
+  $(error HOST_ARCH is not defined!)
 endif
 
-CYGWIN:=$(findstring CYGWIN, $(shell uname -s))
-LINUX:=$(findstring Linux, $(shell uname -s))
-DARWIN:=$(findstring Darwin, $(shell uname -s))
-ifeq ($(CXX), llvm)
-BUILD_CC ?= $(CLANG_BIN)clang
-BUILD_CXX ?= $(CLANG_BIN)clang++
-BUILD_AS ?= $(CLANG_BIN)clang
-BUILD_AR ?= $(CLANG_BIN)llvm-ar
-BUILD_LD ?= $(CLANG_BIN)llvm-ld
-else
-BUILD_CC ?= gcc
-BUILD_CXX ?= g++
-BUILD_AS ?= gcc
-BUILD_AR ?= ar
-BUILD_LD ?= ld
+#Set up BaseTools binary path for Windows builds
+ifeq (Windows, $(findstring Windows,$(OS)))
+  ifndef BIN_PATH
+    BIN_PATH_BASE=$(MAKEROOT)/../../Bin
+    ifeq ($(HOST_ARCH),X64)
+      BIN_PATH=$(BIN_PATH_BASE)/Win64
+    else
+      ifeq ($(HOST_ARCH),AARCH64)
+        BIN_PATH=$(BIN_PATH_BASE)/Win64
+      else
+        BIN_PATH=$(BIN_PATH_BASE)/Win32
+      endif
+    endif
+  endif
 endif
-LINKER ?= $(BUILD_CC)
+
+ifneq ($(findstring cmd,$(SHELL)),cmd)
+  CYGWIN:=$(findstring CYGWIN, $(shell uname -s))
+  LINUX:=$(findstring Linux, $(shell uname -s))
+  DARWIN:=$(findstring Darwin, $(shell uname -s))
+else
+  #Don't use uname on Windows
+  CYGWIN:=
+  LINUX:=
+  DARWIN:=
+endif
+CLANG := $(findstring clang,$(shell $(CC) --version))
+ifneq ($(CLANG),)
+CC ?= $(CLANG_BIN)clang
+CXX ?= $(CLANG_BIN)clang++
+AS ?= $(CLANG_BIN)clang
+AR ?= $(CLANG_BIN)llvm-ar
+LD ?= $(CLANG_BIN)llvm-ld
+else ifeq ($(origin CC),default)
+CC = $(GCC_PREFIX)gcc
+CXX = $(GCC_PREFIX)g++
+AS = $(GCC_PREFIX)gcc
+AR = $(GCC_PREFIX)ar
+LD = $(GCC_PREFIX)ld
+endif
+LINKER ?= $(CC)
 ifeq ($(HOST_ARCH), IA32)
-ARCH_INCLUDE = -I $(MAKEROOT)/Include/Ia32/
+ARCH_INCLUDE = -I $(EDK2_PATH)/MdePkg/Include/Ia32/
 
 else ifeq ($(HOST_ARCH), X64)
-ARCH_INCLUDE = -I $(MAKEROOT)/Include/X64/
-
-else ifeq ($(HOST_ARCH), ARM)
-ARCH_INCLUDE = -I $(MAKEROOT)/Include/Arm/
+ARCH_INCLUDE = -I $(EDK2_PATH)/MdePkg/Include/X64/
 
 else ifeq ($(HOST_ARCH), AARCH64)
-ARCH_INCLUDE = -I $(MAKEROOT)/Include/AArch64/
+ARCH_INCLUDE = -I $(EDK2_PATH)/MdePkg/Include/AArch64/
 
 else ifeq ($(HOST_ARCH), RISCV64)
-ARCH_INCLUDE = -I $(MAKEROOT)/Include/RiscV64/
+ARCH_INCLUDE = -I $(EDK2_PATH)/MdePkg/Include/RiscV64/
+
+else ifeq ($(HOST_ARCH), LOONGARCH64)
+ARCH_INCLUDE = -I $(EDK2_PATH)/MdePkg/Include/LoongArch64/
 
 else
 $(error Bad HOST_ARCH)
 endif
 
 INCLUDE = $(TOOL_INCLUDE) -I $(MAKEROOT) -I $(MAKEROOT)/Include/Common -I $(MAKEROOT)/Include/ -I $(MAKEROOT)/Include/IndustryStandard -I $(MAKEROOT)/Common/ -I .. -I . $(ARCH_INCLUDE)
-BUILD_CPPFLAGS = $(INCLUDE)
+INCLUDE += -I $(EDK2_PATH)/MdePkg/Include
+CPPFLAGS = $(INCLUDE)
 
 # keep EXTRA_OPTFLAGS last
 BUILD_OPTFLAGS = -O2 $(EXTRA_OPTFLAGS)
 
 ifeq ($(DARWIN),Darwin)
 # assume clang or clang compatible flags on OS X
-BUILD_CFLAGS = -MD -fshort-wchar -fno-strict-aliasing -Wall -Werror \
+CFLAGS = -MD -fshort-wchar -fno-strict-aliasing -Wall -Werror \
 -Wno-deprecated-declarations -Wno-self-assign -Wno-unused-result -nostdlib -g
 else
-ifeq ($(CXX), llvm)
-BUILD_CFLAGS = -MD -fshort-wchar -fno-strict-aliasing -fwrapv \
+ifneq ($(CLANG),)
+CFLAGS = -MD -fshort-wchar -fno-strict-aliasing -fwrapv \
 -fno-delete-null-pointer-checks -Wall -Werror \
 -Wno-deprecated-declarations -Wno-self-assign \
 -Wno-unused-result -nostdlib -g
 else
-BUILD_CFLAGS = -MD -fshort-wchar -fno-strict-aliasing -fwrapv \
+CFLAGS = -MD -fshort-wchar -fno-strict-aliasing -fwrapv \
 -fno-delete-null-pointer-checks -Wall -Werror \
 -Wno-deprecated-declarations -Wno-stringop-truncation -Wno-restrict \
 -Wno-unused-result -nostdlib -g
 endif
 endif
-ifeq ($(CXX), llvm)
-BUILD_LFLAGS =
-BUILD_CXXFLAGS = -Wno-deprecated-register -Wno-unused-result
+ifneq ($(CLANG),)
+LDFLAGS =
+CXXFLAGS = -Wno-deprecated-register -Wno-unused-result -std=c++14
 else
-BUILD_LFLAGS =
-BUILD_CXXFLAGS = -Wno-unused-result
+LDFLAGS =
+CXXFLAGS = -Wno-unused-result
 endif
 ifeq ($(HOST_ARCH), IA32)
 #
@@ -111,18 +187,18 @@ ifeq ($(HOST_ARCH), IA32)
 #  so only do this is uname -m returns i386.
 #
 ifeq ($(DARWIN),Darwin)
-  BUILD_CFLAGS   += -arch i386
-  BUILD_CPPFLAGS += -arch i386
-  BUILD_LFLAGS   += -arch i386
+  CFLAGS   += -arch i386
+  CPPFLAGS += -arch i386
+  LDFLAGS  += -arch i386
 endif
 endif
 
 # keep BUILD_OPTFLAGS last
-BUILD_CFLAGS   += $(BUILD_OPTFLAGS)
-BUILD_CXXFLAGS += $(BUILD_OPTFLAGS)
+CFLAGS   += $(BUILD_OPTFLAGS)
+CXXFLAGS += $(BUILD_OPTFLAGS)
 
 # keep EXTRA_LDFLAGS last
-BUILD_LFLAGS += $(EXTRA_LDFLAGS)
+LDFLAGS += $(EXTRA_LDFLAGS)
 
 .PHONY: all
 .PHONY: install
@@ -131,7 +207,10 @@ BUILD_LFLAGS += $(EXTRA_LDFLAGS)
 all:
 
 $(MAKEROOT)/libs:
-	mkdir $(MAKEROOT)/libs
+	$(MD) $(MAKEROOT)/libs
 
 $(MAKEROOT)/bin:
-	mkdir $(MAKEROOT)/bin
+	$(MD) $(MAKEROOT)/bin
+ifeq (Windows, $(findstring Windows,$(OS)))
+	$(MD) $(BIN_PATH)
+endif

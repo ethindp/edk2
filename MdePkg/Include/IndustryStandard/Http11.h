@@ -7,8 +7,7 @@
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#ifndef __HTTP_11_H__
-#define __HTTP_11_H__
+#pragma once
 
 #pragma pack(1)
 
@@ -205,6 +204,14 @@
 #define HTTP_HEADER_IF_NONE_MATCH  "If-None-Match"
 
 ///
+/// The WWW-Authenticate Response Header
+/// If a server receives a request for an access-protected object, and an
+/// acceptable Authorization header is not sent, the server responds with
+/// a "401 Unauthorized" status code, and a WWW-Authenticate header.
+///
+#define HTTP_HEADER_WWW_AUTHENTICATE  "WWW-Authenticate"
+
+///
 /// Authorization Request Header
 /// The Authorization field value consists of credentials
 /// containing the authentication information of the user agent for
@@ -240,6 +247,32 @@
 ///
 #define  HTTP_EXPECT_100_CONTINUE  "100-continue"
 
-#pragma pack()
+///
+/// Content-Range Response Header
+/// The Content-Range response HTTP header indicates where in a
+/// full body message a partial message belongs.
+///
+#define HTTP_HEADER_CONTENT_RANGE  "Content-Range"
 
-#endif
+///
+/// Last-Modified Response Header
+/// The Last-Modified response HTTP header contains a date and time when
+/// the origin server believes the resource was last modified. It is used
+/// as a validator to determine if the resource is the same as the
+/// previously stored one. Less accurate than an ETag header,
+/// it is a fallback mechanism. Conditional requests containing
+/// If-Modified-Since or If-Unmodified-Since headers make use of this field.
+///
+#define HTTP_HEADER_LAST_MODIFIED  "Last-Modified"
+
+///
+/// If Unmodified Since Request Header
+/// Makes the request for the resource conditional: the server will send
+/// the requested resource or accept it in the case of a POST or another
+/// non-safe method only if the resource has not been modified after the
+/// date specified by this HTTP header. If the resource has been modified
+/// after the specified date, the response will be a 412 Precondition Failed error.
+///
+#define HTTP_HEADER_IF_UNMODIFIED_SINCE  "If-Unmodified-Since"
+
+#pragma pack()

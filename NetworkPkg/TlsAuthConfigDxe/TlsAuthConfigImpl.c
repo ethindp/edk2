@@ -127,7 +127,7 @@ UpdateDeletePage (
   )
 {
   EFI_STATUS          Status;
-  UINT32              Index;
+  UINTN               Index;
   UINTN               CertCount;
   UINTN               GuidIndex;
   VOID                *StartOpCodeHandle;
@@ -318,7 +318,7 @@ DeleteCert (
   UINT8               *Data;
   UINT8               *OldData;
   UINT32              Attr;
-  UINT32              Index;
+  UINTN               Index;
   EFI_SIGNATURE_LIST  *CertList;
   EFI_SIGNATURE_LIST  *NewCertList;
   EFI_SIGNATURE_DATA  *Cert;
@@ -1397,8 +1397,7 @@ TlsAuthConfigAccessCallback (
   EFI_HII_POPUP_PROTOCOL        *HiiPopUp;
   EFI_HII_POPUP_SELECTION       PopUpSelect;
 
-  Status = EFI_SUCCESS;
-  File   = NULL;
+  File = NULL;
 
   if ((This == NULL) || (Value == NULL) || (ActionRequest == NULL)) {
     return EFI_INVALID_PARAMETER;

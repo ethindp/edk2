@@ -33,7 +33,7 @@ ShellCommandGetManFileNameDebug1 (
   @param ImageHandle    the image handle of the process
   @param SystemTable    the EFI System Table pointer
 
-  @retval EFI_SUCCESS        the shell command handlers were installed sucessfully
+  @retval EFI_SUCCESS        the shell command handlers were installed successfully
   @retval EFI_UNSUPPORTED    the shell level required was not found.
 **/
 EFI_STATUS
@@ -78,6 +78,7 @@ UefiShellDebug1CommandsLibConstructor (
   ShellCommandRegisterCommandName (L"dblk", ShellCommandRunDblk, ShellCommandGetManFileNameDebug1, 0, L"Debug1", TRUE, gShellDebug1HiiHandle, STRING_TOKEN (STR_GET_HELP_DBLK));
   ShellCommandRegisterCommandName (L"edit", ShellCommandRunEdit, ShellCommandGetManFileNameDebug1, 0, L"Debug1", TRUE, gShellDebug1HiiHandle, STRING_TOKEN (STR_GET_HELP_EDIT));
   ShellCommandRegisterCommandName (L"hexedit", ShellCommandRunHexEdit, ShellCommandGetManFileNameDebug1, 0, L"Debug1", TRUE, gShellDebug1HiiHandle, STRING_TOKEN (STR_GET_HELP_HEXEDIT));
+  ShellCommandRegisterCommandName (L"cxl", ShellCommandRunCxl, ShellCommandGetManFileNameDebug1, 0, L"Debug1", TRUE, gShellDebug1HiiHandle, STRING_TOKEN (STR_GET_HELP_CXL));
 
   ShellCommandRegisterAlias (L"dmem", L"mem");
 
@@ -269,6 +270,10 @@ EditGetDefaultFileName (
 
   do {
     FileNameTmp = CatSPrint (NULL, L"NewFile%d.%s", Suffix, Extension);
+    if (FileNameTmp == NULL) {
+      ASSERT (FileNameTmp != NULL);
+      return NULL;
+    }
 
     //
     // after that filename changed to path

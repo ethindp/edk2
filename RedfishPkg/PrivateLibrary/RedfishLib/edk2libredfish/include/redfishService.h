@@ -10,13 +10,13 @@
 
   Copyright (c) 2019, Intel Corporation. All rights reserved.<BR>
   (C) Copyright 2021 Hewlett Packard Enterprise Development LP<BR>
+  Copyright (c) 2023, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef LIBREDFISH_REDFISH_SERVICE_H_
-#define LIBREDFISH_REDFISH_SERVICE_H_
+#pragma once
 
 #include <IndustryStandard/Http11.h>
 
@@ -105,10 +105,29 @@ getUriFromService (
   );
 
 json_t *
+getUriFromServiceEx (
+  redfishService        *service,
+  const char            *uri,
+  EFI_HTTP_HEADER       **Headers,
+  UINTN                 *HeaderCount,
+  EFI_HTTP_STATUS_CODE  **StatusCode
+  );
+
+json_t *
 patchUriFromService (
   redfishService        *service,
   const char            *uri,
   const char            *content,
+  EFI_HTTP_STATUS_CODE  **StatusCode
+  );
+
+json_t *
+patchUriFromServiceEx (
+  redfishService        *service,
+  const char            *uri,
+  const char            *content,
+  EFI_HTTP_HEADER       **Headers,
+  UINTN                 *HeaderCount,
   EFI_HTTP_STATUS_CODE  **StatusCode
   );
 
@@ -123,9 +142,41 @@ postUriFromService (
   );
 
 json_t *
+postUriFromServiceEx (
+  redfishService        *service,
+  const char            *uri,
+  const char            *content,
+  size_t                contentLength,
+  const char            *contentType,
+  EFI_HTTP_HEADER       **Headers,
+  UINTN                 *HeaderCount,
+  EFI_HTTP_STATUS_CODE  **StatusCode
+  );
+
+json_t *
+putUriFromServiceEx (
+  redfishService        *service,
+  const char            *uri,
+  const char            *content,
+  size_t                contentLength,
+  const char            *contentType,
+  EFI_HTTP_HEADER       **Headers,
+  UINTN                 *HeaderCount,
+  EFI_HTTP_STATUS_CODE  **StatusCode
+  );
+
+json_t *
 deleteUriFromService (
   redfishService        *service,
   const char            *uri,
+  EFI_HTTP_STATUS_CODE  **StatusCode
+  );
+
+json_t *
+deleteUriFromServiceEx (
+  redfishService        *service,
+  const char            *uri,
+  const char            *content,
   EFI_HTTP_STATUS_CODE  **StatusCode
   );
 
@@ -147,5 +198,3 @@ void
 cleanupServiceEnumerator (
   redfishService  *service
   );
-
-#endif

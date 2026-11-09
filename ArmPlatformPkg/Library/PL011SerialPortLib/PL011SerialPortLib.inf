@@ -32,8 +32,7 @@
 
 [Pcd]
   gEfiMdeModulePkgTokenSpaceGuid.PcdSerialRegisterBase
-
-[FixedPcd]
+  gEfiMdeModulePkgTokenSpaceGuid.PcdSerialUseHardwareFlowControl
   gEfiMdePkgTokenSpaceGuid.PcdUartDefaultBaudRate
   gEfiMdePkgTokenSpaceGuid.PcdUartDefaultDataBits
   gEfiMdePkgTokenSpaceGuid.PcdUartDefaultParity

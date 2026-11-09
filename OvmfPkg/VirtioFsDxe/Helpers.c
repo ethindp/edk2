@@ -320,7 +320,7 @@ VirtioFsExitBoot (
   DEBUG ((
     DEBUG_VERBOSE,
     "%a: VirtioFs=0x%p Label=\"%s\"\n",
-    __FUNCTION__,
+    __func__,
     VirtioFsAsVoid,
     VirtioFs->Label
     ));
@@ -1957,7 +1957,7 @@ VirtioFsComposeRenameDestination (
   Status            = VirtioFsGetBasename (LhsPath8, NULL, &LhsBasename16Size);
   ASSERT (Status == EFI_BUFFER_TOO_SMALL);
   ASSERT (LhsBasename16Size >= sizeof (CHAR16));
-  ASSERT (LhsBasename16Size % sizeof (CHAR16) == 0);
+  ASSERT (IS_ALIGNED (LhsBasename16Size, sizeof (CHAR16)));
   LhsBasenameLen = LhsBasename16Size / sizeof (CHAR16) - 1;
   if (LhsBasenameLen == 0) {
     //

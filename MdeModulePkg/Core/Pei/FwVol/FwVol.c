@@ -2,7 +2,7 @@
   Pei Core Firmware File System service routines.
 
 Copyright (c) 2015 HP Development Company, L.P.
-Copyright (c) 2006 - 2019, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2006 - 2025, Intel Corporation. All rights reserved.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
@@ -277,7 +277,7 @@ FindFileEx (
   EFI_FFS_FILE_HEADER             *FfsFileHeader;
   UINT32                          FileLength;
   UINT32                          FileOccupiedSize;
-  UINT32                          FileOffset;
+  UINT64                          FileOffset;
   UINT64                          FvLength;
   UINT8                           ErasePolarity;
   UINT8                           FileState;
@@ -335,8 +335,8 @@ FindFileEx (
     FfsFileHeader    = (EFI_FFS_FILE_HEADER *)((UINT8 *)*FileHeader + FileOccupiedSize);
   }
 
-  FileOffset = (UINT32)((UINT8 *)FfsFileHeader - (UINT8 *)FwVolHeader);
-  ASSERT (FileOffset <= 0xFFFFFFFF);
+  FileOffset = ((UINT8 *)FfsFileHeader - (UINT8 *)FwVolHeader);
+  ASSERT (FileOffset <= MAX_UINT32);
 
   while (FileOffset < (FvLength - sizeof (EFI_FFS_FILE_HEADER))) {
     //
@@ -456,6 +456,29 @@ FindFileEx (
 }
 
 /**
+  Return the pointer to the Firmware Volume GUID name in the FV header.
+
+  @param[in]  FvHeader   Pointer to the header of the Firmware Volume.
+
+  @retval     Pointer to the Firmware Volume GUID name in the FV header.
+              NULL if the FV is anonymous without an extended header.
+**/
+EFI_GUID *
+GetFvName (
+  IN  CONST EFI_FIRMWARE_VOLUME_HEADER  *FvHeader
+  )
+{
+  EFI_FIRMWARE_VOLUME_EXT_HEADER  *FvExtHeader;
+
+  if (FvHeader->ExtHeaderOffset == 0) {
+    return NULL;
+  }
+
+  FvExtHeader = (EFI_FIRMWARE_VOLUME_EXT_HEADER *)((UINT8 *)FvHeader + FvHeader->ExtHeaderOffset);
+  return &FvExtHeader->FvName;
+}
+
+/**
   Initialize PeiCore FV List.
 
   @param PrivateData     - Pointer to PEI_CORE_INSTANCE.
@@ -519,8 +542,9 @@ PeiInitializeFv (
   PrivateData->Fv[PrivateData->FvCount].AuthenticationStatus = 0;
   DEBUG ((
     DEBUG_INFO,
-    "The %dth FV start address is 0x%11p, size is 0x%08x, handle is 0x%p\n",
+    "The %dth FV[%g] start address is 0x%11p, size is 0x%08x, handle is 0x%p\n",
     (UINT32)PrivateData->FvCount,
+    GetFvName (BfvHeader),
     (VOID *)BfvHeader,
     (UINT32)BfvHeader->FvLength,
     FvHandle
@@ -661,8 +685,9 @@ FirmwareVolumeInfoPpiNotifyCallback (
     CurFvCount                                                 = PrivateData->FvCount;
     DEBUG ((
       DEBUG_INFO,
-      "The %dth FV start address is 0x%11p, size is 0x%08x, handle is 0x%p\n",
+      "The %dth FV[%g] start address is 0x%11p, size is 0x%08x, handle is 0x%p\n",
       (UINT32)CurFvCount,
+      GetFvName ((EFI_FIRMWARE_VOLUME_HEADER *)FvInfo2Ppi.FvInfo),
       (VOID *)FvInfo2Ppi.FvInfo,
       FvInfo2Ppi.FvInfoSize,
       FvHandle
@@ -696,7 +721,7 @@ FirmwareVolumeInfoPpiNotifyCallback (
           }
         }
 
-        DEBUG ((DEBUG_INFO, "Found firmware volume Image File %p in FV[%d] %p\n", FileHandle, CurFvCount, FvHandle));
+        DEBUG ((DEBUG_INFO, "Found firmware volume Image File[%g] %p in FV[%d] %p\n", FileHandle, FileHandle, CurFvCount, FvHandle));
         ProcessFvFile (PrivateData, &PrivateData->Fv[CurFvCount], FileHandle);
       }
     } while (FileHandle != NULL);
@@ -792,7 +817,7 @@ ProcessSection (
 {
   EFI_STATUS                             Status;
   UINT32                                 SectionLength;
-  UINT32                                 ParsedLength;
+  UINTN                                  ParsedLength;
   EFI_PEI_GUIDED_SECTION_EXTRACTION_PPI  *GuidSectionPpi;
   EFI_PEI_DECOMPRESS_PPI                 *DecompressPpi;
   VOID                                   *PpiOutput;
@@ -819,6 +844,10 @@ ProcessSection (
       if (!IsFfs3Fv) {
         DEBUG ((DEBUG_ERROR, "Found a FFS3 formatted section in a non-FFS3 formatted FV.\n"));
         SectionLength = SECTION2_SIZE (Section);
+        if (SectionLength == 0) {
+          break;
+        }
+
         //
         // SectionLength is adjusted it is 4 byte aligned.
         // Go to the next section
@@ -852,6 +881,10 @@ ProcessSection (
           SectionLength = SECTION2_SIZE (Section);
         } else {
           SectionLength = SECTION_SIZE (Section);
+        }
+
+        if (SectionLength == 0) {
+          break;
         }
 
         //
@@ -989,6 +1022,10 @@ ProcessSection (
       SectionLength = SECTION2_SIZE (Section);
     } else {
       SectionLength = SECTION_SIZE (Section);
+    }
+
+    if (SectionLength == 0) {
+      break;
     }
 
     //
@@ -1494,7 +1531,7 @@ ProcessFvFile (
       DEBUG ((
         DEBUG_INFO,
         "%a() FV at 0x%x, FvAlignment required is 0x%x\n",
-        __FUNCTION__,
+        __func__,
         FvHeader,
         FvAlignment
         ));
@@ -1652,7 +1689,7 @@ PeiFfsFvPpiProcessVolume (
   //
   Status = VerifyFv ((EFI_FIRMWARE_VOLUME_HEADER *)Buffer);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "Fail to verify FV which address is 0x%11p", Buffer));
+    DEBUG ((DEBUG_ERROR, "Fail to verify FV which address is 0x%11p\n", Buffer));
     return EFI_VOLUME_CORRUPTED;
   }
 
@@ -2422,8 +2459,9 @@ ThirdPartyFvPpiNotifyCallback (
     CurFvCount                                                 = PrivateData->FvCount;
     DEBUG ((
       DEBUG_INFO,
-      "The %dth FV start address is 0x%11p, size is 0x%08x, handle is 0x%p\n",
+      "The %dth FV[%g] start address is 0x%11p, size is 0x%08x, handle is 0x%p\n",
       (UINT32)CurFvCount,
+      GetFvName ((EFI_FIRMWARE_VOLUME_HEADER *)FvInfo),
       (VOID *)FvInfo,
       FvInfoSize,
       FvHandle
@@ -2457,7 +2495,7 @@ ThirdPartyFvPpiNotifyCallback (
           }
         }
 
-        DEBUG ((DEBUG_INFO, "Found firmware volume Image File %p in FV[%d] %p\n", FileHandle, CurFvCount, FvHandle));
+        DEBUG ((DEBUG_INFO, "Found firmware volume Image File[%g] %p in FV[%d] %p\n", FileHandle, FileHandle, CurFvCount, FvHandle));
         ProcessFvFile (PrivateData, &PrivateData->Fv[CurFvCount], FileHandle);
       }
     } while (FileHandle != NULL);

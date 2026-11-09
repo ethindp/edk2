@@ -7,8 +7,9 @@
 
 **/
 
-#include <libfdt.h>
 #include <Library/AndroidBootImgLib.h>
+#include <Library/BaseMemoryLib.h>
+#include <Library/FdtLib.h>
 #include <Library/PrintLib.h>
 #include <Library/DevicePathLib.h>
 #include <Library/UefiBootServicesTableLib.h>
@@ -86,7 +87,7 @@ STATIC CONST RAMDISK_DEVICE_PATH  mRamdiskDevicePath =
                      Buffer. On output with a return code of EFI_BUFFER_TOO_SMALL,
                      the size of Buffer required to retrieve the requested file.
   @param  Buffer     The memory buffer to transfer the file to. IF Buffer is NULL,
-                     then no the size of the requested file is returned in
+                     then the size of the requested file is returned in
                      BufferSize.
 
   @retval EFI_SUCCESS           The file was loaded.
@@ -322,11 +323,12 @@ AndroidBootImgGetFdt (
 EFI_STATUS
 AndroidBootImgUpdateArgs (
   IN  VOID  *BootImg,
-  OUT VOID  *KernelArgs
+  OUT VOID  **KernelArgs
   )
 {
   CHAR8       ImageKernelArgs[ANDROID_BOOTIMG_KERNEL_ARGS_SIZE];
   EFI_STATUS  Status;
+  UINT32      NewKernelArgSize;
 
   // Get kernel arguments from Android boot image
   Status = AndroidBootImgGetKernelArgs (BootImg, ImageKernelArgs);
@@ -334,16 +336,23 @@ AndroidBootImgUpdateArgs (
     return Status;
   }
 
+  NewKernelArgSize = ANDROID_BOOTIMG_KERNEL_ARGS_SIZE + PcdGet32 (PcdAndroidKernelCommandLineOverflow);
+  *KernelArgs      = AllocateZeroPool (sizeof (CHAR16) * NewKernelArgSize);
+  if (*KernelArgs == NULL) {
+    DEBUG ((DEBUG_ERROR, "Fail to allocate memory\n"));
+    return EFI_OUT_OF_RESOURCES;
+  }
+
   AsciiStrToUnicodeStrS (
     ImageKernelArgs,
-    KernelArgs,
-    ANDROID_BOOTIMG_KERNEL_ARGS_SIZE >> 1
+    *KernelArgs,
+    NewKernelArgSize
     );
   // Append platform kernel arguments
   if (mAndroidBootImg->AppendArgs) {
     Status = mAndroidBootImg->AppendArgs (
-                                KernelArgs,
-                                ANDROID_BOOTIMG_KERNEL_ARGS_SIZE
+                                *KernelArgs,
+                                NewKernelArgSize
                                 );
   }
 
@@ -425,7 +434,7 @@ AndroidBootImgLocateFdt (
     return Status;
   }
 
-  Err = fdt_check_header (*FdtBase);
+  Err = FdtCheckHeader (*FdtBase);
   if (Err != 0) {
     DEBUG ((
       DEBUG_ERROR,
@@ -445,9 +454,9 @@ AndroidBootImgGetChosenNode (
 {
   INTN  ChosenNode;
 
-  ChosenNode = fdt_subnode_offset ((CONST VOID *)UpdatedFdtBase, 0, "chosen");
+  ChosenNode = FdtSubnodeOffset ((CONST VOID *)UpdatedFdtBase, 0, "chosen");
   if (ChosenNode < 0) {
-    ChosenNode = fdt_add_subnode ((VOID *)UpdatedFdtBase, 0, "chosen");
+    ChosenNode = FdtAddSubnode ((VOID *)UpdatedFdtBase, 0, "chosen");
     if (ChosenNode < 0) {
       DEBUG ((DEBUG_ERROR, "Fail to find fdt node chosen!\n"));
       return 0;
@@ -465,19 +474,19 @@ AndroidBootImgSetProperty64 (
   IN  UINT64  Val
   )
 {
-  INTN                 Err;
-  struct fdt_property  *Property;
-  int                  Len;
+  INTN                Err;
+  CONST FDT_PROPERTY  *Property;
+  int                 Len;
 
-  Property = fdt_get_property_w (
+  Property = FdtGetPropertyW (
                (VOID *)UpdatedFdtBase,
                ChosenNode,
                PropertyName,
                &Len
                );
   if ((NULL == Property) && (Len == -FDT_ERR_NOTFOUND)) {
-    Val = cpu_to_fdt64 (Val);
-    Err = fdt_appendprop (
+    Val = CpuToFdt64 (Val);
+    Err = FdtAppendProp (
             (VOID *)UpdatedFdtBase,
             ChosenNode,
             PropertyName,
@@ -485,18 +494,18 @@ AndroidBootImgSetProperty64 (
             sizeof (UINT64)
             );
     if (Err) {
-      DEBUG ((DEBUG_ERROR, "fdt_appendprop() fail: %a\n", fdt_strerror (Err)));
+      DEBUG ((DEBUG_ERROR, "FdtAppendProp() fail: %a\n", FdtStrerror (Err)));
       return EFI_INVALID_PARAMETER;
     }
   } else if (Property != NULL) {
-    Err = fdt_setprop_u64 (
+    Err = FdtSetPropU64 (
             (VOID *)UpdatedFdtBase,
             ChosenNode,
             PropertyName,
             Val
             );
     if (Err) {
-      DEBUG ((DEBUG_ERROR, "fdt_setprop_u64() fail: %a\n", fdt_strerror (Err)));
+      DEBUG ((DEBUG_ERROR, "FdtSetpropU64() fail: %a\n", FdtStrerror (Err)));
       return EFI_INVALID_PARAMETER;
     }
   } else {
@@ -519,7 +528,7 @@ AndroidBootImgUpdateFdt (
   EFI_STATUS            Status;
   EFI_PHYSICAL_ADDRESS  UpdatedFdtBase, NewFdtBase;
 
-  NewFdtSize = (UINTN)fdt_totalsize (FdtBase)
+  NewFdtSize = (UINTN)FdtTotalSize (FdtBase)
                + FDT_ADDITIONAL_ENTRIES_SIZE;
   Status = gBS->AllocatePages (
                   AllocateAnyPages,
@@ -537,9 +546,9 @@ AndroidBootImgUpdateFdt (
   }
 
   // Load the Original FDT tree into the new region
-  Err = fdt_open_into (FdtBase, (VOID *)(INTN)UpdatedFdtBase, NewFdtSize);
+  Err = FdtOpenInto (FdtBase, (VOID *)(INTN)UpdatedFdtBase, NewFdtSize);
   if (Err) {
-    DEBUG ((DEBUG_ERROR, "fdt_open_into(): %a\n", fdt_strerror (Err)));
+    DEBUG ((DEBUG_ERROR, "FdtOpenInto(): %a\n", FdtStrerror (Err)));
     Status = EFI_INVALID_PARAMETER;
     goto Fdt_Exit;
   }
@@ -616,6 +625,10 @@ AndroidBootImgBoot (
   UINTN                      RamdiskSize;
   IN  VOID                   *FdtBase;
 
+  if ((Buffer == NULL) || (BufferSize == 0)) {
+    return EFI_INVALID_PARAMETER;
+  }
+
   NewKernelArg = NULL;
   ImageHandle  = NULL;
 
@@ -637,14 +650,7 @@ AndroidBootImgBoot (
     goto Exit;
   }
 
-  NewKernelArg = AllocateZeroPool (ANDROID_BOOTIMG_KERNEL_ARGS_SIZE);
-  if (NewKernelArg == NULL) {
-    DEBUG ((DEBUG_ERROR, "Fail to allocate memory\n"));
-    Status = EFI_OUT_OF_RESOURCES;
-    goto Exit;
-  }
-
-  Status = AndroidBootImgUpdateArgs (Buffer, NewKernelArg);
+  Status = AndroidBootImgUpdateArgs (Buffer, &NewKernelArg);
   if (EFI_ERROR (Status)) {
     goto Exit;
   }

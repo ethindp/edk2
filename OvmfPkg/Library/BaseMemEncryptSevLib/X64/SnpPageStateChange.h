@@ -2,14 +2,13 @@
 
   SEV-SNP Page Validation functions.
 
-  Copyright (c) 2021 AMD Incorporated. All rights reserved.<BR>
+  Copyright (c) 2021 - 2024, AMD Incorporated. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef SNP_PAGE_STATE_INTERNAL_H_
-#define SNP_PAGE_STATE_INTERNAL_H_
+#pragma once
 
 //
 // SEV-SNP Page states
@@ -24,12 +23,12 @@ InternalSetPageState (
   IN EFI_PHYSICAL_ADDRESS  BaseAddress,
   IN UINTN                 NumPages,
   IN SEV_SNP_PAGE_STATE    State,
-  IN BOOLEAN               UseLargeEntry
+  IN BOOLEAN               UseLargeEntry,
+  IN VOID                  *PscBuffer,
+  IN UINTN                 PscBufferSize
   );
 
 VOID
 SnpPageStateFailureTerminate (
   VOID
   );
-
-#endif

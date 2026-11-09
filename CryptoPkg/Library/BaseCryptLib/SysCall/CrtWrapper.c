@@ -265,6 +265,64 @@ strcspn (
   return Count;
 }
 
+char *
+strcpy (
+  char        *strDest,
+  const char  *strSource
+  )
+{
+  AsciiStrCpyS (strDest, AsciiStrnSizeS (strSource, MAX_STRING_SIZE - 1), strSource);
+  return strDest;
+}
+
+char *
+strncpy (
+  char        *strDest,
+  const char  *strSource,
+  size_t      count
+  )
+{
+  UINTN  DestMax = MAX_STRING_SIZE;
+
+  if (count < MAX_STRING_SIZE) {
+    DestMax = count + 1;
+  } else {
+    count = MAX_STRING_SIZE-1;
+  }
+
+  AsciiStrnCpyS (strDest, DestMax, strSource, (UINTN)count);
+
+  return strDest;
+}
+
+char *
+strcat (
+  char        *strDest,
+  const char  *strSource
+  )
+{
+  UINTN  DestMax;
+
+  DestMax = AsciiStrnLenS (strDest, MAX_STRING_SIZE) + AsciiStrnSizeS (strSource, MAX_STRING_SIZE);
+
+  if (DestMax > MAX_STRING_SIZE) {
+    DestMax = MAX_STRING_SIZE;
+  }
+
+  AsciiStrCatS (strDest, DestMax, strSource);
+
+  return strDest;
+}
+
+int
+strcmp (
+  const char  *s1,
+  const char  *s2
+  )
+{
+  return (int)AsciiStrCmp (s1, s2);
+}
+
 //
 // -- Character Classification Routines --
 //
@@ -367,6 +425,25 @@ strtoul (
   return 0;
 }
 
+char *
+strpbrk (
+  const char  *s,
+  const char  *accept
+  )
+{
+  int  i;
+
+  for ( ; *s != '\0'; s++) {
+    for (i = 0; accept[i] != '\0'; i++) {
+      if (*s == accept[i]) {
+        return (char *)s;
+      }
+    }
+  }
+
+  return NULL;
+}
+
 /* Convert character to lowercase */
 int
 tolower (
@@ -402,7 +479,10 @@ qsort (
   // Use CRT-style malloc to cover BS and RT memory allocation.
   //
   Buffer = malloc (width);
-  ASSERT (Buffer != NULL);
+  if (Buffer == NULL) {
+    ASSERT (Buffer != NULL);
+    return;
+  }
 
   //
   // Re-use PerformQuickSort() function Implementation in EDKII BaseSortLib.
@@ -457,31 +537,6 @@ fwrite (
   size_t      size,
   size_t      count,
   FILE        *stream
-  )
-{
-  return 0;
-}
-
-//
-//  -- Dummy OpenSSL Support Routines --
-//
-
-int
-BIO_printf (
-  void        *bio,
-  const char  *format,
-  ...
-  )
-{
-  return 0;
-}
-
-int
-BIO_snprintf (
-  char        *buf,
-  size_t      n,
-  const char  *format,
-  ...
   )
 {
   return 0;

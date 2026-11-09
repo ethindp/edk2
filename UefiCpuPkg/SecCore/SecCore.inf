@@ -13,7 +13,7 @@
 ##
 
 [Defines]
-  INF_VERSION                    = 0x00010005
+  INF_VERSION                    = 1.30
   BASE_NAME                      = SecCore
   MODULE_UNI_FILE                = SecCore.uni
   FILE_GUID                      = 1BA0062E-C779-4582-8566-336AE8F78F09
@@ -31,10 +31,13 @@
   SecMain.c
   SecMain.h
   FindPeiCore.c
-  SecBist.c
 
 [Sources.IA32]
   Ia32/ResetVec.nasmb
+
+[Sources.IA32, Sources.X64]
+  SecBist.c
+  SecTemporaryRamDone.c
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -47,7 +50,7 @@
   PlatformSecLib
   PcdLib
   DebugAgentLib
-  UefiCpuLib
+  CpuLib
   PeCoffGetEntryPointLib
   PeCoffExtraActionLib
   CpuExceptionHandlerLib
@@ -55,6 +58,10 @@
   PeiServicesLib
   PeiServicesTablePointerLib
   HobLib
+  StackCheckLib
+
+[LibraryClasses.IA32, LibraryClasses.X64]
+  CpuPageTableLib
 
 [Ppis]
   ## SOMETIMES_CONSUMES
@@ -77,6 +84,7 @@
 
 [Pcd]
   gUefiCpuPkgTokenSpaceGuid.PcdPeiTemporaryRamStackSize  ## CONSUMES
+  gUefiCpuPkgTokenSpaceGuid.PcdMaxMappingAddressBeforeTempRamExit  ## CONSUMES
   gEfiMdeModulePkgTokenSpaceGuid.PcdMigrateTemporaryRamFirmwareVolumes  ## CONSUMES
 
 [UserExtensions.TianoCore."ExtraFiles"]

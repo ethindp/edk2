@@ -6,8 +6,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _EFI_NVME_BLOCKIO_H_
-#define _EFI_NVME_BLOCKIO_H_
+#pragma once
 
 /**
   Reset the Block Device.
@@ -289,7 +288,9 @@ NvmeBlockIoFlushBlocksEx (
   function shall return EFI_DEVICE_ERROR.
 
   @param  This                         Indicates a pointer to the calling context.
-  @param  MediaId                      ID of the medium to receive data from.
+  @param  MediaId                      ID of the medium to receive data from. If there is no
+                                       block IO protocol supported by the physical device, the
+                                       value of MediaId is undefined.
   @param  Timeout                      The timeout, in 100ns units, to use for the execution
                                        of the security protocol command. A Timeout value of 0
                                        means that this function will wait indefinitely for the
@@ -369,7 +370,9 @@ NvmeStorageSecurityReceiveData (
   shall return EFI_DEVICE_ERROR.
 
   @param  This                         Indicates a pointer to the calling context.
-  @param  MediaId                      ID of the medium to receive data from.
+  @param  MediaId                      ID of the medium to receive data from. If there is no
+                                       block IO protocol supported by the physical device, the
+                                       value of MediaId is undefined.
   @param  Timeout                      The timeout, in 100ns units, to use for the execution
                                        of the security protocol command. A Timeout value of 0
                                        means that this function will wait indefinitely for the
@@ -407,5 +410,3 @@ NvmeStorageSecuritySendData (
   IN UINTN                                  PayloadBufferSize,
   IN VOID                                   *PayloadBuffer
   );
-
-#endif

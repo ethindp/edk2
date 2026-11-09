@@ -227,6 +227,7 @@ Ip6ConfigStartStatefulAutoConfig (
 
   if (Instance->Dhcp6SbNotifyEvent != NULL) {
     gBS->CloseEvent (Instance->Dhcp6SbNotifyEvent);
+    Instance->Dhcp6SbNotifyEvent = NULL;
   }
 
   Status = gBS->OpenProtocol (
@@ -356,6 +357,10 @@ Ip6ConfigReadConfigData (
   UINTN                   Index;
   IP6_CONFIG_DATA_RECORD  DataRecord;
   CHAR8                   *Data;
+  UINTN                   RecordArraySize;
+  UINTN                   DataOffset;
+
+  Variable = NULL;
 
   //
   // Try to read the configuration variable.
@@ -393,7 +398,52 @@ Ip6ConfigReadConfigData (
     }
 
     //
-    // Get the IAID we use.
+    // Validate the header and DataRecord array fit in the returned buffer
+    // before using DataRecordCount as a loop bound.
+    //
+    if (VarSize < OFFSET_OF (IP6_CONFIG_VARIABLE, DataRecord)) {
+      goto Error;
+    }
+
+    RecordArraySize = VarSize - OFFSET_OF (IP6_CONFIG_VARIABLE, DataRecord);
+    if (Variable->DataRecordCount > RecordArraySize / sizeof (IP6_CONFIG_DATA_RECORD)) {
+      goto Error;
+    }
+
+    DataOffset = OFFSET_OF (IP6_CONFIG_VARIABLE, DataRecord) +
+                 Variable->DataRecordCount * sizeof (IP6_CONFIG_DATA_RECORD);
+
+    for (Index = 0; Index < Variable->DataRecordCount; Index++) {
+      CopyMem (&DataRecord, &Variable->DataRecord[Index], sizeof (DataRecord));
+
+      if ((UINT32)DataRecord.DataType >= Ip6ConfigDataTypeMaximum) {
+        goto Error;
+      }
+
+      if ((DataRecord.Offset < DataOffset) ||
+          (DataRecord.Offset > VarSize) ||
+          (DataRecord.DataSize > VarSize - DataRecord.Offset))
+      {
+        goto Error;
+      }
+
+      DataItem = &Instance->DataItem[DataRecord.DataType];
+      if (DATA_ATTRIB_SET (DataItem->Attribute, DATA_ATTRIB_VOLATILE)) {
+        goto Error;
+      }
+
+      if (DATA_ATTRIB_SET (DataItem->Attribute, DATA_ATTRIB_SIZE_FIXED) &&
+          (DataItem->DataSize != DataRecord.DataSize)
+          )
+      {
+        goto Error;
+      }
+    }
+
+    //
+    // Apply records only after the entire variable has been validated so a
+    // later corrupt record cannot leave Instance->DataItem[] half-updated
+    // before Error: deletes the variable and returns EFI_NOT_FOUND.
     //
     Instance->IaId = Variable->IaId;
 
@@ -414,12 +464,7 @@ Ip6ConfigReadConfigData (
       if (!DATA_ATTRIB_SET (DataItem->Attribute, DATA_ATTRIB_SIZE_FIXED)) {
         //
         // This data item has variable length data.
-        // Check that the length is contained within the variable before allocating.
         //
-        if (DataRecord.DataSize > VarSize - DataRecord.Offset) {
-          goto Error;
-        }
-
         DataItem->Data.Ptr = AllocatePool (DataRecord.DataSize);
         if (DataItem->Data.Ptr == NULL) {
           //
@@ -989,7 +1034,7 @@ Ip6ConfigSetManualAddress (
     for (Index1 = 0; Index1 < NewAddressCount; Index1++, NewAddress++) {
       if (NetIp6IsLinkLocalAddr (&NewAddress->Address)    ||
           !NetIp6IsValidUnicast (&NewAddress->Address)    ||
-          (NewAddress->PrefixLength > 128)
+          (NewAddress->PrefixLength > IP6_PREFIX_MAX)
           )
       {
         //
@@ -2276,6 +2321,13 @@ Ip6ConfigInitInstance (
   UINTN                 Index;
   UINT16                IfIndex;
   IP6_CONFIG_DATA_ITEM  *DataItem;
+  UINT32                Random;
+
+  Status = PseudoRandomU32 (&Random);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "%a failed to generate random number: %r\n", __func__, Status));
+    return Status;
+  }
 
   IpSb = IP6_SERVICE_FROM_IP6_CONFIG_INSTANCE (Instance);
 
@@ -2381,7 +2433,7 @@ Ip6ConfigInitInstance (
     // The NV variable is not set, so generate a random IAID, and write down the
     // fresh new configuration as the NV variable now.
     //
-    Instance->IaId = NET_RANDOM (NetRandomInitSeed ());
+    Instance->IaId = Random;
 
     for (Index = 0; Index < IpSb->SnpMode.HwAddressSize; Index++) {
       Instance->IaId |= (IpSb->SnpMode.CurrentAddress.Addr[Index] << ((Index << 3) & 31));

@@ -51,6 +51,10 @@ PlatformHookSerialPortInitialize (
   UINT8                               *GuidHob;
   UNIVERSAL_PAYLOAD_GENERIC_HEADER    *GenericHeader;
 
+  if (GetHobList () == NULL) {
+    return RETURN_SUCCESS;
+  }
+
   GuidHob = GetFirstGuidHob (&gUniversalPayloadSerialPortInfoGuid);
   if (GuidHob == NULL) {
     return EFI_NOT_FOUND;
@@ -85,10 +89,14 @@ PlatformHookSerialPortInitialize (
       return Status;
     }
 
+ #if FixedPcdGetBool (PcdUseUniversalPayloadSerialPort) == 1
+
     Status = PcdSet32S (PcdSerialBaudRate, SerialPortInfo->BaudRate);
     if (RETURN_ERROR (Status)) {
       return Status;
     }
+
+ #endif
 
     return RETURN_SUCCESS;
   }

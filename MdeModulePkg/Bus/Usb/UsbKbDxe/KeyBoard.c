@@ -437,16 +437,17 @@ GetCurrentKeyboardLayout (
   if (Status == EFI_BUFFER_TOO_SMALL) {
     KeyboardLayout = AllocatePool (Length);
     ASSERT (KeyboardLayout != NULL);
-
-    Status = HiiDatabase->GetKeyboardLayout (
-                            HiiDatabase,
-                            NULL,
-                            &Length,
-                            KeyboardLayout
-                            );
-    if (EFI_ERROR (Status)) {
-      FreePool (KeyboardLayout);
-      KeyboardLayout = NULL;
+    if (KeyboardLayout != NULL) {
+      Status = HiiDatabase->GetKeyboardLayout (
+                              HiiDatabase,
+                              NULL,
+                              &Length,
+                              KeyboardLayout
+                              );
+      if (EFI_ERROR (Status)) {
+        FreePool (KeyboardLayout);
+        KeyboardLayout = NULL;
+      }
     }
   }
 
@@ -683,7 +684,10 @@ SetKeyboardLayoutEvent (
   //
   TableEntry    = GetKeyDescriptor (UsbKeyboardDevice, 0x58);
   KeyDescriptor = GetKeyDescriptor (UsbKeyboardDevice, 0x28);
-  CopyMem (TableEntry, KeyDescriptor, sizeof (EFI_KEY_DESCRIPTOR));
+
+  if ((TableEntry != NULL) && (KeyDescriptor != NULL)) {
+    CopyMem (TableEntry, KeyDescriptor, sizeof (EFI_KEY_DESCRIPTOR));
+  }
 
   FreePool (KeyboardLayout);
 }
@@ -805,7 +809,6 @@ InitUSBKeyboard (
   )
 {
   UINT16      ConfigValue;
-  UINT8       Protocol;
   EFI_STATUS  Status;
   UINT32      TransferResult;
 
@@ -854,22 +857,15 @@ InitUSBKeyboard (
     }
   }
 
-  UsbGetProtocolRequest (
-    UsbKeyboardDevice->UsbIo,
-    UsbKeyboardDevice->InterfaceDescriptor.InterfaceNumber,
-    &Protocol
-    );
   //
   // Set boot protocol for the USB Keyboard.
   // This driver only supports boot protocol.
   //
-  if (Protocol != BOOT_PROTOCOL) {
-    UsbSetProtocolRequest (
-      UsbKeyboardDevice->UsbIo,
-      UsbKeyboardDevice->InterfaceDescriptor.InterfaceNumber,
-      BOOT_PROTOCOL
-      );
-  }
+  UsbSetProtocolRequest (
+    UsbKeyboardDevice->UsbIo,
+    UsbKeyboardDevice->InterfaceDescriptor.InterfaceNumber,
+    BOOT_PROTOCOL
+    );
 
   UsbKeyboardDevice->CtrlOn    = FALSE;
   UsbKeyboardDevice->AltOn     = FALSE;
@@ -1848,7 +1844,7 @@ Dequeue (
   }
 
   CopyMem (Item, Queue->Buffer[Queue->Head], ItemSize);
-
+  ZeroMem (Queue->Buffer[Queue->Head], ItemSize);
   //
   // Adjust the head pointer of the FIFO keyboard buffer.
   //

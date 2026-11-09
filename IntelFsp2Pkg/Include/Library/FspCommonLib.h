@@ -1,12 +1,11 @@
 /** @file
 
-  Copyright (c) 2014 - 2019, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2014 - 2025, Intel Corporation. All rights reserved.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _FSP_COMMON_LIB_H_
-#define _FSP_COMMON_LIB_H_
+#pragma once
 
 #include <FspGlobalData.h>
 #include <FspMeasurePointId.h>
@@ -38,7 +37,7 @@ GetFspGlobalDataPointer (
 
   @retval ApiParameter FSP API first parameter passed by the bootloader.
 **/
-UINT32
+UINTN
 EFIAPI
 GetFspApiParameter (
   VOID
@@ -49,7 +48,7 @@ GetFspApiParameter (
 
   @retval ApiParameter FSP API second parameter passed by the bootloader.
 **/
-UINT32
+UINTN
 EFIAPI
 GetFspApiParameter2 (
   VOID
@@ -87,19 +86,7 @@ SetFspApiParameter (
 VOID
 EFIAPI
 SetFspApiReturnStatus (
-  IN UINT32  ReturnStatus
-  );
-
-/**
-  This function sets the context switching stack to a new stack frame.
-
-  @param[in] NewStackTop       New core stack to be set.
-
-**/
-VOID
-EFIAPI
-SetFspCoreStackPointer (
-  IN VOID  *NewStackTop
+  IN UINTN  ReturnStatus
   );
 
 /**
@@ -189,6 +176,28 @@ SetFspSiliconInitUpdDataPointer (
 VOID *
 EFIAPI
 GetFspSiliconInitUpdDataPointer (
+  VOID
+  );
+
+/**
+  This function sets the smm init UPD data pointer.
+
+  @param[in] SmmInitUpdPtr   smm init UPD data pointer.
+**/
+VOID
+EFIAPI
+SetFspSmmInitUpdDataPointer (
+  IN VOID  *SmmInitUpdPtr
+  );
+
+/**
+  This function gets the smm init UPD data pointer.
+
+  @return smm init UPD data pointer.
+**/
+VOID *
+EFIAPI
+GetFspSmmInitUpdDataPointer (
   VOID
   );
 
@@ -302,7 +311,5 @@ SetPhaseStatusCode (
 VOID
 EFIAPI
 FspApiReturnStatusReset (
-  IN UINT32  FspResetType
+  IN EFI_STATUS  FspResetType
   );
-
-#endif

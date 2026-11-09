@@ -2,13 +2,12 @@
   Declaration of external functions shared in TCP driver.
 
   Copyright (c) 2009 - 2014, Intel Corporation. All rights reserved.<BR>
-
+  Copyright (c) Microsoft Corporation
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _TCP_FUNC_H_
-#define _TCP_FUNC_H_
+#pragma once
 
 #include "TcpOption.h"
 
@@ -36,8 +35,11 @@ VOID
 
   @param[in, out]  Tcb               Pointer to the TCP_CB of this TCP instance.
 
+  @retval EFI_SUCCESS             The operation completed successfully
+  @retval others                  The underlying functions failed and could not complete the operation
+
 **/
-VOID
+EFI_STATUS
 TcpInitTcbLocal (
   IN OUT TCP_CB  *Tcb
   );
@@ -129,17 +131,6 @@ TcpCloneTcb (
   );
 
 /**
-  Compute an ISS to be used by a new connection.
-
-  @return The result ISS.
-
-**/
-TCP_SEQNO
-TcpGetIss (
-  VOID
-  );
-
-/**
   Get the local mss.
 
   @param[in]  Sock        Pointer to the socket to get mss.
@@ -202,8 +193,11 @@ TcpFormatNetbuf (
   @param[in, out]  Tcb          Pointer to the TCP_CB that wants to initiate a
                                 connection.
 
+  @retval EFI_SUCCESS             The operation completed successfully
+  @retval others                  The underlying functions failed and could not complete the operation
+
 **/
-VOID
+EFI_STATUS
 TcpOnAppConnect (
   IN OUT TCP_CB  *Tcb
   );
@@ -688,5 +682,3 @@ TcpDispatcher (
   IN UINT8   Request,
   IN VOID    *Data    OPTIONAL
   );
-
-#endif

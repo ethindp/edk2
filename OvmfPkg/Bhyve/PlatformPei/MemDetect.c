@@ -58,7 +58,7 @@ Q35TsegMbytesInitialization (
       DEBUG_ERROR,
       "%a: no TSEG (SMRAM) on host bridge DID=0x%04x; "
       "only DID=0x%04x (Q35) is supported\n",
-      __FUNCTION__,
+      __func__,
       mHostBridgeDevId,
       INTEL_Q35_MCH_DEVICE_ID
       ));
@@ -92,7 +92,7 @@ Q35TsegMbytesInitialization (
   DEBUG ((
     DEBUG_INFO,
     "%a: QEMU offers an extended TSEG (%d MB)\n",
-    __FUNCTION__,
+    __func__,
     ExtendedTsegMbytes
     ));
   PcdStatus = PcdSet16S (PcdQ35TsegMbytes, ExtendedTsegMbytes);
@@ -163,18 +163,6 @@ GetFirstNonAddress (
   FirstNonAddress = BASE_4GB + GetSystemMemorySizeAbove4gb ();
 
   //
-  // If DXE is 32-bit, then we're done; PciBusDxe will degrade 64-bit MMIO
-  // resources to 32-bit anyway. See DegradeResource() in
-  // "PciResourceSupport.c".
-  //
- #ifdef MDE_CPU_IA32
-  if (!FeaturePcdGet (PcdDxeIplSwitchToLongMode)) {
-    return FirstNonAddress;
-  }
-
- #endif
-
-  //
   // Otherwise, in order to calculate the highest address plus one, we must
   // consider the 64-bit PCI host aperture too. Fetch the default size.
   //
@@ -185,7 +173,7 @@ GetFirstNonAddress (
       DEBUG ((
         DEBUG_INFO,
         "%a: disabling 64-bit PCI host aperture\n",
-        __FUNCTION__
+        __func__
         ));
       PcdStatus = PcdSet64S (PcdPciMmio64Size, 0);
       ASSERT_RETURN_ERROR (PcdStatus);
@@ -228,7 +216,7 @@ GetFirstNonAddress (
     DEBUG ((
       DEBUG_INFO,
       "%a: Pci64Base=0x%Lx Pci64Size=0x%Lx\n",
-      __FUNCTION__,
+      __func__,
       Pci64Base,
       Pci64Size
       ));
@@ -296,16 +284,6 @@ GetPeiMemoryCap (
   UINT32   Pml4Entries;
   UINT32   PdpEntries;
   UINTN    TotalPages;
-
-  //
-  // If DXE is 32-bit, then just return the traditional 64 MB cap.
-  //
- #ifdef MDE_CPU_IA32
-  if (!FeaturePcdGet (PcdDxeIplSwitchToLongMode)) {
-    return SIZE_64MB;
-  }
-
- #endif
 
   //
   // Dependent on physical address width, PEI memory allocations can be
@@ -392,7 +370,7 @@ PublishPeiMemory (
     DEBUG ((
       DEBUG_INFO,
       "%a: mPhysMemAddressWidth=%d PeiMemoryCap=%u KB\n",
-      __FUNCTION__,
+      __func__,
       mPhysMemAddressWidth,
       PeiMemoryCap >> 10
       ));
@@ -441,7 +419,7 @@ QemuInitializeRam (
   MTRR_SETTINGS  MtrrSettings;
   EFI_STATUS     Status;
 
-  DEBUG ((DEBUG_INFO, "%a called\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a called\n", __func__));
 
   //
   // Determine total memory size available
@@ -511,18 +489,18 @@ QemuInitializeRam (
     MtrrGetAllMtrrs (&MtrrSettings);
 
     //
-    // MTRRs disabled, fixed MTRRs disabled, default type is uncached
+    // See SecMtrrSetup(), default type should be write back
     //
-    ASSERT ((MtrrSettings.MtrrDefType & BIT11) == 0);
+    ASSERT ((MtrrSettings.MtrrDefType & BIT11) != 0);
     ASSERT ((MtrrSettings.MtrrDefType & BIT10) == 0);
-    ASSERT ((MtrrSettings.MtrrDefType & 0xFF) == 0);
+    ASSERT ((MtrrSettings.MtrrDefType & 0xFF) == MTRR_CACHE_WRITE_BACK);
 
     //
     // flip default type to writeback
     //
-    SetMem (&MtrrSettings.Fixed, sizeof MtrrSettings.Fixed, 0x06);
+    SetMem (&MtrrSettings.Fixed, sizeof MtrrSettings.Fixed, MTRR_CACHE_WRITE_BACK);
     ZeroMem (&MtrrSettings.Variables, sizeof MtrrSettings.Variables);
-    MtrrSettings.MtrrDefType |= BIT11 | BIT10 | 6;
+    MtrrSettings.MtrrDefType |= BIT10;
     MtrrSetAllMtrrs (&MtrrSettings);
 
     //

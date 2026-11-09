@@ -196,7 +196,11 @@ CreateRootBridge (
   }
 
   RootBridge = AllocateZeroPool (sizeof (PCI_ROOT_BRIDGE_INSTANCE));
-  ASSERT (RootBridge != NULL);
+  if (RootBridge == NULL) {
+    DEBUG ((DEBUG_ERROR, "Failed to allocate RootBridge\n"));
+    ASSERT (RootBridge != NULL);
+    return NULL;
+  }
 
   RootBridge->Signature             = PCI_ROOT_BRIDGE_SIGNATURE;
   RootBridge->Supports              = Bridge->Supports;
@@ -209,7 +213,12 @@ CreateRootBridge (
   RootBridge->ConfigBuffer          = AllocatePool (
                                         TypeMax * sizeof (EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR) + sizeof (EFI_ACPI_END_TAG_DESCRIPTOR)
                                         );
-  ASSERT (RootBridge->ConfigBuffer != NULL);
+  if (RootBridge->ConfigBuffer == NULL) {
+    ASSERT (RootBridge->ConfigBuffer != NULL);
+    FreePool (RootBridge);
+    return NULL;
+  }
+
   InitializeListHead (&RootBridge->Maps);
 
   CopyMem (&RootBridge->Bus, &Bridge->Bus, sizeof (PCI_ROOT_BRIDGE_APERTURE));
@@ -243,6 +252,14 @@ CreateRootBridge (
         ASSERT (FALSE);
         Aperture = NULL;
         break;
+    }
+
+    if (Aperture == NULL) {
+      DEBUG ((DEBUG_ERROR, "%a - Failed to Get Resource!!!\n", __func__));
+      DEBUG ((DEBUG_ERROR, "No EFI_PCI_ROOT_BRIDGE_INSTANCE created\n"));
+      FreePool (RootBridge->ConfigBuffer);
+      FreePool (RootBridge);
+      return NULL;
     }
 
     RootBridge->ResAllocNode[Index].Type = Index;
@@ -1238,6 +1255,16 @@ RootBridgeIoPciAccess (
     }
   }
 
+  //
+  // If the access was a PCI write, it might have side effects that impact how
+  // the PCI device decodes its MMIO regions. Issue a barrier to ensure that
+  // subsequent MMIO accesses to those regions will not be reordered, and will
+  // not arrive before the PCI write.
+  //
+  if (!Read) {
+    MemoryFence ();
+  }
+
   return EFI_SUCCESS;
 }
 
@@ -1874,9 +1901,14 @@ RootBridgeIoConfiguration (
   OUT VOID                             **Resources
   )
 {
-  PCI_RESOURCE_TYPE                  Index;
+  UINTN                              Index;
   PCI_ROOT_BRIDGE_INSTANCE           *RootBridge;
   PCI_RES_NODE                       *ResAllocNode;
+  PCI_FIXED_RES_NODE                 *FixedResNode;
+  PCI_RESOURCE_TYPE                  Type;
+  UINT64                             Base;
+  UINT64                             Length;
+  UINT64                             Translation;
   EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR  *Descriptor;
   EFI_ACPI_END_TAG_DESCRIPTOR        *End;
 
@@ -1884,16 +1916,36 @@ RootBridgeIoConfiguration (
   // Get this instance of the Root Bridge.
   //
   RootBridge = ROOT_BRIDGE_FROM_THIS (This);
+  ASSERT (RootBridge->FixedResCount <= RootBridge->FixedResCapacity);
   ZeroMem (
     RootBridge->ConfigBuffer,
-    TypeMax * sizeof (EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR) + sizeof (EFI_ACPI_END_TAG_DESCRIPTOR)
+    (TypeMax + RootBridge->FixedResCapacity) * sizeof (EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR) +
+    sizeof (EFI_ACPI_END_TAG_DESCRIPTOR)
     );
   Descriptor = RootBridge->ConfigBuffer;
-  for (Index = TypeIo; Index < TypeMax; Index++) {
-    ResAllocNode = &RootBridge->ResAllocNode[Index];
 
-    if (ResAllocNode->Status != ResAllocated) {
-      continue;
+  //
+  // Emit the allocated root bridge windows first, followed by the fixed ranges
+  // that were submitted via EDKII_PCI_HOST_BRIDGE_FIXED_RESOURCE_PROTOCOL.
+  //
+  for (Index = 0; Index < TypeMax + RootBridge->FixedResCount; Index++) {
+    if (Index < TypeMax) {
+      ResAllocNode = &RootBridge->ResAllocNode[Index];
+
+      if (ResAllocNode->Status != ResAllocated) {
+        continue;
+      }
+
+      Type        = ResAllocNode->Type;
+      Base        = ResAllocNode->Base;
+      Length      = ResAllocNode->Length;
+      Translation = GetTranslationByResourceType (RootBridge, Type);
+    } else {
+      FixedResNode = &RootBridge->FixedRes[Index - TypeMax];
+      Type         = FixedResNode->Type;
+      Translation  = FixedResNode->Translation;
+      Base         = TO_HOST_ADDRESS (FixedResNode->DeviceBase, Translation);
+      Length       = FixedResNode->Length;
     }
 
     Descriptor->Desc = ACPI_ADDRESS_SPACE_DESCRIPTOR;
@@ -1901,15 +1953,12 @@ RootBridgeIoConfiguration (
     // According to UEFI 2.7, RootBridgeIo->Configuration should return address
     // range in CPU view (host address), and ResAllocNode->Base is already a CPU
     // view address (host address).
-    Descriptor->AddrRangeMin          = ResAllocNode->Base;
-    Descriptor->AddrRangeMax          = ResAllocNode->Base + ResAllocNode->Length - 1;
-    Descriptor->AddrLen               = ResAllocNode->Length;
-    Descriptor->AddrTranslationOffset = GetTranslationByResourceType (
-                                          RootBridge,
-                                          ResAllocNode->Type
-                                          );
+    Descriptor->AddrRangeMin          = Base;
+    Descriptor->AddrRangeMax          = Base + Length - 1;
+    Descriptor->AddrLen               = Length;
+    Descriptor->AddrTranslationOffset = Translation;
 
-    switch (ResAllocNode->Type) {
+    switch (Type) {
       case TypeIo:
         Descriptor->ResType = ACPI_ADDRESS_SPACE_TYPE_IO;
         break;

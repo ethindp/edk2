@@ -6,8 +6,7 @@
 
 **/
 
-#ifndef __PEI_REPORT_STATUS_CODE_ROUTER_H__
-#define __PEI_REPORT_STATUS_CODE_ROUTER_H__
+#pragma once
 
 #include <Ppi/ReportStatusCodeHandler.h>
 #include <Ppi/StatusCode.h>
@@ -18,6 +17,11 @@
 #include <Library/HobLib.h>
 #include <Library/PeiServicesLib.h>
 #include <Library/PeimEntryPoint.h>
+#include <Library/SynchronizationLib.h>
+
+#define RSC_ROUTER_NEST_STATUS_HOB_GUID  { \
+    0x7a1a8e9e, 0x2c3f, 0x4a5b, { 0x8d, 0x1c, 0x3e, 0x72, 0xa9, 0x1f, 0x6b, 0x04 } \
+  }
 
 /**
   Register the callback function for ReportStatusCode() notification.
@@ -96,5 +100,3 @@ ReportDispatcher (
   IN CONST EFI_GUID              *CallerId OPTIONAL,
   IN CONST EFI_STATUS_CODE_DATA  *Data OPTIONAL
   );
-
-#endif

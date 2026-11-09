@@ -2,6 +2,7 @@
   Miscellaneous routines for iSCSI driver.
 
 Copyright (c) 2004 - 2018, Intel Corporation. All rights reserved.<BR>
+Copyright (c) Microsoft Corporation
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
@@ -474,20 +475,17 @@ IScsiNetNtoi (
   @param[in, out]  Rand       The buffer to contain random numbers.
   @param[in]       RandLength The length of the Rand buffer.
 
+  @retval EFI_SUCCESS on success
+  @retval others      on error
+
 **/
-VOID
+EFI_STATUS
 IScsiGenRandom (
   IN OUT UINT8  *Rand,
   IN     UINTN  RandLength
   )
 {
-  UINT32  Random;
-
-  while (RandLength > 0) {
-    Random  = NET_RANDOM (NetRandomInitSeed ());
-    *Rand++ = (UINT8)(Random);
-    RandLength--;
-  }
+  return PseudoRandom (Rand, RandLength);
 }
 
 /**
@@ -807,6 +805,7 @@ IScsiRemoveNic (
   @param[in]  AttemptNum          The number of Attempts will be created.
 
   @retval EFI_SUCCESS             The Attempts have been created successfully.
+  @retval EFI_INVALID_PARAMETER   AttemptNum exceeds the UINT8 storage limit.
   @retval Others                  Failed to create the Attempt.
 
 **/
@@ -821,8 +820,12 @@ IScsiCreateAttempts (
   UINTN                        AttemptConfigOrderSize;
   UINT8                        *AttemptOrderTmp;
   UINTN                        TotalNumber;
-  UINT8                        Index;
+  UINTN                        Index;
   EFI_STATUS                   Status;
+
+  if (AttemptNum > MAX_UINT8) {
+    return EFI_INVALID_PARAMETER;
+  }
 
   for (Index = 1; Index <= AttemptNum; Index++) {
     //
@@ -858,7 +861,7 @@ IScsiCreateAttempts (
       FreePool (AttemptConfigOrder);
     }
 
-    AttemptOrderTmp[TotalNumber - 1] = Index;
+    AttemptOrderTmp[TotalNumber - 1] = (UINT8)Index;
     AttemptConfigOrder               = AttemptOrderTmp;
     AttemptConfigOrderSize           = TotalNumber * sizeof (UINT8);
 
@@ -875,7 +878,7 @@ IScsiCreateAttempts (
         DEBUG_ERROR,
         "%a: Failed to set 'InitialAttemptOrder' with Guid (%g): "
         "%r\n",
-        __FUNCTION__,
+        __func__,
         &gIScsiConfigGuid,
         Status
         ));
@@ -900,7 +903,7 @@ IScsiCreateAttempts (
     //
     // Configure the Attempt index and set variable.
     //
-    AttemptConfigData->AttemptConfigIndex = Index;
+    AttemptConfigData->AttemptConfigIndex = (UINT8)Index;
 
     //
     // Set the attempt name according to the order.
@@ -926,7 +929,7 @@ IScsiCreateAttempts (
         DEBUG_ERROR,
         "%a: Failed to set variable (mPrivate->PortString) with Guid (%g): "
         "%r\n",
-        __FUNCTION__,
+        __func__,
         &gEfiIScsiInitiatorNameProtocolGuid,
         Status
         ));

@@ -24,7 +24,7 @@
 STATIC EFI_EVENT                        mEfiExitBootServicesEvent;
 STATIC EFI_HARDWARE_INTERRUPT_PROTOCOL  *mInterrupt;
 STATIC EFI_WATCHDOG_TIMER_NOTIFY        mWatchdogNotify;
-STATIC UINT32                           mTimerPeriod;
+STATIC UINT64                           mTimerPeriod;
 
 /**
   Make sure the SP805 registers are unlocked for writing.
@@ -101,7 +101,7 @@ SP805Stop (
 {
   // Disable interrupts
   if ((MmioRead32 (SP805_WDOG_CONTROL_REG) & SP805_WDOG_CTRL_INTEN) != 0) {
-    MmioAnd32 (SP805_WDOG_CONTROL_REG, ~SP805_WDOG_CTRL_INTEN);
+    MmioAnd32 (SP805_WDOG_CONTROL_REG, (UINT32) ~SP805_WDOG_CTRL_INTEN);
   }
 }
 
@@ -397,7 +397,7 @@ SP805Initialize (
       DEBUG ((
         DEBUG_ERROR,
         "%a: failed to register watchdog interrupt - %r\n",
-        __FUNCTION__,
+        __func__,
         Status
         ));
       return Status;
@@ -406,7 +406,7 @@ SP805Initialize (
     DEBUG ((
       DEBUG_WARN,
       "%a: no interrupt specified, running in RESET mode only\n",
-      __FUNCTION__
+      __func__
       ));
   }
 

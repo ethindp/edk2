@@ -1,16 +1,17 @@
 /** @file
   Definition of Pei Core Structures and Services
 
-Copyright (c) 2006 - 2019, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2006 - 2025, Intel Corporation. All rights reserved.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _PEI_MAIN_H_
-#define _PEI_MAIN_H_
+#pragma once
 
 #include <PiPei.h>
 #include <Ppi/DxeIpl.h>
+#include <Ppi/DelayedDispatch.h>
+#include <Ppi/EndOfPeiPhase.h>
 #include <Ppi/MemoryDiscovered.h>
 #include <Ppi/StatusCode.h>
 #include <Ppi/Reset.h>
@@ -26,6 +27,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Ppi/TemporaryRamDone.h>
 #include <Ppi/SecHobData.h>
 #include <Ppi/PeiCoreFvLocation.h>
+#include <Ppi/MigrateTempRam.h>
 #include <Library/DebugLib.h>
 #include <Library/PeiCoreEntryPoint.h>
 #include <Library/BaseLib.h>
@@ -41,10 +43,15 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <IndustryStandard/PeImage.h>
 #include <Library/PeiServicesTablePointerLib.h>
 #include <Library/MemoryAllocationLib.h>
+#include <Library/TimerLib.h>
+#include <Library/SafeIntLib.h>
 #include <Guid/FirmwareFileSystem2.h>
 #include <Guid/FirmwareFileSystem3.h>
 #include <Guid/AprioriFileName.h>
 #include <Guid/MigratedFvInfo.h>
+#include <Guid/DelayedDispatch.h>
+#include <Guid/MemoryTypeInformation.h>
+#include <MemoryBin.h>
 
 ///
 /// It is an FFS type extension used for PeiFindFileEx. It indicates current
@@ -207,6 +214,23 @@ EFI_STATUS
 
 #define PEI_CORE_HANDLE_SIGNATURE  SIGNATURE_32('P','e','i','C')
 
+//
+// Converts elapsed ticks of performance counter to time in microseconds.
+// This macro converts the elapsed ticks of running performance counter to
+// time value in unit of microseconds.
+//
+// NOTE: To support Delayed Dispatch functionality, the timer ticks are required
+//       to be:
+//       1. A 64bit register;
+//       2. Guaranteed to be monotonically increasing from 0;
+//       3. Not wrapped throughout the duration of a boot;
+//
+// The requirement above is set to avoid the timer overflow issue to keep the
+// Delayed Dispatch meet the PI specification with minimal change (instead of
+// implementing a control-yielding multi-threaded PEI core).
+//
+#define GET_TIME_IN_US()  ((UINT32)DivU64x32(GetTimeInNanoSecond(GetPerformanceCounter ()), 1000))
+
 ///
 /// Pei Core private data structure instance
 ///
@@ -307,6 +331,35 @@ struct _PEI_CORE_INSTANCE {
   // Those Memory Range will be migrated into physical memory.
   //
   HOLE_MEMORY_DATA                  HoleData[HOLE_MAX_NUMBER];
+
+  //
+  // Table of delayed dispatch requests
+  //
+  DELAYED_DISPATCH_TABLE            *DelayedDispatchTable;
+
+  //
+  // Whether memory bins are initialized and being used in PEI
+  //
+  BOOLEAN                           MemoryTypeInformationInitialized;
+
+  //
+  // Memory type information for all memory types. The array index is the memory type.
+  // This is used for the memory bin feature, if enabled, to track bin sizes.
+  //
+  EFI_MEMORY_TYPE_INFORMATION       *MemoryTypeInformation;
+
+  //
+  // Memory type statistics for all memory types. The array index is the memory type.
+  // This is used for the memory bin feature, if enabled, to track bin locations.
+  //
+  EFI_MEMORY_TYPE_STATISTICS        *MemoryTypeStatistics;
+
+  //
+  // FALSE initially while PEI uses Temporary Memory. TRUE once reusable pages
+  // have been represented by a free memory HOB after PeiFreePages() or padding-
+  // region creation; remains TRUE after the HOB is consumed.
+  //
+  BOOLEAN                           TemporaryMemoryPagesFreed;
 };
 
 ///
@@ -836,10 +889,8 @@ PeiCreateHob (
   @param MemoryBegin     - Start Memory Address.
   @param MemoryLength    - Length of Memory.
 
-  @return EFI_SUCCESS Always success to initialize HOB.
-
 **/
-EFI_STATUS
+VOID
 PeiCoreBuildHobHandoffInfoTable (
   IN EFI_BOOT_MODE         BootMode,
   IN EFI_PHYSICAL_ADDRESS  MemoryBegin,
@@ -1044,17 +1095,6 @@ VOID
 MigrateMemoryPages (
   IN PEI_CORE_INSTANCE  *Private,
   IN BOOLEAN            TemporaryRamMigrated
-  );
-
-/**
-  Removes any FV HOBs whose base address is not in PEI installed memory.
-
-  @param[in] Private          Pointer to PeiCore's private data structure.
-
-**/
-VOID
-RemoveFvHobsInTemporaryMemory (
-  IN PEI_CORE_INSTANCE  *Private
   );
 
 /**
@@ -2038,4 +2078,45 @@ PeiReinitializeFv (
   IN  PEI_CORE_INSTANCE  *PrivateData
   );
 
-#endif
+/**
+  Register a callback to be called after a minimum delay has occurred.
+
+  @param[in] This           Pointer to the EFI_DELAYED_DISPATCH_PPI instance
+  @param[in] Function       Function to call back
+  @param[in] Context        Context data
+  @param[in] DelayedGroupId Delayed dispatch request ID the caller will wait on
+  @param[in] Delay          Delay interval
+
+  @retval EFI_SUCCESS               Function successfully loaded
+  @retval EFI_INVALID_PARAMETER     One of the Arguments is not supported
+  @retval EFI_OUT_OF_RESOURCES      No more entries
+
+**/
+EFI_STATUS
+EFIAPI
+PeiDelayedDispatchRegister (
+  IN  EFI_DELAYED_DISPATCH_PPI       *This,
+  IN  EFI_DELAYED_DISPATCH_FUNCTION  Function,
+  IN  UINT64                         Context,
+  IN  EFI_GUID                       *DelayedGroupId   OPTIONAL,
+  IN  UINT32                         Delay
+  );
+
+/**
+  Wait on a registered Delayed Dispatch unit that has a DelayedGroupId. Continue
+  to dispatch all registered delayed dispatch entries until *ALL* entries with
+  DelayedGroupId have completed.
+
+  @param[in] This            The Delayed Dispatch PPI pointer.
+  @param[in] DelayedGroupId  Delayed dispatch request ID the caller will wait on
+
+  @retval EFI_SUCCESS               Function successfully invoked
+  @retval EFI_INVALID_PARAMETER     One of the Arguments is not supported
+
+**/
+EFI_STATUS
+EFIAPI
+PeiDelayedDispatchWaitOnEvent (
+  IN  EFI_DELAYED_DISPATCH_PPI  *This,
+  IN  EFI_GUID                  DelayedGroupId
+  );

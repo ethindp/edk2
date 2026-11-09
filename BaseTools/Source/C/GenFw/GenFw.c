@@ -6,10 +6,10 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#include "WinNtInclude.h"
-
 #ifndef __GNUC__
+#define RUNTIME_FUNCTION  _WINNT_DUP_RUNTIME_FUNCTION
 #include <windows.h>
+#undef RUNTIME_FUNCTION
 #include <io.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -28,9 +28,9 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 // Acpi Table definition
 //
 #include <IndustryStandard/Acpi.h>
-#include <IndustryStandard/Acpi1_0.h>
-#include <IndustryStandard/Acpi2_0.h>
-#include <IndustryStandard/Acpi3_0.h>
+#include <IndustryStandard/Acpi10.h>
+#include <IndustryStandard/Acpi20.h>
+#include <IndustryStandard/Acpi30.h>
 #include <IndustryStandard/MemoryMappedConfigurationSpaceAccessTable.h>
 
 #include "CommonLib.h"
@@ -87,7 +87,9 @@ UINT32 mImageTimeStamp = 0;
 UINT32 mImageSize = 0;
 UINT32 mOutImageType = FW_DUMMY_IMAGE;
 BOOLEAN mIsConvertXip = FALSE;
-
+BOOLEAN mExportFlag = FALSE;
+BOOLEAN mNoNxCompat = FALSE;
+BOOLEAN mBuildIdFlag = FALSE;
 
 STATIC
 EFI_STATUS
@@ -174,11 +176,11 @@ Returns:
   fprintf (stdout, "  -e EFI_FILETYPE, --efiImage EFI_FILETYPE\n\
                         Create Efi Image. EFI_FILETYPE is one of BASE,SMM_CORE,\n\
                         PEI_CORE, PEIM, DXE_CORE, DXE_DRIVER, UEFI_APPLICATION,\n\
-                        SEC, DXE_SAL_DRIVER, UEFI_DRIVER, DXE_RUNTIME_DRIVER,\n\
+                        SEC, UEFI_DRIVER, DXE_RUNTIME_DRIVER,\n\
                         DXE_SMM_DRIVER, SECURITY_CORE, COMBINED_PEIM_DRIVER,\n\
                         MM_STANDALONE, MM_CORE_STANDALONE,\n\
                         PIC_PEIM, RELOCATABLE_PEIM, BS_DRIVER, RT_DRIVER,\n\
-                        APPLICATION, SAL_RT_DRIVER to support all module types\n\
+                        APPLICATION to support all module types\n\
                         It can only be used together with --keepexceptiontable,\n\
                         --keepzeropending, --keepoptionalheader, -r, -o option.\n\
                         It is a action option. If it is combined with other action options,\n\
@@ -245,6 +247,9 @@ Returns:
   fprintf (stdout, "  --keepoptionalheader  Don't zero PE/COFF optional header fields.\n\
                         This option can be used together with -e or -t.\n\
                         It doesn't work for other options.\n");
+  fprintf (stdout, "  --image-version       MAJOR.MINOR Set the PE/COFF optional header\n\
+                        field MajorImageVersion to MAJOR and MinorImageVersion\n\
+                        to MINOR.\n");
   fprintf (stdout, "  --keepzeropending     Don't strip zero pending of .reloc.\n\
                         This option can be used together with -e or -t.\n\
                         It doesn't work for other options.\n");
@@ -279,6 +284,17 @@ Returns:
                         except for -o or -r option. It is a action option.\n\
                         If it is combined with other action options, the later\n\
                         input action option will override the previous one.\n");
+  fprintf (stdout, "  --prm                 Scan symbol section from ELF image and \n\
+                        write export table into PE-COFF.\n\
+                        This option can be used together with -e.\n\
+                        It doesn't work for other options.\n");
+  fprintf (stdout, "  --nonxcompat          Do not set the IMAGE_DLLCHARACTERISTICS_NX_COMPAT bit \n\
+                        of the optional header in the PE header even if the \n\
+                        requirements are met.\n");
+  fprintf (stdout, "  --build-id            Preserve the .build-id section from the ELF image\n\
+                        and copy it to a .bldid section in the PE image.\n\
+                        This option can be used together with -e or -t.\n\
+                        It doesn't work for other options.\n");
   fprintf (stdout, "  -v, --verbose         Turn on verbose output with informational messages.\n");
   fprintf (stdout, "  -q, --quiet           Disable all messages except key message and fatal error\n");
   fprintf (stdout, "  -d, --debug level     Enable debug messages, at input debug level.\n");
@@ -366,7 +382,7 @@ Returns:
     if (Facs->Version > EFI_ACPI_3_0_FIRMWARE_ACPI_CONTROL_STRUCTURE_VERSION) {
       break;
     }
-    if ((Facs->Version != EFI_ACPI_1_0_FIRMWARE_ACPI_CONTROL_STRUCTURE_VERSION) &&
+    if ((Facs->Version != 0 /* field is reserved in ACPI 1.0 */) &&
         (Facs->Version != EFI_ACPI_2_0_FIRMWARE_ACPI_CONTROL_STRUCTURE_VERSION) &&
         (Facs->Version != EFI_ACPI_3_0_FIRMWARE_ACPI_CONTROL_STRUCTURE_VERSION)){
       Error (NULL, 0, 3000, "Invalid", "FACS version check failed.");
@@ -437,6 +453,59 @@ Returns:
   }
 
   return STATUS_SUCCESS;
+}
+
+/**
+
+  Checks if the Pe image is nxcompat compliant.
+
+  Must meet the following conditions:
+  1. The PE is 64bit
+  2. The section alignment is evenly divisible by 4k
+  3. No section is writable and executable.
+
+  @param  PeHdr     - The PE header
+
+  @retval TRUE      - The PE is nx compat compliant
+  @retval FALSE     - The PE is not nx compat compliant
+
+**/
+STATIC
+BOOLEAN
+IsNxCompatCompliant (
+  EFI_IMAGE_OPTIONAL_HEADER_UNION  *PeHdr
+  )
+{
+  EFI_IMAGE_SECTION_HEADER     *SectionHeader;
+  UINT32                       Index;
+  UINT32                       Mask;
+
+  // Must have an optional header to perform verification
+  if (PeHdr->Pe32.FileHeader.SizeOfOptionalHeader == 0) {
+    return FALSE;
+  }
+
+  // Verify PE is 64 bit
+  if (!(PeHdr->Pe32.OptionalHeader.Magic == EFI_IMAGE_NT_OPTIONAL_HDR64_MAGIC)) {
+    return FALSE;
+  }
+
+  // Verify Section Alignment is divisible by 4K
+  if (!((PeHdr->Pe32Plus.OptionalHeader.SectionAlignment % EFI_PAGE_SIZE) == 0)) {
+    return FALSE;
+  }
+
+  // Verify sections are not Write & Execute
+  Mask = EFI_IMAGE_SCN_MEM_EXECUTE | EFI_IMAGE_SCN_MEM_WRITE;
+  SectionHeader = (EFI_IMAGE_SECTION_HEADER *) ((UINT8 *) &(PeHdr->Pe32Plus.OptionalHeader) + PeHdr->Pe32Plus.FileHeader.SizeOfOptionalHeader);
+  for (Index = 0; Index < PeHdr->Pe32Plus.FileHeader.NumberOfSections; Index ++, SectionHeader ++) {
+    if ((SectionHeader->Characteristics & Mask) == Mask) {
+      return FALSE;
+    }
+  }
+
+  // Passed all requirements, return TRUE
+  return TRUE;
 }
 
 VOID
@@ -1116,6 +1185,10 @@ Returns:
   time_t                           OutputFileTime;
   struct stat                      Stat_Buf;
   BOOLEAN                          ZeroDebugFlag;
+  BOOLEAN                          ImageVersionFlag;
+  CHAR8                            *ImageVersionDot;
+  UINT16                           ImageMajorVersion;
+  UINT16                           ImageMinorVersion;
 
   SetUtilityName (UTILITY_NAME);
 
@@ -1164,6 +1237,10 @@ Returns:
   InputFileTime          = 0;
   OutputFileTime         = 0;
   ZeroDebugFlag          = FALSE;
+  ImageVersionFlag       = FALSE;
+  ImageVersionDot        = NULL;
+  ImageMajorVersion      = 0;
+  ImageMinorVersion      = 0;
 
   if (argc == 1) {
     Error (NULL, 0, 1001, "Missing options", "No input options.");
@@ -1294,6 +1371,53 @@ Returns:
       KeepOptionalHeaderFlag = TRUE;
       argc--;
       argv++;
+      continue;
+    }
+
+    if (stricmp(argv[0], "--image-version") == 0) {
+      if (argc == 1) {
+        Error (NULL, 0, 1003, "Invalid option value", "Image major and minor values missing");
+        goto Finish;
+      }
+      ImageVersionFlag = TRUE;
+      // Split argv[1] at '.'
+      ImageVersionDot = strchr(argv[1], '.');
+      if (ImageVersionDot != NULL) {
+        *ImageVersionDot = '\0';
+        // Convert major and minor version strings to UINT16
+        if (AsciiStringToUint64(argv[1], FALSE, &Temp64) != EFI_SUCCESS) {
+          Error (NULL, 0, 1003, "Invalid option value", "Image major version %s is not a valid number", argv[1]);
+          goto Finish;
+        }
+        if (Temp64 > 0xFFFF) {
+          Error (NULL, 0, 1003, "Invalid option value", "Image major version %s is out of range (0-65535)", argv[1]);
+          goto Finish;
+        }
+        ImageMajorVersion = (UINT16) Temp64;
+        if (AsciiStringToUint64(ImageVersionDot + 1, FALSE, &Temp64) != EFI_SUCCESS) {
+          Error (NULL, 0, 1003, "Invalid option value", "Image minor version %s is not a valid number", ImageVersionDot + 1);
+          goto Finish;
+        }
+        if (Temp64 > 0xFFFF) {
+          Error (NULL, 0, 1003, "Invalid option value", "Image minor version %s is out of range (0-65535)", ImageVersionDot + 1);
+          goto Finish;
+        }
+        ImageMinorVersion = (UINT16) Temp64;
+        *ImageVersionDot = '.';
+      } else {
+        // Convert major and minor version strings to UINT16
+        if (AsciiStringToUint64(argv[1], FALSE, &Temp64) != EFI_SUCCESS) {
+          Error (NULL, 0, 1003, "Invalid option value", "Image major version %s is not a valid number", argv[1]);
+          goto Finish;
+        }
+        if (Temp64 > 0xFFFF) {
+          Error (NULL, 0, 1003, "Invalid option value", "Image major version %s is out of range (0-65535)", argv[1]);
+          goto Finish;
+        }
+        ImageMajorVersion = (UINT16) Temp64;
+      }
+      argc -= 2;
+      argv += 2;
       continue;
     }
 
@@ -1433,6 +1557,34 @@ Returns:
       mOutImageType = FW_HII_PACKAGE_LIST_BINIMAGE;
       argc --;
       argv ++;
+      continue;
+    }
+
+    if (stricmp (argv[0], "--prm") == 0) {
+      if (stricmp (ModuleType, "DXE_RUNTIME_DRIVER") != 0 ){
+        Error (NULL, 0, 1001, "Invalid", "--prm option only supports DXE RUNTIME driver.");
+        goto Finish;
+      }
+
+      if (!mExportFlag) {
+        mExportFlag = TRUE;
+      }
+      argc --;
+      argv ++;
+      continue;
+    }
+
+    if (stricmp (argv[0], "--nonxcompat") == 0) {
+      mNoNxCompat = TRUE;
+      argc --;
+      argv ++;
+      continue;
+    }
+
+    if (stricmp (argv[0], "--build-id") == 0) {
+      mBuildIdFlag = TRUE;
+      argc--;
+      argv++;
       continue;
     }
 
@@ -2040,11 +2192,6 @@ Returns:
           Type = EFI_IMAGE_SUBSYSTEM_EFI_RUNTIME_DRIVER;
           VerboseMsg ("Efi Image subsystem type is efi runtime driver.");
 
-      } else if (stricmp (ModuleType, "DXE_SAL_DRIVER") == 0 ||
-        stricmp (ModuleType, "SAL_RT_DRIVER") == 0) {
-          Type = EFI_IMAGE_SUBSYSTEM_SAL_RUNTIME_DRIVER;
-          VerboseMsg ("Efi Image subsystem type is efi sal runtime driver.");
-
       } else {
         Error (NULL, 0, 1003, "Invalid option value", "EFI_FILETYPE = %s", ModuleType);
         goto Finish;
@@ -2179,12 +2326,6 @@ Returns:
       Error (NULL, 0, 3000, "Invalid", "PE header signature was not found in %s image.", mInImageName);
       goto Finish;
     }
-  }
-
-  if (PeHdr->Pe32.FileHeader.Machine == IMAGE_FILE_MACHINE_ARM) {
-    // Some tools kick out IMAGE_FILE_MACHINE_ARM (0x1c0) vs IMAGE_FILE_MACHINE_ARMT (0x1c2)
-    // so patch back to the official UEFI value.
-    PeHdr->Pe32.FileHeader.Machine = IMAGE_FILE_MACHINE_ARMT;
   }
 
   //
@@ -2351,6 +2492,11 @@ Returns:
       Optional32->SizeOfHeapReserve = 0;
       Optional32->SizeOfHeapCommit = 0;
     }
+    if (ImageVersionFlag) {
+      Optional32->MajorImageVersion = (UINT16) ImageMajorVersion;
+      Optional32->MinorImageVersion = (UINT16) ImageMinorVersion;
+    }
+
     TEImageHeader.AddressOfEntryPoint = Optional32->AddressOfEntryPoint;
     TEImageHeader.BaseOfCode          = Optional32->BaseOfCode;
     TEImageHeader.ImageBase           = (UINT64) (Optional32->ImageBase);
@@ -2444,9 +2590,19 @@ Returns:
       Optional64->SizeOfHeapReserve = 0;
       Optional64->SizeOfHeapCommit = 0;
     }
+    if (ImageVersionFlag) {
+      Optional64->MajorImageVersion = (UINT16) ImageMajorVersion;
+      Optional64->MinorImageVersion = (UINT16) ImageMinorVersion;
+    }
+
     TEImageHeader.AddressOfEntryPoint = Optional64->AddressOfEntryPoint;
     TEImageHeader.BaseOfCode          = Optional64->BaseOfCode;
     TEImageHeader.ImageBase           = (UINT64) (Optional64->ImageBase);
+
+    // Set NxCompat flag
+    if (IsNxCompatCompliant (PeHdr) && !mNoNxCompat) {
+      Optional64->DllCharacteristics |= IMAGE_DLLCHARACTERISTICS_NX_COMPAT;
+    }
 
     if (Optional64->NumberOfRvaAndSizes > EFI_IMAGE_DIRECTORY_ENTRY_BASERELOC) {
       TEImageHeader.DataDirectory[EFI_TE_IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress = Optional64->DataDirectory[EFI_IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress;
@@ -2914,7 +3070,8 @@ Returns:
       if (mIsConvertXip) {
         DebugEntry->FileOffset = DebugEntry->RVA;
       }
-      if (ZeroDebugFlag || DebugEntry->Type != EFI_IMAGE_DEBUG_TYPE_CODEVIEW) {
+      if ((ZeroDebugFlag || DebugEntry->Type != EFI_IMAGE_DEBUG_TYPE_CODEVIEW) &&
+          (DebugEntry->Type != EFI_IMAGE_DEBUG_TYPE_EX_DLLCHARACTERISTICS)) {
         memset (FileBuffer + DebugEntry->FileOffset, 0, DebugEntry->SizeOfData);
         memset (DebugEntry, 0, sizeof (EFI_IMAGE_DEBUG_DIRECTORY_ENTRY));
       }
@@ -3100,7 +3257,7 @@ Returns:
   // Get Debug, Export and Resource EntryTable RVA address.
   // Resource Directory entry need to review.
   //
-  if (FileHdr->Machine == EFI_IMAGE_MACHINE_IA32) {
+  if (FileHdr->Machine == IMAGE_FILE_MACHINE_I386) {
     Optional32Hdr = (EFI_IMAGE_OPTIONAL_HEADER32 *) ((UINT8*) FileHdr + sizeof (EFI_IMAGE_FILE_HEADER));
     SectionHeader = (EFI_IMAGE_SECTION_HEADER *) ((UINT8 *) Optional32Hdr +  FileHdr->SizeOfOptionalHeader);
     if (Optional32Hdr->NumberOfRvaAndSizes > EFI_IMAGE_DIRECTORY_ENTRY_EXPORT && \

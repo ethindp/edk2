@@ -2,15 +2,15 @@
   This file defines the SPI Configuration Protocol.
 
   Copyright (c) 2017, Intel Corporation. All rights reserved.<BR>
+  Copyright (C) 2024 Advanced Micro Devices, Inc. All rights reserved.
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
   @par Revision Reference:
-    This Protocol was introduced in UEFI PI Specification 1.6.
+    This Protocol was introduced in UEFI PI Specification 1.8 A.
 
 **/
 
-#ifndef __SPI_CONFIGURATION_PROTOCOL_H__
-#define __SPI_CONFIGURATION_PROTOCOL_H__
+#pragma once
 
 ///
 /// Global ID for the SPI Configuration Protocol
@@ -153,7 +153,7 @@ typedef struct _EFI_SPI_BUS {
 
   ///
   /// Address of the routine which controls the clock used by the SPI bus for
-  /// this SPI peripheral. The SPI host co ntroller's clock routine is called
+  /// this SPI peripheral. The SPI host controller's clock routine is called
   /// when this value is set to NULL.
   ///
   EFI_SPI_CLOCK                     Clock;
@@ -167,6 +167,13 @@ typedef struct _EFI_SPI_BUS {
   ///
   VOID    *ClockParameter;
 } EFI_SPI_BUS;
+
+///
+/// Definitions of SPI Part Attributes.
+///
+#define SPI_PART_SUPPORTS_2_BIT_DATA_BUS_WIDTH  BIT0
+#define SPI_PART_SUPPORTS_4_BIT_DATA_BUS_WIDTH  BIT1
+#define SPI_PART_SUPPORTS_8_BIT_DATA_BUS_WIDTH  BIT2
 
 ///
 /// The EFI_SPI_PERIPHERAL data structure describes how a specific block of
@@ -283,5 +290,3 @@ typedef struct _EFI_SPI_CONFIGURATION_PROTOCOL {
 } EFI_SPI_CONFIGURATION_PROTOCOL;
 
 extern EFI_GUID  gEfiSpiConfigurationProtocolGuid;
-
-#endif // __SPI_CONFIGURATION_PROTOCOL_H__

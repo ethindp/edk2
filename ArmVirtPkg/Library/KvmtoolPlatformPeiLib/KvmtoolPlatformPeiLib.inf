@@ -9,11 +9,11 @@
 
 [Defines]
   INF_VERSION                    = 0x0001001B
-  BASE_NAME                      = PlatformPeiLib
+  BASE_NAME                      = KvmtoolPlatformPeiLib
   FILE_GUID                      = 21073FB3-BA6F-43EB-83F0-4A840C648165
   MODULE_TYPE                    = BASE
   VERSION_STRING                 = 1.0
-  LIBRARY_CLASS                  = KvmtoolPlatformPeiLib
+  LIBRARY_CLASS                  = PlatformPeiLib
 
 [Sources]
   KvmtoolPlatformPeiLib.c
@@ -21,11 +21,12 @@
 [Packages]
   ArmPkg/ArmPkg.dec
   ArmVirtPkg/ArmVirtPkg.dec
-  EmbeddedPkg/EmbeddedPkg.dec
   MdeModulePkg/MdeModulePkg.dec
   MdePkg/MdePkg.dec
+  OvmfPkg/OvmfPkg.dec
 
 [LibraryClasses]
+  ArmCcaInitPeiLib
   DebugLib
   HobLib
   FdtLib
@@ -34,12 +35,12 @@
 
 [FixedPcd]
   gArmTokenSpaceGuid.PcdFvSize
-  gArmVirtTokenSpaceGuid.PcdDeviceTreeAllocationPadding
+  gUefiOvmfPkgTokenSpaceGuid.PcdDeviceTreeAllocationPadding
 
 [Pcd]
   gArmTokenSpaceGuid.PcdFvBaseAddress
-  gArmVirtTokenSpaceGuid.PcdDeviceTreeInitialBaseAddress
   gEfiMdeModulePkgTokenSpaceGuid.PcdSerialRegisterBase
+  gUefiOvmfPkgTokenSpaceGuid.PcdDeviceTreeInitialBaseAddress
 
 [Guids]
   gFdtHobGuid

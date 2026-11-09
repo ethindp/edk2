@@ -1,6 +1,6 @@
 ;------------------------------------------------------------------------------
 ;
-; Copyright (c) 2006 - 2008, Intel Corporation. All rights reserved.<BR>
+; Copyright (c) 2006 - 2022, Intel Corporation. All rights reserved.<BR>
 ; SPDX-License-Identifier: BSD-2-Clause-Patent
 ;
 ; Module Name:
@@ -39,7 +39,7 @@ ASM_PFX(InternalX86DisablePaging64):
     add     rax, 4                      ; Round RAX up to the next 4 byte boundary
     and     al, 0xfc
     sub     rdi, rax                    ; rdi <- Use stack to hold transition code
-    mov     r10d, edi                   ; r10 <- The start address of transicition code below 4G
+    mov     r10d, edi                   ; r10 <- The start address of transition code below 4G
     push    rcx                         ; save rcx to stack
     mov     rcx, rax                    ; rcx <- The size of transition piece code
     rep     movsb                       ; copy transition code to top of new stack which must be below 4GB
@@ -51,8 +51,7 @@ ASM_PFX(InternalX86DisablePaging64):
     sub     eax, 4                      ; eax <- One slot below transition code on the stack
     push    rcx                         ; push Cs to stack
     push    r10                         ; push address of tansition code on stack
-    DB      0x48                         ; prefix to composite "retq" with next "retf"
-    retf                                ; Use far return to load CS register from stack
+    retfq
 
 ; Start of transition code
 .0:

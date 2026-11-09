@@ -1,13 +1,12 @@
 /** @file
 IA-32 processor specific header file to enable SMM profile.
 
-Copyright (c) 2012 - 2015, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2012 - 2024, Intel Corporation. All rights reserved.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _SMM_PROFILE_ARCH_H_
-#define _SMM_PROFILE_ARCH_H_
+#pragma once
 
 #pragma pack (1)
 
@@ -73,10 +72,12 @@ RestorePageTableAbove4G (
 /**
   Create SMM page table for S3 path.
 
+  @param[out] Cr3    The base address of the page tables.
+
 **/
 VOID
 InitSmmS3Cr3 (
-  VOID
+  OUT UINTN  *Cr3
   );
 
 /**
@@ -87,5 +88,3 @@ VOID
 InitPagesForPFHandler (
   VOID
   );
-
-#endif // _SMM_PROFILE_ARCH_H_

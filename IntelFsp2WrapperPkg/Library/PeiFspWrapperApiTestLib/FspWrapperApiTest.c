@@ -37,10 +37,10 @@ TestFspMemoryInitApiOutput (
       break;
     }
 
-    if ((CompareGuid (&Hob.ResourceDescriptor->Owner, &gFspBootLoaderTolumHobGuid))) {
+    if ((CompareGuid (&Hob.ResourceDescriptor2->Owner, &gFspBootLoaderTolumHobGuid))) {
       DEBUG ((DEBUG_INFO, "gFspBootLoaderTolumHobGuid Found\n"));
       DEBUG ((DEBUG_INFO, "Fill Boot Loader reserved memory range with 0x5A for testing purpose\n"));
-      SetMem ((VOID *)(UINTN)Hob.ResourceDescriptor->PhysicalStart, (UINTN)Hob.ResourceDescriptor->ResourceLength, 0x5A);
+      SetMem ((VOID *)(UINTN)Hob.ResourceDescriptor2->PhysicalStart, (UINTN)Hob.ResourceDescriptor2->ResourceLength, 0x5A);
       break;
     }
 
@@ -79,6 +79,22 @@ EFI_STATUS
 EFIAPI
 TestFspSiliconInitApiOutput (
   IN  VOID  *FspsUpdDataPtr
+  )
+{
+  return RETURN_SUCCESS;
+}
+
+/**
+  Test the output of FSP API - FspSmmInit.
+
+  @param[in] FspiUpdDataPtr Address pointer to the Smm Init parameters structure.
+
+  @return test result on output of FspSmmInit API.
+**/
+EFI_STATUS
+EFIAPI
+TestFspSmmInitApiOutput (
+  IN  VOID  *FspiUpdDataPtr
   )
 {
   return RETURN_SUCCESS;

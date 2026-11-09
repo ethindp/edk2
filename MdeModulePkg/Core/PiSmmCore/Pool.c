@@ -191,10 +191,11 @@ InternalAllocPoolByIndex (
   @retval EFI_SUCCESS           Pool successfully freed.
 
 **/
+STATIC
 EFI_STATUS
 InternalFreePoolByIndex (
   IN FREE_POOL_HEADER  *FreePoolHdr,
-  IN POOL_TAIL         *PoolTail
+  IN POOL_TAIL         *PoolTail OPTIONAL
   )
 {
   UINTN          PoolIndex;
@@ -210,8 +211,11 @@ InternalFreePoolByIndex (
   FreePoolHdr->Header.Signature = 0;
   FreePoolHdr->Header.Available = TRUE;
   FreePoolHdr->Header.Type      = 0;
-  PoolTail->Signature           = 0;
-  PoolTail->Size                = 0;
+  if (PoolTail != NULL) {
+    PoolTail->Signature = 0;
+    PoolTail->Size      = 0;
+  }
+
   ASSERT (PoolIndex < MAX_POOL_INDEX);
   InsertHeadList (&mSmmPoolLists[SmmPoolType][PoolIndex], &FreePoolHdr->Link);
   return EFI_SUCCESS;
@@ -382,17 +386,17 @@ SmmInternalFreePool (
     return EFI_INVALID_PARAMETER;
   }
 
-  MemoryGuarded = IsHeapGuardEnabled () &&
-                  IsMemoryGuarded ((EFI_PHYSICAL_ADDRESS)(UINTN)Buffer);
-  HasPoolTail = !(MemoryGuarded &&
-                  ((PcdGet8 (PcdHeapGuardPropertyMask) & BIT7) == 0));
-
   FreePoolHdr = (FREE_POOL_HEADER *)((POOL_HEADER *)Buffer - 1);
   ASSERT (FreePoolHdr->Header.Signature == POOL_HEAD_SIGNATURE);
   ASSERT (!FreePoolHdr->Header.Available);
   if (FreePoolHdr->Header.Signature != POOL_HEAD_SIGNATURE) {
     return EFI_INVALID_PARAMETER;
   }
+
+  MemoryGuarded = IsHeapGuardEnabled () &&
+                  IsMemoryGuarded ((EFI_PHYSICAL_ADDRESS)(UINTN)FreePoolHdr);
+  HasPoolTail = !(MemoryGuarded &&
+                  ((PcdGet8 (PcdHeapGuardPropertyMask) & BIT7) == 0));
 
   if (HasPoolTail) {
     PoolTail = HEAD_TO_TAIL (&FreePoolHdr->Header);

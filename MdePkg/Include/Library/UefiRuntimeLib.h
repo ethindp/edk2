@@ -6,8 +6,7 @@ Copyright (c) 2006 - 2018, Intel Corporation. All rights reserved.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#ifndef __UEFI_RUNTIME_LIB__
-#define __UEFI_RUNTIME_LIB__
+#pragma once
 
 /**
   This function allows the caller to determine if UEFI ExitBootServices() has been called.
@@ -64,6 +63,9 @@ EfiGoneVirtual (
   @retval  EFI_SUCCESS            The operation completed successfully.
   @retval  EFI_INVALID_PARAMETER  Time is NULL.
   @retval  EFI_DEVICE_ERROR       The time could not be retrieved due to a hardware error.
+  @retval  EFI_UNSUPPORTED        This call is not supported by this platform at the time the call is made.
+                                  The platform should describe this runtime service as unsupported at runtime
+                                  via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 EFI_STATUS
@@ -93,6 +95,9 @@ EfiGetTime (
   @retval  EFI_SUCCESS            The operation completed successfully.
   @retval  EFI_INVALID_PARAMETER  A time field is out of range.
   @retval  EFI_DEVICE_ERROR       The time could not be set due to a hardware error.
+  @retval  EFI_UNSUPPORTED        This call is not supported by this platform at the time the call is made.
+                                  The platform should describe this runtime service as unsupported at runtime
+                                  via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 EFI_STATUS
@@ -119,7 +124,9 @@ EfiSetTime (
   @retval  EFI_INVALID_PARAMETER  Pending is NULL.
   @retval  EFI_INVALID_PARAMETER  Time is NULL.
   @retval  EFI_DEVICE_ERROR       The wakeup time could not be retrieved due to a hardware error.
-  @retval  EFI_UNSUPPORTED        A wakeup timer is not supported on this platform.
+  @retval  EFI_UNSUPPORTED        This call is not supported by this platform at the time the call is made.
+                                  The platform should describe this runtime service as unsupported at runtime
+                                  via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 EFI_STATUS
@@ -149,7 +156,9 @@ EfiGetWakeupTime (
                                   If Enable is FALSE, then the wakeup alarm was disabled.
   @retval  EFI_INVALID_PARAMETER  A time field is out of range.
   @retval  EFI_DEVICE_ERROR       The wakeup time could not be set due to a hardware error.
-  @retval  EFI_UNSUPPORTED        A wakeup timer is not supported on this platform.
+  @retval  EFI_UNSUPPORTED        This call is not supported by this platform at the time the call is made.
+                                  The platform should describe this runtime service as unsupported at runtime
+                                  via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 EFI_STATUS
@@ -188,6 +197,10 @@ EfiSetWakeupTime (
   @retval  EFI_INVALID_PARAMETER  The DataSize is not too small and Data is NULL.
   @retval  EFI_DEVICE_ERROR       The variable could not be retrieved due to a hardware error.
   @retval  EFI_SECURITY_VIOLATION The variable could not be retrieved due to an authentication failure.
+  @retval  EFI_UNSUPPORTED        After ExitBootServices() has been called, this return code may be returned
+                                  if no variable storage is supported. The platform should describe this
+                                  runtime service as unsupported at runtime via an EFI_RT_PROPERTIES_TABLE
+                                  configuration table.
 **/
 EFI_STATUS
 EFIAPI
@@ -215,7 +228,7 @@ EfiGetVariable (
                            As output, returns the name of variable. The name
                            string is Null-Terminated Unicode string.
   @param  VendorGuid       As input, supplies the last VendorGuid that was returned by
-                           GetNextVriableName().
+                           GetNextVariableName().
                            As output, returns the VendorGuid of the current variable.
 
   @retval  EFI_SUCCESS           The function completed successfully.
@@ -227,6 +240,10 @@ EfiGetVariable (
   @retval  EFI_INVALID_PARAMETER VariableName is NULL.
   @retval  EFI_INVALID_PARAMETER VendorGuid is NULL.
   @retval  EFI_DEVICE_ERROR      The variable name could not be retrieved due to a hardware error.
+  @retval  EFI_UNSUPPORTED       After ExitBootServices() has been called, this return code may be returned
+                                 if no variable storage is supported. The platform should describe this
+                                 runtime service as unsupported at runtime via an EFI_RT_PROPERTIES_TABLE
+                                 configuration table.
 
 **/
 EFI_STATUS
@@ -264,6 +281,9 @@ EfiGetNextVariableName (
                                   set but the AuthInfo does NOT pass the validation check carried
                                   out by the firmware.
   @retval  EFI_NOT_FOUND          The variable trying to be updated or deleted was not found.
+  @retval  EFI_UNSUPPORTED        This call is not supported by this platform at the time the call is made.
+                                  The platform should describe this runtime service as unsupported at runtime
+                                  via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 EFI_STATUS
@@ -290,6 +310,10 @@ EfiSetVariable (
   @retval  EFI_SUCCESS           The next high monotonic count was returned.
   @retval  EFI_DEVICE_ERROR      The device is not functioning properly.
   @retval  EFI_INVALID_PARAMETER HighCount is NULL.
+  @retval  EFI_UNSUPPORTED       This call is not supported by this platform at the time the call is made.
+                                 The platform should describe this runtime service as unsupported at runtime
+                                 via an EFI_RT_PROPERTIES_TABLE configuration table.
+
 
 **/
 EFI_STATUS
@@ -350,7 +374,11 @@ EfiResetSystem (
   @retval  EFI_NOT_FOUND          The pointer pointed to by Address was not found to be part of
                                   the current memory map. This is normally fatal.
   @retval  EFI_INVALID_PARAMETER  Address is NULL.
-  @retval  EFI_INVALID_PARAMETER  *Address is NULL and DebugDispositio
+  @retval  EFI_INVALID_PARAMETER  *Address is NULL and DebugDisposition does
+                                  not have the EFI_OPTIONAL_PTR bit set.
+  @retval  EFI_UNSUPPORTED        This call is not supported by this platform at the time the call is made.
+                                  The platform should describe this runtime service as unsupported at runtime
+                                  via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 EFI_STATUS
@@ -367,7 +395,7 @@ EfiConvertPointer (
   ConvertPointer().  See the UEFI Specification for details.
   For IPF, this function interprets Address as a pointer to an EFI_PLABEL structure
   and both the EntryPoint and GP fields of an EFI_PLABEL are converted from physical
-  to virtiual addressing.  Since IPF allows the GP to point to an address outside
+  to virtual addressing.  Since IPF allows the GP to point to an address outside
   a PE/COFF image, the physical to virtual offset for the EntryPoint field is used
   to adjust the GP field.  The UEFI Runtime Service ConvertPointer() is used to convert
   EntryPoint and the status code for this conversion is always returned.   If the convertion
@@ -414,6 +442,9 @@ EfiConvertFunctionPointer (
                                 map that requires a mapping.
   @retval EFI_NOT_FOUND         A virtual address was supplied for an address that is not found
                                 in the memory map.
+  @retval EFI_UNSUPPORTED       This call is not supported by this platform at the time the call is made.
+                                The platform should describe this runtime service as unsupported at runtime
+                                via an EFI_RT_PROPERTIES_TABLE configuration table.
 **/
 EFI_STATUS
 EFIAPI
@@ -460,7 +491,7 @@ EfiConvertList (
                                 ScatterGatherList. The CapsuleHeaderArray must
                                 have the capsules in the same order as the ScatterGatherList.
   @param  CapsuleCount          Number of pointers to EFI_CAPSULE_HEADER in
-                                CaspuleHeaderArray.
+                                CapsuleHeaderArray.
   @param  ScatterGatherList     Physical pointer to a set of
                                 EFI_CAPSULE_BLOCK_DESCRIPTOR that describes the
                                 location in physical memory of a set of capsules. See Related
@@ -478,6 +509,9 @@ EfiConvertList (
   @retval EFI_DEVICE_ERROR      The capsule update was started, but failed due to a device error.
   @retval EFI_UNSUPPORTED       The capsule type is not supported on this platform.
   @retval EFI_OUT_OF_RESOURCES  There were insufficient resources to process the capsule.
+  @retval EFI_UNSUPPORTED       This call is not supported by this platform at the time the call is made.
+                                The platform should describe this runtime service as unsupported at runtime
+                                via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 EFI_STATUS
@@ -508,7 +542,7 @@ EfiUpdateCapsule (
                                 being passed into update capsule. The capsules are assumed to
                                 stored in contiguous virtual memory.
   @param  CapsuleCount          Number of pointers to EFI_CAPSULE_HEADER in
-                                CaspuleHeaderArray.
+                                CapsuleHeaderArray.
   @param  MaximumCapsuleSize     On output the maximum size that UpdateCapsule() can
                                 support as an argument to UpdateCapsule() via
                                 CapsuleHeaderArray and ScatterGatherList.
@@ -520,6 +554,9 @@ EfiUpdateCapsule (
   @retval EFI_UNSUPPORTED       The capsule type is not supported on this platform, and
                                 MaximumCapsuleSize and ResetType are undefined.
   @retval EFI_OUT_OF_RESOURCES  There were insufficient resources to process the query request.
+  @retval EFI_UNSUPPORTED       This call is not supported by this platform at the time the call is made.
+                                The platform should describe this runtime service as unsupported at runtime
+                                via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 EFI_STATUS
@@ -573,5 +610,3 @@ EfiQueryVariableInfo (
   OUT UINT64  *RemainingVariableStorageSize,
   OUT UINT64  *MaximumVariableSize
   );
-
-#endif

@@ -8,6 +8,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 #include <IndustryStandard/UefiTcgPlatform.h>
 #include <Library/Tpm2CommandLib.h>
+#include <Library/Tpm2HelpLib.h>
 #include <Library/Tpm2DeviceLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/BaseLib.h>
@@ -115,7 +116,7 @@ Tpm2PcrExtend (
   Buffer = (UINT8 *)&Cmd.AuthSessionPcr;
 
   // sessionInfoSize
-  SessionInfoSize       = CopyAuthSessionCommand (NULL, Buffer);
+  SessionInfoSize       = Tpm2CopyAuthSessionCommand (NULL, Buffer);
   Buffer               += SessionInfoSize;
   Cmd.AuthorizationSize = SwapBytes32 (SessionInfoSize);
 
@@ -127,7 +128,7 @@ Tpm2PcrExtend (
   for (Index = 0; Index < Digests->count; Index++) {
     WriteUnaligned16 ((UINT16 *)Buffer, SwapBytes16 (Digests->digests[Index].hashAlg));
     Buffer    += sizeof (UINT16);
-    DigestSize = GetHashSizeFromAlgo (Digests->digests[Index].hashAlg);
+    DigestSize = Tpm2GetHashSizeFromAlgo (Digests->digests[Index].hashAlg);
     if (DigestSize == 0) {
       DEBUG ((DEBUG_ERROR, "Unknown hash algorithm %d\r\n", Digests->digests[Index].hashAlg));
       return EFI_DEVICE_ERROR;
@@ -140,19 +141,15 @@ Tpm2PcrExtend (
       );
 
     DEBUG_CODE_BEGIN ();
-    UINTN  Index2;
-    DEBUG ((
+    DUMP_HEX (
       DEBUG_VERBOSE,
+      0,
+      Buffer,
+      DigestSize,
       "Tpm2PcrExtend - Hash = 0x%04x, Pcr[%02d], digest = ",
       Digests->digests[Index].hashAlg,
       (UINT8)PcrHandle
-      ));
-
-    for (Index2 = 0; Index2 < DigestSize; Index2++) {
-      DEBUG ((DEBUG_VERBOSE, "%02x ", Buffer[Index2]));
-    }
-
-    DEBUG ((DEBUG_VERBOSE, "\n"));
+      );
     DEBUG_CODE_END ();
 
     Buffer += DigestSize;
@@ -247,7 +244,7 @@ Tpm2PcrEvent (
   Buffer = (UINT8 *)&Cmd.AuthSessionPcr;
 
   // sessionInfoSize
-  SessionInfoSize       = CopyAuthSessionCommand (NULL, Buffer);
+  SessionInfoSize       = Tpm2CopyAuthSessionCommand (NULL, Buffer);
   Buffer               += SessionInfoSize;
   Cmd.AuthorizationSize = SwapBytes32 (SessionInfoSize);
 
@@ -304,7 +301,7 @@ Tpm2PcrEvent (
   for (Index = 0; Index < Digests->count; Index++) {
     Digests->digests[Index].hashAlg = SwapBytes16 (ReadUnaligned16 ((UINT16 *)Buffer));
     Buffer                         += sizeof (UINT16);
-    DigestSize                      = GetHashSizeFromAlgo (Digests->digests[Index].hashAlg);
+    DigestSize                      = Tpm2GetHashSizeFromAlgo (Digests->digests[Index].hashAlg);
     if (DigestSize == 0) {
       DEBUG ((DEBUG_ERROR, "Unknown hash algorithm %d\r\n", Digests->digests[Index].hashAlg));
       return EFI_DEVICE_ERROR;
@@ -507,7 +504,7 @@ Tpm2PcrAllocate (
   Buffer = (UINT8 *)&Cmd.AuthSession;
 
   // sessionInfoSize
-  SessionInfoSize     = CopyAuthSessionCommand (AuthSession, Buffer);
+  SessionInfoSize     = Tpm2CopyAuthSessionCommand (AuthSession, Buffer);
   Buffer             += SessionInfoSize;
   Cmd.AuthSessionSize = SwapBytes32 (SessionInfoSize);
 
@@ -757,7 +754,6 @@ Tpm2PcrReadForActiveBank (
   UINT32              ActivePcrBanks;
   UINT32              TcgRegistryHashAlg;
   UINTN               Index;
-  UINTN               Index2;
 
   PcrIndex = (UINT8)PcrHandle;
 
@@ -772,8 +768,6 @@ Tpm2PcrReadForActiveBank (
   ZeroMem (&PcrSelectionOut, sizeof (PcrSelectionOut));
   ZeroMem (&PcrValues, sizeof (PcrValues));
   ZeroMem (&Pcrs, sizeof (TPML_PCR_SELECTION));
-
-  DEBUG ((DEBUG_INFO, "ReadPcr - %02d\n", PcrIndex));
 
   //
   // Read TPM capabilities
@@ -868,19 +862,18 @@ Tpm2PcrReadForActiveBank (
     return EFI_DEVICE_ERROR;
   }
 
-  for (Index = 0; Index < PcrValues.count; Index++) {
-    DEBUG ((
-      DEBUG_INFO,
-      "ReadPcr - HashAlg = 0x%04x, Pcr[%02d], digest = ",
-      PcrSelectionOut.pcrSelections[Index].hash,
-      PcrIndex
-      ));
-
-    for (Index2 = 0; Index2 < PcrValues.digests[Index].size; Index2++) {
-      DEBUG ((DEBUG_INFO, "%02x ", PcrValues.digests[Index].buffer[Index2]));
+  if (DebugPrintLevelEnabled (DEBUG_SECURITY)) {
+    for (Index = 0; Index < PcrValues.count; Index++) {
+      DUMP_HEX (
+        DEBUG_SECURITY,
+        0,
+        PcrValues.digests[Index].buffer,
+        PcrValues.digests[Index].size,
+        "ReadPcr - HashAlg = 0x%04x, Pcr[%02d], digest = ",
+        PcrSelectionOut.pcrSelections[Index].hash,
+        PcrIndex
+        );
     }
-
-    DEBUG ((DEBUG_INFO, "\n"));
   }
 
   if (HashList != NULL) {

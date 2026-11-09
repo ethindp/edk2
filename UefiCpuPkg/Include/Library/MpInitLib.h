@@ -6,8 +6,7 @@
 
 **/
 
-#ifndef __MP_INIT_LIB_H__
-#define __MP_INIT_LIB_H__
+#pragma once
 
 #include <Ppi/SecPlatformInformation.h>
 #include <Protocol/MpService.h>
@@ -63,6 +62,8 @@ MpInitLibGetNumberOfProcessors (
   instant this call is made. This service may only be called from the BSP.
 
   @param[in]  ProcessorNumber       The handle number of processor.
+                                    Lower 24 bits contains the actual processor number.
+                                    BIT24 indicates if the EXTENDED_PROCESSOR_INFORMATION will be retrieved.
   @param[out] ProcessorInfoBuffer   A pointer to the buffer where information for
                                     the requested processor is deposited.
   @param[out] HealthData            Return processor health data.
@@ -377,5 +378,3 @@ MpInitLibStartupAllCPUs (
   IN  UINTN             TimeoutInMicroseconds,
   IN  VOID              *ProcedureArgument      OPTIONAL
   );
-
-#endif

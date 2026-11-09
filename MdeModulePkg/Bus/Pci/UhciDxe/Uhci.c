@@ -730,10 +730,12 @@ Uhci2ControlTransfer (
 
   Uhc->PciIo->Flush (Uhc->PciIo);
 
-  *TransferResult = QhResult.Result;
+  if (!EFI_ERROR (Status)) {
+    *TransferResult = QhResult.Result;
 
-  if (DataLength != NULL) {
-    *DataLength = QhResult.Complete;
+    if (DataLength != NULL) {
+      *DataLength = QhResult.Complete;
+    }
   }
 
   UhciDestoryTds (Uhc, TDs);
@@ -873,7 +875,7 @@ Uhci2BulkTransfer (
 
   //
   // Link the TDs to bulk queue head. According to the platfore
-  // defintion of UHCI_NO_BW_RECLAMATION, BulkQh is either configured
+  // definition of UHCI_NO_BW_RECLAMATION, BulkQh is either configured
   // to do full speed bandwidth reclamation or not.
   //
   BulkQh = Uhc->BulkQh;
@@ -884,9 +886,11 @@ Uhci2BulkTransfer (
 
   Uhc->PciIo->Flush (Uhc->PciIo);
 
-  *TransferResult = QhResult.Result;
-  *DataToggle     = QhResult.NextToggle;
-  *DataLength     = QhResult.Complete;
+  if (!EFI_ERROR (Status)) {
+    *TransferResult = QhResult.Result;
+    *DataToggle     = QhResult.NextToggle;
+    *DataLength     = QhResult.Complete;
+  }
 
   UhciDestoryTds (Uhc, TDs);
   Uhc->PciIo->Unmap (Uhc->PciIo, DataMap);
@@ -1210,9 +1214,11 @@ Uhci2SyncInterruptTransfer (
   UhciUnlinkTdFromQh (Uhc->SyncIntQh, TDs);
   Uhc->PciIo->Flush (Uhc->PciIo);
 
-  *TransferResult = QhResult.Result;
-  *DataToggle     = QhResult.NextToggle;
-  *DataLength     = QhResult.Complete;
+  if (!EFI_ERROR (Status)) {
+    *TransferResult = QhResult.Result;
+    *DataToggle     = QhResult.NextToggle;
+    *DataLength     = QhResult.Complete;
+  }
 
   UhciDestoryTds (Uhc, TDs);
   Uhc->PciIo->Unmap (Uhc->PciIo, DataMap);
@@ -1324,8 +1330,7 @@ UhciDriverEntryPoint (
 }
 
 /**
-  Test to see if this driver supports ControllerHandle. Any
-  ControllerHandle that has UsbHcProtocol installed will be supported.
+  Test to see if this driver supports ControllerHandle.
 
   @param  This                 Protocol instance pointer.
   @param  Controller           Handle of device to test.

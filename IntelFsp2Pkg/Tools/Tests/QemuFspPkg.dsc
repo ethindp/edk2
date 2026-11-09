@@ -107,7 +107,6 @@
   PlatformHookLib|MdeModulePkg/Library/BasePlatformHookLibNull/BasePlatformHookLibNull.inf
   PerformanceLib|MdePkg/Library/BasePerformanceLibNull/BasePerformanceLibNull.inf
   OemHookStatusCodeLib|MdeModulePkg/Library/OemHookStatusCodeLibNull/OemHookStatusCodeLibNull.inf
-  UefiCpuLib|UefiCpuPkg/Library/BaseUefiCpuLib/BaseUefiCpuLib.inf
 !if $(TARGET) == DEBUG
   DebugLib|MdePkg/Library/BaseDebugLibSerialPort/BaseDebugLibSerialPort.inf
   SerialPortLib|MdeModulePkg/Library/BaseSerialPortLib16550/BaseSerialPortLib16550.inf
@@ -450,22 +449,3 @@
       ResetSystemLib|MdeModulePkg/Library/BaseResetSystemLibNull/BaseResetSystemLibNull.inf
   }
   IntelFsp2Pkg/FspNotifyPhase/FspNotifyPhasePeim.inf
-
-###################################################################################################
-#
-# BuildOptions Section - Define the module specific tool chain flags that should be used as
-#                        the default flags for a module. These flags are appended to any
-#                        standard flags that are defined by the build process. They can be
-#                        applied for any modules or only those modules with the specific
-#                        module style (EDK or EDKII) specified in [Components] section.
-#
-###################################################################################################
-[BuildOptions]
-# Append build options for EDK and EDKII drivers (= is Append, == is Replace)
-  # Enable link-time optimization when building with GCC49
-  *_GCC49_IA32_CC_FLAGS = -flto
-  *_GCC49_IA32_DLINK_FLAGS = -flto
-  *_GCC5_IA32_CC_FLAGS = -fno-pic
-  *_GCC5_IA32_DLINK_FLAGS = -no-pie
-  *_GCC5_IA32_ASLCC_FLAGS = -fno-pic
-  *_GCC5_IA32_ASLDLINK_FLAGS = -no-pie

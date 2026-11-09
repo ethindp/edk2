@@ -17,7 +17,10 @@
 
 Copyright (c) 2009 - 2018, Intel Corporation. All rights reserved.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
+Copyright (c) Microsoft Corporation.<BR>
 
+Copyright (c) Microsoft Corporation.<BR>
+SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
 #include <PiDxe.h>
@@ -39,6 +42,9 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Library/PeCoffLib.h>
 #include <Library/SecurityManagementLib.h>
 #include <Library/HobLib.h>
+#include <Library/GptLib.h>
+
+#include "DxeTpmMeasureBootLibSanitization.h"
 
 //
 // Flag to check GPT partition. It only need be measured once.
@@ -127,6 +133,7 @@ TcgMeasureGptTable (
   EFI_BLOCK_IO_PROTOCOL       *BlockIo;
   EFI_DISK_IO_PROTOCOL        *DiskIo;
   EFI_PARTITION_TABLE_HEADER  *PrimaryHeader;
+  EFI_PARTITION_TABLE_HEADER  *BackupHeader;
   EFI_PARTITION_ENTRY         *PartitionEntry;
   UINT8                       *EntryPtr;
   UINTN                       NumberOfPartition;
@@ -136,6 +143,9 @@ TcgMeasureGptTable (
   UINT32                      EventSize;
   UINT32                      EventNumber;
   EFI_PHYSICAL_ADDRESS        EventLogLastEntry;
+  UINT32                      AllocSize;
+
+  GptData = NULL;
 
   if (mMeasureGptCount > 0) {
     return EFI_SUCCESS;
@@ -152,30 +162,56 @@ TcgMeasureGptTable (
   }
 
   //
-  // Read the EFI Partition Table Header
+  // Obtain the GPT partition table header that the platform actually parses
+  // and uses, applying the same strict validation (including the header CRC32
+  // and the partition-entry-array CRC32) as the PartitionDxe driver, via the
+  // shared GptLib parser. Previously this code read LBA 1 directly and
+  // validated it with a relaxed, CRC-less check, which allowed the table
+  // measured into PCR[5] to differ from the table the driver actually used
+  // (CVE-2024-13745).
   //
-  PrimaryHeader = (EFI_PARTITION_TABLE_HEADER *)AllocatePool (BlockIo->Media->BlockSize);
+  PrimaryHeader = (EFI_PARTITION_TABLE_HEADER *)AllocatePool (sizeof (EFI_PARTITION_TABLE_HEADER));
   if (PrimaryHeader == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
 
-  Status = DiskIo->ReadDisk (
-                     DiskIo,
-                     BlockIo->Media->MediaId,
-                     1 * BlockIo->Media->BlockSize,
-                     BlockIo->Media->BlockSize,
-                     (UINT8 *)PrimaryHeader
-                     );
-  if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "Failed to Read Partition Table Header!\n"));
-    FreePool (PrimaryHeader);
-    return EFI_DEVICE_ERROR;
+  if (!PartitionValidGptTable (BlockIo, DiskIo, PRIMARY_PART_HEADER_LBA, PrimaryHeader)) {
+    //
+    // The primary GPT header is not valid. Mirror the driver's recovery
+    // selection: when a valid backup header exists, the driver restores and
+    // then uses the header located at the backup's AlternateLBA. Validate and
+    // use that same header (read-only) so the measured table matches the used
+    // one. If neither the primary nor the backup table is valid, fail closed
+    // and measure nothing.
+    //
+    BackupHeader = (EFI_PARTITION_TABLE_HEADER *)AllocatePool (sizeof (EFI_PARTITION_TABLE_HEADER));
+    if (BackupHeader == NULL) {
+      FreePool (PrimaryHeader);
+      return EFI_OUT_OF_RESOURCES;
+    }
+
+    if (!PartitionValidGptTable (BlockIo, DiskIo, BlockIo->Media->LastBlock, BackupHeader) ||
+        !PartitionValidGptTable (BlockIo, DiskIo, BackupHeader->AlternateLBA, PrimaryHeader))
+    {
+      DEBUG ((DEBUG_ERROR, "Failed to obtain a valid GPT partition table header to measure!\n"));
+      FreePool (BackupHeader);
+      FreePool (PrimaryHeader);
+      return EFI_DEVICE_ERROR;
+    }
+
+    FreePool (BackupHeader);
   }
 
   //
   // Read the partition entry.
   //
-  EntryPtr = (UINT8 *)AllocatePool (PrimaryHeader->NumberOfPartitionEntries * PrimaryHeader->SizeOfPartitionEntry);
+  Status = TpmSanitizePrimaryHeaderAllocationSize (PrimaryHeader, &AllocSize);
+  if (EFI_ERROR (Status)) {
+    FreePool (PrimaryHeader);
+    return EFI_DEVICE_ERROR;
+  }
+
+  EntryPtr = (UINT8 *)AllocatePool (AllocSize);
   if (EntryPtr == NULL) {
     FreePool (PrimaryHeader);
     return EFI_OUT_OF_RESOURCES;
@@ -185,7 +221,7 @@ TcgMeasureGptTable (
                      DiskIo,
                      BlockIo->Media->MediaId,
                      MultU64x32 (PrimaryHeader->PartitionEntryLBA, BlockIo->Media->BlockSize),
-                     PrimaryHeader->NumberOfPartitionEntries * PrimaryHeader->SizeOfPartitionEntry,
+                     AllocSize,
                      EntryPtr
                      );
   if (EFI_ERROR (Status)) {
@@ -210,9 +246,14 @@ TcgMeasureGptTable (
   //
   // Prepare Data for Measurement
   //
-  EventSize = (UINT32)(sizeof (EFI_GPT_DATA) - sizeof (GptData->Partitions)
-                       + NumberOfPartition * PrimaryHeader->SizeOfPartitionEntry);
-  TcgEvent = (TCG_PCR_EVENT *)AllocateZeroPool (EventSize + sizeof (TCG_PCR_EVENT_HDR));
+  Status = TpmSanitizePrimaryHeaderGptEventSize (PrimaryHeader, NumberOfPartition, &EventSize);
+  if (EFI_ERROR (Status)) {
+    FreePool (PrimaryHeader);
+    FreePool (EntryPtr);
+    return EFI_DEVICE_ERROR;
+  }
+
+  TcgEvent = (TCG_PCR_EVENT *)AllocateZeroPool (EventSize);
   if (TcgEvent == NULL) {
     FreePool (PrimaryHeader);
     FreePool (EntryPtr);
@@ -221,7 +262,7 @@ TcgMeasureGptTable (
 
   TcgEvent->PCRIndex  = 5;
   TcgEvent->EventType = EV_EFI_GPT_EVENT;
-  TcgEvent->EventSize = EventSize;
+  TcgEvent->EventSize = EventSize - sizeof (TCG_PCR_EVENT_HDR);
   GptData             = (EFI_GPT_DATA *)TcgEvent->Event;
 
   //
@@ -333,18 +374,22 @@ TcgMeasurePeImage (
   ImageLoad     = NULL;
   SectionHeader = NULL;
   Sha1Ctx       = NULL;
+  TcgEvent      = NULL;
   FilePathSize  = (UINT32)GetDevicePathSize (FilePath);
 
-  //
   // Determine destination PCR by BootPolicy
   //
-  EventSize = sizeof (*ImageLoad) - sizeof (ImageLoad->DevicePath) + FilePathSize;
-  TcgEvent  = AllocateZeroPool (EventSize + sizeof (TCG_PCR_EVENT));
+  Status = TpmSanitizePeImageEventSize (FilePathSize, &EventSize);
+  if (EFI_ERROR (Status)) {
+    return EFI_UNSUPPORTED;
+  }
+
+  TcgEvent = AllocateZeroPool (EventSize);
   if (TcgEvent == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
 
-  TcgEvent->EventSize = EventSize;
+  TcgEvent->EventSize = EventSize - sizeof (TCG_PCR_EVENT_HDR);
   ImageLoad           = (EFI_IMAGE_LOAD_EVENT *)TcgEvent->Event;
 
   switch (ImageType) {
@@ -361,11 +406,13 @@ TcgMeasurePeImage (
       TcgEvent->PCRIndex  = 2;
       break;
     default:
-      DEBUG ((
-        DEBUG_ERROR,
-        "TcgMeasurePeImage: Unknown subsystem type %d",
-        ImageType
-        ));
+      DEBUG (
+        (
+         DEBUG_ERROR,
+         "TcgMeasurePeImage: Unknown subsystem type %d",
+         ImageType
+        )
+        );
       goto Finish;
   }
 

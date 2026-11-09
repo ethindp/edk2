@@ -8,14 +8,14 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _RTC_H_
-#define _RTC_H_
+#pragma once
 
 #include <Uefi.h>
 
 #include <Guid/Acpi.h>
 
 #include <Protocol/RealTimeClock.h>
+#include <Protocol/VariablePolicy.h>
 
 #include <Library/BaseLib.h>
 #include <Library/DebugLib.h>
@@ -29,6 +29,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Library/UefiRuntimeServicesTableLib.h>
 #include <Library/PcdLib.h>
 #include <Library/ReportStatusCodeLib.h>
+#include <Library/VariablePolicyHelperLib.h>
 
 typedef struct {
   EFI_LOCK    RtcLock;
@@ -70,6 +71,7 @@ extern PC_RTC_MODULE_GLOBALS  mModuleGlobal;
 //
 // Register A
 //
+#define RTC_DIV_RESET  0x70
 typedef struct {
   UINT8    Rs  : 4; // Rate Selection Bits
   UINT8    Dv  : 3; // Divisor
@@ -368,5 +370,3 @@ PcRtcAcpiTableChangeCallback (
   IN EFI_EVENT  Event,
   IN VOID       *Context
   );
-
-#endif

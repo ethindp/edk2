@@ -12,8 +12,7 @@
 
 **/
 
-#ifndef __EFI_TCP6_PROTOCOL_H__
-#define __EFI_TCP6_PROTOCOL_H__
+#pragma once
 
 #include <Protocol/ManagedNetwork.h>
 #include <Protocol/Ip6.h>
@@ -192,12 +191,12 @@ typedef struct {
   BOOLEAN    EnableNagle;
   ///
   /// Set it to TRUE to enable TCP timestamps option as defined in
-  /// RFC1323. Set to FALSE to disable it.
+  /// RFC7323. Set to FALSE to disable it.
   ///
   BOOLEAN    EnableTimeStamp;
   ///
   /// Set it to TRUE to enable TCP window scale option as defined in
-  /// RFC1323. Set it to FALSE to disable it.
+  /// RFC7323. Set it to FALSE to disable it.
   ///
   BOOLEAN    EnableWindowScaling;
   ///
@@ -852,5 +851,3 @@ struct _EFI_TCP6_PROTOCOL {
 
 extern EFI_GUID  gEfiTcp6ServiceBindingProtocolGuid;
 extern EFI_GUID  gEfiTcp6ProtocolGuid;
-
-#endif

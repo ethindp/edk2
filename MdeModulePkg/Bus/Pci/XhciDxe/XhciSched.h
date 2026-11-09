@@ -7,8 +7,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _EFI_XHCI_SCHED_H_
-#define _EFI_XHCI_SCHED_H_
+#pragma once
 
 #define XHC_URB_SIG                   SIGNATURE_32 ('U', 'S', 'B', 'R')
 #define XHC_INIT_DEVICE_SLOT_RETRIES  1
@@ -77,6 +76,13 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #define TRB_COMPLETION_SHORT_PACKET            13
 #define TRB_COMPLETION_STOPPED                 26
 #define TRB_COMPLETION_STOPPED_LENGTH_INVALID  27
+
+//
+// USB Transfer Results Internal Definition
+// Based on XHCI spec 4.8.3, software should do the reset endpoint while USB Transaction occur.
+// Add the error code for USB Transaction error since UEFI spec don't have the related definition.
+//
+#define EDKII_USB_ERR_TRANSACTION  0x200
 
 //
 // The topology string used to present usb device location
@@ -1472,5 +1478,3 @@ XhcCreateTransferTrb (
   IN USB_XHCI_INSTANCE  *Xhc,
   IN URB                *Urb
   );
-
-#endif

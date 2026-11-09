@@ -2,6 +2,8 @@
 DnsDxe support functions implementation.
 
 Copyright (c) 2016 - 2018, Intel Corporation. All rights reserved.<BR>
+Copyright (c) Microsoft Corporation
+Copyright (c) 2026, American Megatrends International LLC. All rights reserved.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
@@ -439,8 +441,8 @@ Dns4CopyConfigure (
   IN  EFI_DNS4_CONFIG_DATA  *Src
   )
 {
-  UINTN   Len;
-  UINT32  Index;
+  UINTN  Len;
+  UINTN  Index;
 
   CopyMem (Dst, Src, sizeof (*Dst));
   Dst->DnsServerList = NULL;
@@ -1164,10 +1166,9 @@ ParseDnsResponse (
   Dns4TokenEntry = NULL;
   Dns6TokenEntry = NULL;
 
-  IpCount          = 0;
-  RRCount          = 0;
-  AnswerSectionNum = 0;
-  CNameTtl         = 0;
+  IpCount  = 0;
+  RRCount  = 0;
+  CNameTtl = 0;
 
   HostAddr4 = NULL;
   HostAddr6 = NULL;
@@ -1179,7 +1180,6 @@ ParseDnsResponse (
   Dns6RR = NULL;
 
   *Completed      = TRUE;
-  Status          = EFI_SUCCESS;
   RemainingLength = Length;
 
   //
@@ -1218,7 +1218,7 @@ ParseDnsResponse (
   //
   QueryName = (CHAR8 *)(RxString + sizeof (*DnsHeader));
 
-  QueryNameLen = (UINT32)AsciiStrLen (QueryName) + 1;
+  QueryNameLen = (UINT32)AsciiStrnLenS (QueryName, RemainingLength) + 1;
 
   //
   // Check whether the remaining packet length is available or not.
@@ -1257,6 +1257,12 @@ ParseDnsResponse (
     }
 
     ASSERT (Item != NULL);
+    if (Item == NULL) {
+      *Completed = FALSE;
+      Status     = EFI_ABORTED;
+      goto ON_EXIT;
+    }
+
     Dns4TokenEntry = (DNS4_TOKEN_ENTRY *)(Item->Key);
   } else {
     if (!IsValidDnsResponse (
@@ -1273,6 +1279,12 @@ ParseDnsResponse (
     }
 
     ASSERT (Item != NULL);
+    if (Item == NULL) {
+      *Completed = FALSE;
+      Status     = EFI_ABORTED;
+      goto ON_EXIT;
+    }
+
     Dns6TokenEntry = (DNS6_TOKEN_ENTRY *)(Item->Key);
   }
 
@@ -1299,6 +1311,10 @@ ParseDnsResponse (
   //
   if (Instance->Service->IpVersion == IP_VERSION_4) {
     ASSERT (Dns4TokenEntry != NULL);
+    if (Dns4TokenEntry == NULL) {
+      Status = EFI_ABORTED;
+      goto ON_EXIT;
+    }
 
     if (Dns4TokenEntry->GeneralLookUp) {
       //
@@ -1338,6 +1354,10 @@ ParseDnsResponse (
     }
   } else {
     ASSERT (Dns6TokenEntry != NULL);
+    if (Dns6TokenEntry == NULL) {
+      Status = EFI_ABORTED;
+      goto ON_EXIT;
+    }
 
     if (Dns6TokenEntry->GeneralLookUp) {
       //
@@ -1377,8 +1397,6 @@ ParseDnsResponse (
     }
   }
 
-  Status = EFI_NOT_FOUND;
-
   //
   // Get Answer name
   //
@@ -1387,7 +1405,11 @@ ParseDnsResponse (
   //
   // Processing AnswerSection.
   //
-  while (AnswerSectionNum < DnsHeader->AnswersNum) {
+  if (DnsHeader->AnswersNum == 0) {
+    Status = EFI_NOT_FOUND;
+  }
+
+  for (AnswerSectionNum = 0; AnswerSectionNum < DnsHeader->AnswersNum; AnswerSectionNum++) {
     //
     // Check whether the remaining packet length is available or not.
     //
@@ -1497,6 +1519,10 @@ ParseDnsResponse (
           // This is address entry, get Data.
           //
           ASSERT (Dns4TokenEntry != NULL);
+          if (Dns4TokenEntry == NULL) {
+            Status = EFI_ABORTED;
+            goto ON_EXIT;
+          }
 
           if (AnswerSection->DataLength != 4) {
             Status = EFI_ABORTED;
@@ -1559,6 +1585,10 @@ ParseDnsResponse (
           // This is address entry, get Data.
           //
           ASSERT (Dns6TokenEntry != NULL);
+          if (Dns6TokenEntry == NULL) {
+            Status = EFI_ABORTED;
+            goto ON_EXIT;
+          }
 
           if (AnswerSection->DataLength != 16) {
             Status = EFI_ABORTED;
@@ -1623,6 +1653,7 @@ ParseDnsResponse (
           // CNAME record. So, just record the TTL value of the CNAME, then skip to parse the next record.
           //
           CNameTtl = AnswerSection->Ttl;
+          Status   = EFI_SUCCESS;
           break;
         default:
           Status = EFI_UNSUPPORTED;
@@ -1634,11 +1665,14 @@ ParseDnsResponse (
     // Find next one
     //
     AnswerName = (CHAR8 *)AnswerSection + sizeof (*AnswerSection) + AnswerSection->DataLength;
-    AnswerSectionNum++;
   }
 
   if (Instance->Service->IpVersion == IP_VERSION_4) {
     ASSERT (Dns4TokenEntry != NULL);
+    if (Dns4TokenEntry == NULL) {
+      Status = EFI_ABORTED;
+      goto ON_EXIT;
+    }
 
     if (Dns4TokenEntry->GeneralLookUp) {
       Dns4TokenEntry->Token->RspData.GLookupData->RRCount = RRCount;
@@ -1652,6 +1686,10 @@ ParseDnsResponse (
     }
   } else {
     ASSERT (Dns6TokenEntry != NULL);
+    if (Dns6TokenEntry == NULL) {
+      Status = EFI_ABORTED;
+      goto ON_EXIT;
+    }
 
     if (Dns6TokenEntry->GeneralLookUp) {
       Dns6TokenEntry->Token->RspData.GLookupData->RRCount = RRCount;
@@ -1675,6 +1713,11 @@ ON_COMPLETE:
 
   if (Instance->Service->IpVersion == IP_VERSION_4) {
     ASSERT (Dns4TokenEntry != NULL);
+    if (Dns4TokenEntry == NULL) {
+      Status = EFI_ABORTED;
+      goto ON_EXIT;
+    }
+
     Dns4RemoveTokenEntry (&Instance->Dns4TxTokens, Dns4TokenEntry);
     Dns4TokenEntry->Token->Status = Status;
     if (Dns4TokenEntry->Token->Event != NULL) {
@@ -1683,6 +1726,11 @@ ON_COMPLETE:
     }
   } else {
     ASSERT (Dns6TokenEntry != NULL);
+    if (Dns6TokenEntry == NULL) {
+      Status = EFI_ABORTED;
+      goto ON_EXIT;
+    }
+
     Dns6RemoveTokenEntry (&Instance->Dns6TxTokens, Dns6TokenEntry);
     Dns6TokenEntry->Token->Status = Status;
     if (Dns6TokenEntry->Token->Event != NULL) {
@@ -1963,6 +2011,14 @@ ConstructDNSQuery (
   NET_FRAGMENT       Frag;
   DNS_HEADER         *DnsHeader;
   DNS_QUERY_SECTION  *DnsQuery;
+  EFI_STATUS         Status;
+  UINT32             Random;
+
+  Status = PseudoRandomU32 (&Random);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "%a failed to generate random number: %r\n", __func__, Status));
+    return Status;
+  }
 
   //
   // Messages carried by UDP are restricted to 512 bytes (not counting the IP
@@ -1977,7 +2033,7 @@ ConstructDNSQuery (
   // Fill header
   //
   DnsHeader                    = (DNS_HEADER *)Frag.Bulk;
-  DnsHeader->Identification    = (UINT16)NET_RANDOM (NetRandomInitSeed ());
+  DnsHeader->Identification    = (UINT16)Random;
   DnsHeader->Flags.Uint16      = 0x0000;
   DnsHeader->Flags.Bits.RD     = 1;
   DnsHeader->Flags.Bits.OpCode = DNS_FLAGS_OPCODE_STANDARD;

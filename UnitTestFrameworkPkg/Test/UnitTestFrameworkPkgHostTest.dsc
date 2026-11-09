@@ -12,25 +12,33 @@
   PLATFORM_VERSION        = 0.1
   DSC_SPECIFICATION       = 0x00010005
   OUTPUT_DIRECTORY        = Build/UnitTestFrameworkPkg/HostTest
-  SUPPORTED_ARCHITECTURES = IA32|X64
+  SUPPORTED_ARCHITECTURES = IA32|X64|AARCH64
   BUILD_TARGETS           = NOOPT
   SKUID_IDENTIFIER        = DEFAULT
 
 !include UnitTestFrameworkPkg/UnitTestFrameworkPkgHost.dsc.inc
 
 [PcdsPatchableInModule]
-  gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask|0x17
+  gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask|0x1F
 
 [Components]
   #
-  # Build HOST_APPLICATION that tests the SampleUnitTest
+  # Build HOST_APPLICATIONs that test the SampleUnitTest
   #
   UnitTestFrameworkPkg/Test/UnitTest/Sample/SampleUnitTest/SampleUnitTestHost.inf
+  UnitTestFrameworkPkg/Test/GoogleTest/Sample/SampleGoogleTest/SampleGoogleTestHost.inf
 
   #
   # Build HOST_APPLICATION Libraries
   #
   UnitTestFrameworkPkg/Library/CmockaLib/CmockaLib.inf
+  UnitTestFrameworkPkg/Library/GoogleTestLib/GoogleTestLib.inf
   UnitTestFrameworkPkg/Library/Posix/DebugLibPosix/DebugLibPosix.inf
   UnitTestFrameworkPkg/Library/Posix/MemoryAllocationLibPosix/MemoryAllocationLibPosix.inf
+  UnitTestFrameworkPkg/Library/Posix/TimerLibPosix/TimerLibPosix.inf
   UnitTestFrameworkPkg/Library/UnitTestLib/UnitTestLibCmocka.inf
+  UnitTestFrameworkPkg/Library/UnitTestDebugAssertLib/UnitTestDebugAssertLibHost.inf
+
+[Components.IA32, Components.X64]
+  UnitTestFrameworkPkg/Library/FunctionMockLib/FunctionMockLib.inf
+  UnitTestFrameworkPkg/Library/SubhookLib/SubhookLib.inf

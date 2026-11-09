@@ -7,15 +7,14 @@
 
 **/
 
-#ifndef __GDB_SERIAL_LIB_H__
-#define __GDB_SERIAL_LIB_H__
+#pragma once
 
 /**
   Sets the baud rate, receive FIFO depth, transmit/receive time out, parity,
   data buts, and stop bits on a serial device. This call is optional as the serial
   port will be set up with defaults base on PCD values.
 
-  @param  BaudRate         The requested baud rate. A BaudRate value of 0 will use the the
+  @param  BaudRate         The requested baud rate. A BaudRate value of 0 will use the
                            device's default interface speed.
   @param  Parity           The type of parity to use on this serial device. A Parity value of
                            DefaultParity will use the device's default parity value.
@@ -90,5 +89,3 @@ VOID
 GdbPutString (
   IN CHAR8  *String
   );
-
-#endif

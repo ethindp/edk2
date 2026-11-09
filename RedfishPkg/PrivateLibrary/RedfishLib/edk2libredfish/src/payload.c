@@ -10,6 +10,7 @@
 
   Copyright (c) 2019, Intel Corporation. All rights reserved.<BR>
   (C) Copyright 2021 Hewlett Packard Enterprise Development LP<BR>
+  Copyright (c) 2023, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -219,7 +220,7 @@ getPayloadByIndex (
 
     if (*StatusCode != NULL) {
       //
-      // The Payload (members) are retrived from server.
+      // The Payload (members) are retrieved from server.
       //
       FreePool (*StatusCode);
       *StatusCode    = NULL;
@@ -230,7 +231,7 @@ getPayloadByIndex (
     if ((*StatusCode == NULL) && (ret != NULL) && FromServerFlag) {
       //
       // In such a case, the Redfish resource is parsed from the input payload (members) directly.
-      // Since the members are retrived from server, we still return HTTP_STATUS_200_OK.
+      // Since the members are retrieved from server, we still return HTTP_STATUS_200_OK.
       //
       *StatusCode = AllocateZeroPool (sizeof (EFI_HTTP_STATUS_CODE));
       if (*StatusCode == NULL) {
@@ -338,7 +339,7 @@ getPayloadForPath (
     if ((*StatusCode == NULL) && (tmp != NULL) && FromServerFlag) {
       //
       // In such a case, the Redfish resource is parsed from the input payload (ret) directly.
-      // Since the ret are retrived from server, we still return HTTP_STATUS_200_OK.
+      // Since the ret are retrieved from server, we still return HTTP_STATUS_200_OK.
       //
       *StatusCode = AllocateZeroPool (sizeof (EFI_HTTP_STATUS_CODE));
       if (*StatusCode == NULL) {
@@ -524,7 +525,7 @@ getOpResult (
   }
 
   stringProp = prop->json;
-  jsonType   = prop->json->type;
+  jsonType   = (json_type)JsonGetType (prop->json);
   switch (jsonType) {
     case JSON_OBJECT:
       stringProp = json_object_get (prop->json, propName);
@@ -620,6 +621,7 @@ collectionEvalOp (
   if (((*StatusCode == NULL) && (members == NULL)) ||
       ((*StatusCode != NULL) && ((**StatusCode < HTTP_STATUS_200_OK) || (**StatusCode > HTTP_STATUS_206_PARTIAL_CONTENT))))
   {
+    free (valid);
     return members;
   }
 
@@ -633,6 +635,7 @@ collectionEvalOp (
     if (((*StatusCode == NULL) && (tmp == NULL)) ||
         ((*StatusCode != NULL) && ((**StatusCode < HTTP_STATUS_200_OK) || (**StatusCode > HTTP_STATUS_206_PARTIAL_CONTENT))))
     {
+      free (valid);
       return tmp;
     }
 
@@ -658,19 +661,15 @@ collectionEvalOp (
 
   cleanupPayload (members);
   if (validCount == 0) {
-    free (valid);
-    return NULL;
-  }
-
-  if (validCount == 1) {
+    ret = NULL;
+  } else if (validCount == 1) {
     ret = valid[0];
-    free (valid);
-    return ret;
   } else {
     ret = createCollection (payload->service, validCount, valid);
-    free (valid);
-    return ret;
   }
+
+  free (valid);
+  return ret;
 }
 
 static redfishPayload *

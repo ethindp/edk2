@@ -1,7 +1,7 @@
 ## @file
 #  Include all platform action which can be customized by IBV/OEM.
 #
-#  Copyright (c) 2012 - 2021, Intel Corporation. All rights reserved.<BR>
+#  Copyright (c) 2012 - 2023, Intel Corporation. All rights reserved.<BR>
 #  SPDX-License-Identifier: BSD-2-Clause-Patent
 #
 ##
@@ -13,7 +13,6 @@
   MODULE_TYPE                    = DXE_DRIVER
   VERSION_STRING                 = 1.0
   LIBRARY_CLASS                  = PlatformBootManagerLib|DXE_DRIVER
-  CONSTRUCTOR                    = PlatformBootManagerLibConstructor
 
 #
 # The following information is for reference only and not required by the build tools.
@@ -32,6 +31,7 @@
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
   UefiPayloadPkg/UefiPayloadPkg.dec
+  ShellPkg/ShellPkg.dec
 
 [LibraryClasses]
   BaseLib
@@ -39,6 +39,7 @@
   UefiRuntimeServicesTableLib
   UefiLib
   UefiBootManagerLib
+  BootLogoLib
   PcdLib
   DxeServicesLib
   MemoryAllocationLib
@@ -46,30 +47,29 @@
   HiiLib
   PrintLib
   PlatformHookLib
+  CapsuleLib
   HobLib
 
 [Guids]
   gEfiEndOfDxeEventGroupGuid
-  gEdkiiBootManagerMenuFileGuid
+  gUefiShellFileGuid
 
 [Protocols]
   gEfiGenericMemTestProtocolGuid  ## CONSUMES
   gEfiGraphicsOutputProtocolGuid  ## CONSUMES
-  gEfiUgaDrawProtocolGuid         ## CONSUMES
   gEfiBootLogoProtocolGuid        ## CONSUMES
   gEfiDxeSmmReadyToLockProtocolGuid
   gEfiSmmAccess2ProtocolGuid
-  gUniversalPayloadPlatformBootManagerOverrideProtocolGuid
+  gEfiSerialIoProtocolGuid
+  gEfiPciRootBridgeIoProtocolGuid
 
 [Pcd]
   gEfiMdePkgTokenSpaceGuid.PcdPlatformBootTimeOut
-  gEfiMdePkgTokenSpaceGuid.PcdUgaConsumeSupport
   gEfiMdeModulePkgTokenSpaceGuid.PcdConOutRow
   gEfiMdeModulePkgTokenSpaceGuid.PcdConOutColumn
   gEfiMdeModulePkgTokenSpaceGuid.PcdConInConnectOnDemand
-  gUefiPayloadPkgTokenSpaceGuid.PcdShellFile
   gEfiMdePkgTokenSpaceGuid.PcdUartDefaultBaudRate
   gEfiMdePkgTokenSpaceGuid.PcdUartDefaultDataBits
   gEfiMdePkgTokenSpaceGuid.PcdUartDefaultParity
   gEfiMdePkgTokenSpaceGuid.PcdUartDefaultStopBits
-  gEfiMdeModulePkgTokenSpaceGuid.PcdBootManagerMenuFile
+  gUefiPayloadPkgTokenSpaceGuid.PcdBootManagerEscape

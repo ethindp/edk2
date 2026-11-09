@@ -293,6 +293,8 @@ QemuVideoBochsEdid (
   )
 {
   EFI_STATUS  Status;
+  UINT32      X;
+  UINT32      Y;
 
   if (Private->Variant != QEMU_VIDEO_BOCHS_MMIO) {
     return;
@@ -310,7 +312,7 @@ QemuVideoBochsEdid (
     DEBUG ((
       DEBUG_INFO,
       "%a: mmio read failed\n",
-      __FUNCTION__
+      __func__
       ));
     return;
   }
@@ -321,7 +323,7 @@ QemuVideoBochsEdid (
     DEBUG ((
       DEBUG_INFO,
       "%a: magic check failed\n",
-      __FUNCTION__
+      __func__
       ));
     return;
   }
@@ -329,7 +331,7 @@ QemuVideoBochsEdid (
   DEBUG ((
     DEBUG_INFO,
     "%a: blob found (extensions: %d)\n",
-    __FUNCTION__,
+    __func__,
     Private->Edid[126]
     ));
 
@@ -339,25 +341,37 @@ QemuVideoBochsEdid (
     DEBUG ((
       DEBUG_INFO,
       "%a: no detailed timing descriptor\n",
-      __FUNCTION__
+      __func__
       ));
     return;
   }
 
-  *XRes = Private->Edid[56] | ((Private->Edid[58] & 0xf0) << 4);
-  *YRes = Private->Edid[59] | ((Private->Edid[61] & 0xf0) << 4);
+  X = Private->Edid[56] | ((Private->Edid[58] & 0xf0) << 4);
+  Y = Private->Edid[59] | ((Private->Edid[61] & 0xf0) << 4);
   DEBUG ((
     DEBUG_INFO,
     "%a: default resolution: %dx%d\n",
-    __FUNCTION__,
-    *XRes,
-    *YRes
+    __func__,
+    X,
+    Y
     ));
+
+  if ((X < 640) || (Y < 480)) {
+    /* ignore hint, GraphicsConsoleDxe needs 640x480 or larger */
+    return;
+  }
+
+  *XRes = X;
+  *YRes = Y;
 
   if (PcdGet8 (PcdVideoResolutionSource) == 0) {
     Status = PcdSet32S (PcdVideoHorizontalResolution, *XRes);
     ASSERT_RETURN_ERROR (Status);
+    Status = PcdSet32S (PcdSetupVideoHorizontalResolution, *XRes);
+    ASSERT_RETURN_ERROR (Status);
     Status = PcdSet32S (PcdVideoVerticalResolution, *YRes);
+    ASSERT_RETURN_ERROR (Status);
+    Status = PcdSet32S (PcdSetupVideoVerticalResolution, *YRes);
     ASSERT_RETURN_ERROR (Status);
     Status = PcdSet8S (PcdVideoResolutionSource, 2);
     ASSERT_RETURN_ERROR (Status);
@@ -436,7 +450,7 @@ QemuVideoBochsModeSetup (
         DEBUG_ERROR,
         "%a: can't read size of drawable buffer from QXL "
         "ROM\n",
-        __FUNCTION__
+        __func__
         ));
       return EFI_NOT_FOUND;
     }
@@ -448,7 +462,7 @@ QemuVideoBochsModeSetup (
   DEBUG ((
     DEBUG_INFO,
     "%a: AvailableFbSize=0x%x\n",
-    __FUNCTION__,
+    __func__,
     AvailableFbSize
     ));
 

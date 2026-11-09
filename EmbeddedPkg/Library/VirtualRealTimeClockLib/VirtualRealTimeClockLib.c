@@ -2,7 +2,7 @@
  *
  *  Implement virtual EFI RealTimeClock runtime services.
  *
- *  Coypright (c) 2019, Pete Batard <pete@akeo.ie>
+ *  Copyright (c) 2019, Pete Batard <pete@akeo.ie>
  *  Copyright (c) 2018, Andrei Warkentin <andrey.warkentin@gmail.com>
  *  Copyright (c) 2011-2021, ARM Ltd. All rights reserved.
  *  Copyright (c) 2008-2010, Apple Inc. All rights reserved.
@@ -80,12 +80,7 @@ LibGetTime (
   if (EFI_ERROR (Status)) {
     ASSERT (Status != EFI_INVALID_PARAMETER);
     ASSERT (Status != EFI_BUFFER_TOO_SMALL);
-    //
-    // The following is intended to produce a compilation error on build
-    // environments where BUILD_EPOCH can not be set from inline shell.
-    // If you are attempting to use this library on such an environment, please
-    // contact the edk2 mailing list, so we can try to add support for it.
-    //
+
     EpochSeconds = BUILD_EPOCH;
     DEBUG ((
       DEBUG_INFO,
@@ -103,7 +98,7 @@ LibGetTime (
   }
 
   Counter       = GetPerformanceCounter ();
-  EpochSeconds += DivU64x64Remainder (Counter, Freq, &Remainder);
+  EpochSeconds += (UINTN)DivU64x64Remainder (Counter, Freq, &Remainder);
 
   // Get the current time zone information from non-volatile storage
   Size   = sizeof (TimeZone);
@@ -233,7 +228,7 @@ LibGetTime (
 
    @retval EFI_SUCCESS           The operation completed successfully.
    @retval EFI_INVALID_PARAMETER A time field is out of range.
-   @retval EFI_DEVICE_ERROR      The time could not be set due due to hardware error.
+   @retval EFI_DEVICE_ERROR      The time could not be set due to hardware error.
 
 **/
 EFI_STATUS
@@ -277,7 +272,7 @@ LibSetTime (
   if (Freq != 0) {
     Counter = GetPerformanceCounter ();
     if (EpochSeconds > DivU64x64Remainder (Counter, Freq, &Remainder)) {
-      EpochSeconds -= DivU64x64Remainder (Counter, Freq, &Remainder);
+      EpochSeconds -= (UINTN)DivU64x64Remainder (Counter, Freq, &Remainder);
     }
   }
 
@@ -401,22 +396,4 @@ LibRtcInitialize (
   )
 {
   return EFI_SUCCESS;
-}
-
-/**
-   Fixup internal data so that EFI can be call in virtual mode.
-   Call the passed in Child Notify event and convert any pointers in
-   lib to virtual mode.
-
-   @param[in]    Event   The Event that is being processed
-   @param[in]    Context Event Context
-**/
-VOID
-EFIAPI
-LibRtcVirtualNotifyEvent (
-  IN EFI_EVENT  Event,
-  IN VOID       *Context
-  )
-{
-  return;
 }

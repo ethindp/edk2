@@ -17,8 +17,48 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Library/PeiServicesLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/BaseMemoryLib.h>
-
+#include <Guid/UniversalPayloadBase.h>
 #include "ElfLib.h"
+
+CONST EFI_PEI_PPI_DESCRIPTOR  gReadyToPayloadSignalPpi = {
+  (EFI_PEI_PPI_DESCRIPTOR_PPI | EFI_PEI_PPI_DESCRIPTOR_TERMINATE_LIST),
+  &gUplReadyToPayloadPpiGuid,
+  NULL
+};
+
+/**
+  Notify ReadyToPayLoad signal.
+  @param[in] PeiServices       An indirect pointer to the EFI_PEI_SERVICES table published by the PEI Foundation.
+  @param[in] NotifyDescriptor  Address of the notification descriptor data structure.
+  @param[in] Ppi               Address of the PPI that was installed.
+  @retval EFI_SUCCESS          Hobs data is discovered.
+  @return Others               No Hobs data is discovered.
+**/
+EFI_STATUS
+EFIAPI
+EndOfPeiPpiNotifyCallback (
+  IN EFI_PEI_SERVICES           **PeiServices,
+  IN EFI_PEI_NOTIFY_DESCRIPTOR  *NotifyDescriptor,
+  IN VOID                       *Ppi
+  )
+{
+  EFI_STATUS  Status;
+
+  //
+  // Ready to Payload phase signal
+  //
+  Status = PeiServicesInstallPpi (&gReadyToPayloadSignalPpi);
+
+  return Status;
+}
+
+EFI_PEI_NOTIFY_DESCRIPTOR  mEndOfPeiNotifyList[] = {
+  {
+    (EFI_PEI_PPI_DESCRIPTOR_NOTIFY_CALLBACK | EFI_PEI_PPI_DESCRIPTOR_TERMINATE_LIST),
+    &gEfiEndOfPeiSignalPpiGuid,
+    EndOfPeiPpiNotifyCallback
+  }
+};
 
 /**
   The wrapper function of PeiLoadImageLoadImage().
@@ -44,19 +84,19 @@ PeiLoadFileLoadPayload (
   OUT    UINT32                       *AuthenticationState
   )
 {
-  EFI_STATUS                     Status;
-  VOID                           *Elf;
-  UNIVERSAL_PAYLOAD_EXTRA_DATA   *ExtraData;
-  ELF_IMAGE_CONTEXT              Context;
-  UNIVERSAL_PAYLOAD_INFO_HEADER  *PldInfo;
-  UINT32                         Index;
-  UINT16                         ExtraDataIndex;
-  CHAR8                          *SectionName;
-  UINTN                          Offset;
-  UINTN                          Size;
-  UINT32                         ExtraDataCount;
-  UINTN                          Instance;
-  UINTN                          Length;
+  EFI_STATUS                    Status;
+  VOID                          *Elf;
+  UNIVERSAL_PAYLOAD_EXTRA_DATA  *ExtraData;
+  UNIVERSAL_PAYLOAD_BASE        *PayloadBase;
+  ELF_IMAGE_CONTEXT             Context;
+  UINT32                        Index;
+  UINT16                        ExtraDataIndex;
+  CHAR8                         *SectionName;
+  UINTN                         Offset;
+  UINTN                         Size;
+  UINT32                        ExtraDataCount;
+  UINTN                         Instance;
+  UINTN                         Length;
 
   //
   // ELF is added to file as RAW section for EDKII bootloader.
@@ -74,18 +114,26 @@ PeiLoadFileLoadPayload (
     Status = ParseElfImage (Elf, &Context);
   } while (EFI_ERROR (Status));
 
-  DEBUG ((
-    DEBUG_INFO,
-    "Payload File Size: 0x%08X, Mem Size: 0x%08x, Reload: %d\n",
-    Context.FileSize,
-    Context.ImageSize,
-    Context.ReloadRequired
-    ));
+  Length      = sizeof (UNIVERSAL_PAYLOAD_BASE);
+  PayloadBase = BuildGuidHob (
+                  &gUniversalPayloadBaseGuid,
+                  Length
+                  );
+  PayloadBase->Entry = (EFI_PHYSICAL_ADDRESS)Context.FileBase;
+
+  DEBUG (
+    (
+     DEBUG_INFO,
+     "Payload File Size: 0x%08X, Mem Size: 0x%08x, Reload: %d\n",
+     Context.FileSize,
+     Context.ImageSize,
+     Context.ReloadRequired
+    )
+    );
 
   //
   // Get UNIVERSAL_PAYLOAD_INFO_HEADER and number of additional PLD sections.
   //
-  PldInfo        = NULL;
   ExtraDataCount = 0;
   for (Index = 0; Index < Context.ShNum; Index++) {
     Status = GetElfSectionName (&Context, Index, &SectionName);
@@ -96,9 +144,6 @@ PeiLoadFileLoadPayload (
     DEBUG ((DEBUG_INFO, "Payload Section[%d]: %a\n", Index, SectionName));
     if (AsciiStrCmp (SectionName, UNIVERSAL_PAYLOAD_INFO_SEC_NAME) == 0) {
       Status = GetElfSectionPos (&Context, Index, &Offset, &Size);
-      if (!EFI_ERROR (Status)) {
-        PldInfo = (UNIVERSAL_PAYLOAD_INFO_HEADER *)(Context.FileBase + Offset);
-      }
     } else if (AsciiStrnCmp (SectionName, UNIVERSAL_PAYLOAD_EXTRA_SEC_NAME_PREFIX, UNIVERSAL_PAYLOAD_EXTRA_SEC_NAME_PREFIX_LENGTH) == 0) {
       Status = GetElfSectionPos (&Context, Index, &Offset, &Size);
       if (!EFI_ERROR (Status)) {
@@ -158,6 +203,11 @@ PeiLoadFileLoadPayload (
     *ImageSizeArg    = Context.ImageSize;
   }
 
+  DEBUG ((DEBUG_INFO, "LoadElfImage :%r, EntryPoint :%x\n", Status, (UINTN)Context.EntryPoint));
+
+  Status = PeiServicesNotifyPpi (&mEndOfPeiNotifyList[0]);
+  ASSERT_EFI_ERROR (Status);
+
   return Status;
 }
 
@@ -178,7 +228,7 @@ EFI_PEI_PPI_DESCRIPTOR  gPpiLoadFilePpiList = {
   @param  FileHandle  Handle of the file being invoked.
   @param  PeiServices Describes the list of possible PEI Services.
 
-  @retval EFI_SUCESS  The entry point executes successfully.
+  @retval EFI_SUCCESS The entry point executes successfully.
   @retval Others      Some error occurs during the execution of this function.
 
 **/

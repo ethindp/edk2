@@ -12,12 +12,21 @@ PCCTS_H=$(PCCTS_HOME)\h
 # Support directories
 SET=$(PCCTS_HOME)\support\set
 
+!IFNDEF HOST_ARCH
+HOST_ARCH = IA32
+!ENDIF
+
+!IF "$(HOST_ARCH)"=="IA32"
+SYS_BIN_PATH=$(EDK_TOOLS_PATH)\Bin\Win32
+!ELSE
+SYS_BIN_PATH=$(EDK_TOOLS_PATH)\Bin\Win64
+!ENDIF
 
 # Compiler stuff
 CC = cl
 CFLAGS = /nologo -I "." -I "$(PCCTS_H)" -I "$(SET)" -D "USER_ZZSYN" -D "PC" \
-        -D "ZZLEXBUFSIZE=65536"  /D "LONGFILENAMES" /W3 /Zi \
-        /D _CRT_SECURE_NO_DEPRECATE /D _CRT_NONSTDC_NO_DEPRECATE 
+        -D "ZZLEXBUFSIZE=65536"  /D "LONGFILENAMES" /W3 /Z7 \
+        /D _CRT_SECURE_NO_DEPRECATE /D _CRT_NONSTDC_NO_DEPRECATE
 
 DLG_OBJS = dlg_p.obj dlg_a.obj main.obj err.obj support.obj \
            output.obj relabel.obj automata.obj
@@ -26,10 +35,10 @@ SUPPORT_OBJS = set.obj
 
 # Dependencies
 
-$(EDK_TOOLS_PATH)\Bin\Win32\dlg.exe: $(DLG_OBJS) $(SUPPORT_OBJS)
+$(SYS_BIN_PATH)\dlg.exe: $(DLG_OBJS) $(SUPPORT_OBJS)
     $(CC) $(CFLAGS) -Fedlg.exe $(DLG_OBJS) $(SUPPORT_OBJS)
-    -@if not exist $(EDK_TOOLS_PATH)\Bin\Win32 mkdir $(EDK_TOOLS_PATH)\Bin\Win32
-		copy dlg.exe $(EDK_TOOLS_PATH)\Bin\Win32
+    -@if not exist $(SYS_BIN_PATH) mkdir $(SYS_BIN_PATH)
+		copy dlg.exe $(SYS_BIN_PATH)
 
 dlg_p.obj: $(DLG_SRC)\dlg_p.c \
 					$(PCCTS_H)\antlr.h \
@@ -112,7 +121,7 @@ set.obj: $(SET)\set.c \
 
     $(CC) -c $(CFLAGS) $(SET)\set.c
 
-clean:	
+clean:
     -del *.obj
     -del *.ilk
     -del *.pdb
@@ -123,4 +132,3 @@ cleanall:
     -del *.pdb
 		-del *.exe
     -del $(EDK_TOOLS_PATH)\Bin\Win32\dlg.exe
-

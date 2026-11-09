@@ -10,6 +10,8 @@
 
 ## Import Modules
 #
+import json
+from pathlib import Path
 import Common.LongFilePathOs as os
 import re
 import platform
@@ -41,6 +43,7 @@ from Common.DataType import *
 import collections
 from Common.Expression import *
 from GenFds.AprioriSection import DXE_APRIORI_GUID, PEI_APRIORI_GUID
+from AutoGen.IncludesAutoGen import IncludesAutoGen
 
 ## Pattern to extract contents in EDK DXS files
 gDxsDependencyPattern = re.compile(r"DEPENDENCY_START(.+)DEPENDENCY_END", re.DOTALL)
@@ -107,7 +110,6 @@ gDriverTypeMap = {
   SUP_MODULE_PEIM              : '0x6 (PEIM)',
   SUP_MODULE_DXE_CORE          : '0x5 (DXE_CORE)',
   SUP_MODULE_DXE_DRIVER        : '0x7 (DRIVER)',
-  SUP_MODULE_DXE_SAL_DRIVER    : '0x7 (DRIVER)',
   SUP_MODULE_DXE_SMM_DRIVER    : '0x7 (DRIVER)',
   SUP_MODULE_DXE_RUNTIME_DRIVER: '0x7 (DRIVER)',
   SUP_MODULE_UEFI_DRIVER       : '0x7 (DRIVER)',
@@ -1491,36 +1493,6 @@ class PcdReport(object):
             else:
                 FileWrite(File, '        %-*s = %s' % (self.MaxLen + 4, '.' + Key, Value[0]))
 
-    def StrtoHex(self, value):
-        try:
-            value = hex(int(value))
-            return value
-        except:
-            if value.startswith("L\"") and value.endswith("\""):
-                valuelist = []
-                for ch in value[2:-1]:
-                    valuelist.append(hex(ord(ch)))
-                    valuelist.append('0x00')
-                return valuelist
-            elif value.startswith("\"") and value.endswith("\""):
-                return hex(ord(value[1:-1]))
-            elif value.startswith("{") and value.endswith("}"):
-                valuelist = []
-                if ',' not in value:
-                    return value[1:-1]
-                for ch in value[1:-1].split(','):
-                    ch = ch.strip()
-                    if ch.startswith('0x') or ch.startswith('0X'):
-                        valuelist.append(ch)
-                        continue
-                    try:
-                        valuelist.append(hex(int(ch.strip())))
-                    except:
-                        pass
-                return valuelist
-            else:
-                return value
-
     def IsStructurePcd(self, PcdToken, PcdTokenSpaceGuid):
         if GlobalData.gStructurePcd and (self.Arch in GlobalData.gStructurePcd) and ((PcdToken, PcdTokenSpaceGuid) in GlobalData.gStructurePcd[self.Arch]):
             return True
@@ -1841,13 +1813,21 @@ class FdRegionReport(object):
             for Ffs in Wa.FdfProfile.FvDict[FvName.upper()].FfsList:
                 for Section in Ffs.SectionList:
                     try:
-                        for FvSection in Section.SectionList:
-                            if FvSection.FvName in self.FvList:
-                                continue
-                            self._GuidsDb[Ffs.NameGuid.upper()] = FvSection.FvName
-                            self.FvList.append(FvSection.FvName)
-                            self.FvInfo[FvSection.FvName] = ("Nested FV", 0, 0)
-                            self._DiscoverNestedFvList(FvSection.FvName, Wa)
+                        # Handle the case where an entire FFS is a FV, and not
+                        # a sub-section of the FFS.
+                        if getattr(Section, 'FvFileName', None) is None:
+                            for FvSection in Section.SectionList:
+                                if FvSection.FvName in self.FvList:
+                                    continue
+                                self._GuidsDb[Ffs.NameGuid.upper()] = FvSection.FvName
+                                self.FvList.append(FvSection.FvName)
+                                self.FvInfo[FvSection.FvName] = ("Nested FV", 0, 0)
+                                self._DiscoverNestedFvList(FvSection.FvName, Wa)
+                        else:
+                            self._GuidsDb[Ffs.NameGuid.upper()] = Section.FvFileName
+                            self.FvList.append(Section.FvName)
+                            self.FvInfo[Section.FvName] = ("Nested FV", 0, 0)
+                            self._DiscoverNestedFvList(Section.FvName, Wa)
                     except AttributeError:
                         pass
 
@@ -2298,6 +2278,10 @@ class BuildReport(object):
     def GenerateReport(self, BuildDuration, AutoGenTime, MakeTime, GenFdsTime):
         if self.ReportFile:
             try:
+
+                if "COMPILE_INFO" in self.ReportType:
+                    self.GenerateCompileInfo()
+
                 File = []
                 for (Wa, MaList) in self.ReportList:
                     PlatformReport(Wa, MaList, self.ReportType).GenerateReport(File, BuildDuration, AutoGenTime, MakeTime, GenFdsTime, self.ReportType)
@@ -2310,7 +2294,153 @@ class BuildReport(object):
                 EdkLogger.error("BuildReport", CODE_ERROR, "Unknown fatal error when generating build report", ExtraData=self.ReportFile, RaiseError=False)
                 EdkLogger.quiet("(Python %s on %s\n%s)" % (platform.python_version(), sys.platform, traceback.format_exc()))
 
+
+    ##
+    # Generates compile data files to be used by external tools.
+    # Compile information will be generated in <Build>/<BuildTarget>/<ToolChain>/CompileInfo
+    # Files generated: compile_commands.json, cscope.files, modules_report.json
+    #
+    # @param self            The object pointer
+    #
+    def GenerateCompileInfo(self):
+        try:
+            # Lists for the output elements
+            compile_commands = []
+            used_files = set()
+            module_report = []
+
+            for (Wa, MaList) in self.ReportList:
+                # Obtain list of all processed Workspace files
+                for file_path in Wa._GetMetaFiles(Wa.BuildTarget, Wa.ToolChain):
+                    used_files.add(file_path)
+
+                for autoGen in Wa.AutoGenObjectList:
+
+                    # Loop through all modules
+                    for module in (autoGen.LibraryAutoGenList + autoGen.ModuleAutoGenList):
+
+                        used_files.add(module.MetaFile.Path)
+
+                        # Main elements of module report
+                        module_report_data = {}
+                        module_report_data["Name"] = module.Name
+                        module_report_data["Arch"] = module.Arch
+                        module_report_data["Path"] = module.MetaFile.Path
+                        module_report_data["Guid"] = module.Guid
+                        module_report_data["BuildType"] = module.BuildType
+                        module_report_data["IsLibrary"] = module.IsLibrary
+                        module_report_data["SourceDir"] = module.SourceDir
+                        module_report_data["Files"] = []
+                        module_report_data["LibraryClass"] = module.Module.LibraryClass
+                        module_report_data["ModuleEntryPointList"] = module.Module.ModuleEntryPointList
+                        module_report_data["ConstructorList"] = module.Module.ConstructorList
+                        module_report_data["DestructorList"] = module.Module.DestructorList
+
+                        # Files used by module
+                        for data_file in module.SourceFileList:
+                            module_report_data["Files"].append({"Name": data_file.Name, "Path": data_file.Path})
+
+                        # Libraries used by module
+                        module_report_data["Libraries"] = []
+                        for data_library in module.LibraryAutoGenList:
+                            module_report_data["Libraries"].append({"Path": data_library.MetaFile.Path})
+
+                        # Packages used by module
+                        module_report_data["Packages"] = []
+                        for data_package in module.PackageList:
+                            module_report_data["Packages"].append({"Path": data_package.MetaFile.Path, "Includes": []})
+                            # Includes path used in package
+                            for data_package_include in data_package.Includes:
+                                module_report_data["Packages"][-1]["Includes"].append(data_package_include.Path)
+
+                        # PPI's in module
+                        module_report_data["PPI"] = []
+                        for data_ppi in module.PpiList.keys():
+                            module_report_data["PPI"].append({"Name": data_ppi, "Guid": GuidStructureStringToGuidString(module.PpiList[data_ppi])})
+
+                        # GUID's in module
+                        module_report_data["GUID"] = []
+                        for data_ppi in module.GuidList.keys():
+                            module_report_data["GUID"].append({"Name": data_ppi, "Guid": GuidStructureStringToGuidString(module.GuidList[data_ppi])})
+
+                        # Protocol's in module
+                        module_report_data["Protocol"] = []
+                        for data_protocol in module.ProtocolList.keys():
+                            module_report_data["Protocol"].append({"Name": data_protocol, "Guid": GuidStructureStringToGuidString(module.ProtocolList[data_protocol])})
+
+                        # PCD's in module
+                        module_report_data["Pcd"] = []
+                        for data_pcd in module.ModulePcdList + module.LibraryPcdList:
+                            module_report_data["Pcd"].append({"Space": data_pcd.TokenSpaceGuidCName,
+                                                              "Name": data_pcd.TokenCName,
+                                                              "Value": data_pcd.TokenValue,
+                                                              "Guid": data_pcd.TokenSpaceGuidValue,
+                                                              "DatumType": data_pcd.DatumType,
+                                                              "Type": data_pcd.Type,
+                                                              "DefaultValue": data_pcd.DefaultValue})
+                        # Add module to report
+                        module_report.append(module_report_data)
+
+                        # Include file dependencies to used files
+                        includes_autogen = IncludesAutoGen(module.MakeFileDir, module)
+                        for dep in includes_autogen.DepsCollection:
+                            used_files.add(dep)
+
+                        inc_flag = "-I" # Default include flag
+                        if module.BuildRuleFamily == TAB_COMPILER_MSFT:
+                            inc_flag = "/I"
+
+                        for source in module.SourceFileList:
+                            used_files.add(source.Path)
+                            compile_command = {}
+                            if source.Ext in [".c", ".cc", ".cpp"]:
+                                #
+                                # Generate compile command for each c file
+                                #
+                                compile_command["file"] = source.Path
+                                compile_command["directory"] = module.BuildDir
+                                build_command = module.BuildRules[source.Ext].CommandList[0]
+                                destination = os.path.join (module.OutputDir, os.path.join (source.SubDir, source.BaseName + ".obj"))
+                                build_command_variables = re.findall(r"\$\((.*?)\)", build_command)
+                                while build_command_variables:
+                                    var = build_command_variables.pop()
+                                    var_tokens = var.split("_")
+                                    var_main = var_tokens[0]
+                                    if var == "INC":
+                                        var_value = inc_flag + f" {inc_flag}".join(module.IncludePathList)
+                                    elif var in module.Macros:
+                                        var_value = module.Macros[var]
+                                    elif len(var_tokens) == 1:
+                                        var_value = module.BuildOption[var_main]["PATH"]
+                                    else:
+                                        var_value = module.BuildOption[var_main][var_tokens[1]]
+                                    build_command = build_command.replace(f"$({var})", var_value)
+                                    build_command = build_command.replace("${src}", source.Path)
+                                    build_command = build_command.replace("${dst}", destination)
+                                    build_command = build_command.replace("$@", destination)
+                                    build_command_variables.extend (re.findall(r"\$\((.*?)\)", var_value))
+
+                                # Remove un defined macros
+                                compile_command["command"] = re.sub(r"\$\(.*?\)", "", build_command)
+                                compile_commands.append(compile_command)
+
+                # Create output folder if doesn't exist
+                compile_info_folder = Path(Wa.BuildDir).joinpath("CompileInfo")
+                compile_info_folder.mkdir(exist_ok=True)
+
+                # Sort and save files
+                compile_commands.sort(key=lambda x: x["file"])
+                SaveFileOnChange(compile_info_folder.joinpath(f"compile_commands.json"),json.dumps(compile_commands, indent=2), False)
+
+                SaveFileOnChange(compile_info_folder.joinpath(f"cscope.files"), "\n".join(sorted(used_files)), False)
+
+                module_report.sort(key=lambda x: x["Path"])
+                SaveFileOnChange(compile_info_folder.joinpath(f"module_report.json"), json.dumps(module_report, indent=2), False)
+
+        except:
+            EdkLogger.error("BuildReport", CODE_ERROR, "Unknown fatal error when generating build report compile information", ExtraData=self.ReportFile, RaiseError=False)
+            EdkLogger.quiet("(Python %s on %s\n%s)" % (platform.python_version(), sys.platform, traceback.format_exc()))
+
 # This acts like the main() function for the script, unless it is 'import'ed into another script.
 if __name__ == '__main__':
     pass
-

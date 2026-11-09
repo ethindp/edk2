@@ -68,7 +68,7 @@ GetXenArmAcpiRsdp (
     DEBUG ((
       DEBUG_WARN,
       "%a: No 'xen,guest-acpi' compatible DT node found\n",
-      __FUNCTION__
+      __func__
       ));
     return EFI_NOT_FOUND;
   }
@@ -128,10 +128,12 @@ InstallXenArmTables (
   EFI_ACPI_DESCRIPTION_HEADER                   *Xsdt;
   EFI_ACPI_2_0_FIXED_ACPI_DESCRIPTION_TABLE     *FadtTable;
   EFI_ACPI_DESCRIPTION_HEADER                   *DsdtTable;
+  EFI_ACPI_3_0_FIRMWARE_ACPI_CONTROL_STRUCTURE  *FacsTable;
 
   XenAcpiRsdpStructurePtr = NULL;
   FadtTable               = NULL;
   DsdtTable               = NULL;
+  FacsTable               = NULL;
   TableHandle             = 0;
   NumberOfTableEntries    = 0;
 
@@ -140,7 +142,7 @@ InstallXenArmTables (
   //
   Status = GetXenArmAcpiRsdp (&XenAcpiRsdpStructurePtr);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_INFO, "%a: No RSDP table found\n", __FUNCTION__));
+    DEBUG ((DEBUG_INFO, "%a: No RSDP table found\n", __func__));
     return Status;
   }
 
@@ -191,6 +193,8 @@ InstallXenArmTables (
         FadtTable = (EFI_ACPI_2_0_FIXED_ACPI_DESCRIPTION_TABLE *)
                     (UINTN)CurrentTablePointer;
         DsdtTable = (EFI_ACPI_DESCRIPTION_HEADER *)(UINTN)FadtTable->Dsdt;
+        FacsTable = (EFI_ACPI_3_0_FIRMWARE_ACPI_CONTROL_STRUCTURE *)
+                    (UINTN)FadtTable->FirmwareCtrl;
       }
     }
   }
@@ -198,14 +202,31 @@ InstallXenArmTables (
   //
   // Install DSDT table.
   //
-  Status = AcpiProtocol->InstallAcpiTable (
-                           AcpiProtocol,
-                           DsdtTable,
-                           DsdtTable->Length,
-                           &TableHandle
-                           );
-  if (EFI_ERROR (Status)) {
-    return Status;
+  if (DsdtTable != NULL) {
+    Status = AcpiProtocol->InstallAcpiTable (
+                             AcpiProtocol,
+                             DsdtTable,
+                             DsdtTable->Length,
+                             &TableHandle
+                             );
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+  }
+
+  //
+  // Install FACS table.
+  //
+  if (FacsTable != NULL) {
+    Status = AcpiProtocol->InstallAcpiTable (
+                             AcpiProtocol,
+                             FacsTable,
+                             FacsTable->Length,
+                             &TableHandle
+                             );
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
   }
 
   return EFI_SUCCESS;

@@ -140,10 +140,10 @@ VideoCopyHorizontalOverlap (
   UINT16  *SourcePixel16bit;
   UINT16  *DestinationPixel16bit;
 
-  UINT32  SourcePixelY;
-  UINT32  DestinationPixelY;
-  UINTN   SizeIn32Bits;
-  UINTN   SizeIn16Bits;
+  UINTN  SourcePixelY;
+  UINTN  DestinationPixelY;
+  UINTN  SizeIn32Bits;
+  UINTN  SizeIn16Bits;
 
   Status = EFI_SUCCESS;
 
@@ -271,8 +271,8 @@ BltVideoFill (
   VOID               *DestinationAddr;
   UINT16             *DestinationPixel16bit;
   UINT16             Pixel16bit;
-  UINT32             DestinationPixelX;
-  UINT32             DestinationLine;
+  UINTN              DestinationPixelX;
+  UINTN              DestinationLine;
   UINTN              WidthInBytes;
 
   Status               = EFI_SUCCESS;
@@ -420,11 +420,11 @@ BltVideoToBltBuffer (
   VOID                           *DestinationAddr;
   UINT16                         *SourcePixel16bit;
   UINT16                         Pixel16bit;
-  UINT32                         SourcePixelX;
-  UINT32                         SourceLine;
-  UINT32                         DestinationPixelX;
-  UINT32                         DestinationLine;
-  UINT32                         BltBufferHorizontalResolution;
+  UINTN                          SourcePixelX;
+  UINTN                          SourceLine;
+  UINTN                          DestinationPixelX;
+  UINTN                          DestinationLine;
+  UINTN                          BltBufferHorizontalResolution;
   UINTN                          WidthInBytes;
 
   Status               = EFI_SUCCESS;
@@ -583,11 +583,11 @@ BltBufferToVideo (
   VOID                           *SourceAddr;
   VOID                           *DestinationAddr;
   UINT16                         *DestinationPixel16bit;
-  UINT32                         SourcePixelX;
-  UINT32                         SourceLine;
-  UINT32                         DestinationPixelX;
-  UINT32                         DestinationLine;
-  UINT32                         BltBufferHorizontalResolution;
+  UINTN                          SourcePixelX;
+  UINTN                          SourceLine;
+  UINTN                          DestinationPixelX;
+  UINTN                          DestinationLine;
+  UINTN                          BltBufferHorizontalResolution;
   UINTN                          WidthInBytes;
 
   Status               = EFI_SUCCESS;
@@ -814,18 +814,6 @@ LcdGraphicsBlt (
 
   HorizontalResolution = This->Mode->Info->HorizontalResolution;
   VerticalResolution   = This->Mode->Info->VerticalResolution;
-
-  DEBUG ((
-    DEBUG_INFO,
-    "LcdGraphicsBlt (BltOperation:%d,DestX:%d,DestY:%d,Width:%d,Height:%d) res(%d,%d)\n",
-    BltOperation,
-    DestinationX,
-    DestinationY,
-    Width,
-    Height,
-    HorizontalResolution,
-    VerticalResolution
-    ));
 
   // Check we have reasonable parameters
   if ((Width == 0) || (Height == 0)) {

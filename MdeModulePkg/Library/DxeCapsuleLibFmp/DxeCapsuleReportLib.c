@@ -122,7 +122,7 @@ LockVariable (
              VARIABLE_POLICY_NO_CANT_ATTR,
              VARIABLE_POLICY_TYPE_LOCK_NOW
              );
-  if (EFI_ERROR (Status)) {
+  if (EFI_ERROR (Status) && (Status != EFI_ALREADY_STARTED)) {
     DEBUG ((
       DEBUG_ERROR,
       "DxeCapsuleLibFmp: Failed to lock variable %g %s.  Status = %r\n",
@@ -502,7 +502,7 @@ InitCapsuleVariable (
   // Locate the VariablePolicy protocol
   Status = gBS->LocateProtocol (&gEdkiiVariablePolicyProtocolGuid, NULL, (VOID **)&VariablePolicy);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "DxeCapsuleReportLib %a - Could not locate VariablePolicy protocol! %r\n", __FUNCTION__, Status));
+    DEBUG ((DEBUG_ERROR, "DxeCapsuleReportLib %a - Could not locate VariablePolicy protocol! %r\n", __func__, Status));
     ASSERT_EFI_ERROR (Status);
   }
 

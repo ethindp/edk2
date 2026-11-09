@@ -9,14 +9,15 @@
 
 **/
 
-#ifndef _INTEL_STM_API_H_
-#define _INTEL_STM_API_H_
+#pragma once
 
 #include <Register/Intel/StmStatusCode.h>
 #include <Register/Intel/StmResourceDescriptor.h>
 #include <Register/Intel/ArchitecturalMsr.h>
 
 #pragma pack (1)
+
+#define STM_SMM_REV_ID  0x80010100
 
 /**
   STM Header Structures
@@ -857,7 +858,7 @@ typedef enum {
 } TXT_SMM_PROTECTION_EXCEPTION_TYPE;
 
 /**
-  TXT Pocessor SMM Descriptor (PSD) structures
+  TXT Processor SMM Descriptor (PSD) structures
 **/
 
 typedef struct {
@@ -932,5 +933,3 @@ typedef struct {
 } TXT_PROCESSOR_SMM_DESCRIPTOR;
 
 #pragma pack ()
-
-#endif

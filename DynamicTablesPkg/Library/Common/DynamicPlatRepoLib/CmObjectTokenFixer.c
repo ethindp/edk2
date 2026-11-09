@@ -1,7 +1,7 @@
 /** @file
   Configuration Manager object token fixer
 
-  Copyright (c) 2021, Arm Limited. All rights reserved.<BR>
+  Copyright (c) 2021 - 2026, Arm Limited. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -60,7 +60,151 @@ TokenFixerItsGroup (
   )
 {
   ASSERT (CmObject != NULL);
-  ((CM_ARM_ITS_GROUP_NODE *)CmObject)->Token = Token;
+  ((CM_ARM_ITS_GROUP_NODE *)CmObject->Data)->Token = Token;
+  return EFI_SUCCESS;
+}
+
+/** EArmObjNamedComponent token fixer.
+
+  CmObjectToken fixer function that updates the Tokens in the CmObjects.
+
+  @param [in]  CmObject    Pointer to the Configuration Manager Object.
+  @param [in]  Token       Token to be updated in the CmObject.
+
+  @retval EFI_SUCCESS           Success.
+  @retval EFI_INVALID_PARAMETER A parameter is invalid.
+  @retval EFI_UNSUPPORTED       Not supported.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+TokenFixerNamedComponentNode (
+  IN  CM_OBJ_DESCRIPTOR  *CmObject,
+  IN  CM_OBJECT_TOKEN    Token
+  )
+{
+  ASSERT (CmObject != NULL);
+  ((CM_ARM_NAMED_COMPONENT_NODE *)CmObject->Data)->Token = Token;
+  return EFI_SUCCESS;
+}
+
+/** EArmObjRootComplex token fixer.
+
+  CmObjectToken fixer function that updates the Tokens in the CmObjects.
+
+  @param [in]  CmObject    Pointer to the Configuration Manager Object.
+  @param [in]  Token       Token to be updated in the CmObject.
+
+  @retval EFI_SUCCESS           Success.
+  @retval EFI_INVALID_PARAMETER A parameter is invalid.
+  @retval EFI_UNSUPPORTED       Not supported.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+TokenFixerRootComplexNode (
+  IN  CM_OBJ_DESCRIPTOR  *CmObject,
+  IN  CM_OBJECT_TOKEN    Token
+  )
+{
+  ASSERT (CmObject != NULL);
+  ((CM_ARM_ROOT_COMPLEX_NODE *)CmObject->Data)->Token = Token;
+  return EFI_SUCCESS;
+}
+
+/** EArmObjSmmuV3 token fixer.
+
+  CmObjectToken fixer function that updates the Tokens in the CmObjects.
+
+  @param [in]  CmObject    Pointer to the Configuration Manager Object.
+  @param [in]  Token       Token to be updated in the CmObject.
+
+  @retval EFI_SUCCESS           Success.
+  @retval EFI_INVALID_PARAMETER A parameter is invalid.
+  @retval EFI_UNSUPPORTED       Not supported.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+TokenFixerSmmuV3Node (
+  IN  CM_OBJ_DESCRIPTOR  *CmObject,
+  IN  CM_OBJECT_TOKEN    Token
+  )
+{
+  ASSERT (CmObject != NULL);
+  ((CM_ARM_SMMUV3_NODE *)CmObject->Data)->Token = Token;
+  return EFI_SUCCESS;
+}
+
+/** ERiscVObjIsaString token fixer.
+
+  CmObjectToken fixer function that updates the Tokens in the CmObjects.
+
+  @param [in]  CmObject    Pointer to the Configuration Manager Object.
+  @param [in]  Token       Token to be updated in the CmObject.
+
+  @retval EFI_SUCCESS           Success.
+  @retval EFI_INVALID_PARAMETER A parameter is invalid.
+  @retval EFI_UNSUPPORTED       Not supported.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+TokenFixerIsaStringNode (
+  IN  CM_OBJ_DESCRIPTOR  *CmObject,
+  IN  CM_OBJECT_TOKEN    Token
+  )
+{
+  ASSERT (CmObject != NULL);
+  ((CM_RISCV_ISA_STRING_NODE *)CmObject->Data)->Token = Token;
+  return EFI_SUCCESS;
+}
+
+/** ERiscVObjCmoNode token fixer.
+
+  CmObjectToken fixer function that updates the Tokens in the CmObjects.
+
+  @param [in]  CmObject    Pointer to the Configuration Manager Object.
+  @param [in]  Token       Token to be updated in the CmObject.
+
+  @retval EFI_SUCCESS           Success.
+  @retval EFI_INVALID_PARAMETER A parameter is invalid.
+  @retval EFI_UNSUPPORTED       Not supported.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+TokenFixerCmoNode (
+  IN  CM_OBJ_DESCRIPTOR  *CmObject,
+  IN  CM_OBJECT_TOKEN    Token
+  )
+{
+  ASSERT (CmObject != NULL);
+  ((CM_RISCV_CMO_NODE *)CmObject->Data)->Token = Token;
+  return EFI_SUCCESS;
+}
+
+/** ERiscVObjMmuNode token fixer.
+
+  CmObjectToken fixer function that updates the Tokens in the CmObjects.
+
+  @param [in]  CmObject    Pointer to the Configuration Manager Object.
+  @param [in]  Token       Token to be updated in the CmObject.
+
+  @retval EFI_SUCCESS           Success.
+  @retval EFI_INVALID_PARAMETER A parameter is invalid.
+  @retval EFI_UNSUPPORTED       Not supported.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+TokenFixerMmuNode (
+  IN  CM_OBJ_DESCRIPTOR  *CmObject,
+  IN  CM_OBJECT_TOKEN    Token
+  )
+{
+  ASSERT (CmObject != NULL);
+  ((CM_RISCV_MMU_NODE *)CmObject->Data)->Token = Token;
   return EFI_SUCCESS;
 }
 
@@ -70,47 +214,49 @@ TokenFixerItsGroup (
   Token fixed. Each CmObj can have its Token in a specific way.
 */
 CONST
-CM_OBJECT_TOKEN_FIXER  TokenFixer[EArmObjMax] = {
+CM_OBJECT_TOKEN_FIXER  ArmTokenFixer[EArmObjMax] = {
   NULL,                             ///<  0 - Reserved
   NULL,                             ///<  1 - Boot Architecture Info
-  NULL,                             ///<  2 - CPU Info
-  NULL,                             ///<  3 - Power Management Profile Info
-  NULL,                             ///<  4 - GIC CPU Interface Info
-  NULL,                             ///<  5 - GIC Distributor Info
-  NULL,                             ///<  6 - GIC MSI Frame Info
-  NULL,                             ///<  7 - GIC Redistributor Info
-  NULL,                             ///<  8 - GIC ITS Info
-  NULL,                             ///<  9 - Serial Console Port Info
-  NULL,                             ///< 10 - Serial Debug Port Info
-  NULL,                             ///< 11 - Generic Timer Info
-  NULL,                             ///< 12 - Platform GT Block Info
-  NULL,                             ///< 13 - Generic Timer Block Frame Info
-  NULL,                             ///< 14 - Platform Generic Watchdog
-  NULL,                             ///< 15 - PCI Configuration Space Info
-  NULL,                             ///< 16 - Hypervisor Vendor Id
-  NULL,                             ///< 17 - Fixed feature flags for FADT
-  TokenFixerItsGroup,               ///< 18 - ITS Group
-  TokenFixerNotImplemented,         ///< 19 - Named Component
-  TokenFixerNotImplemented,         ///< 20 - Root Complex
-  TokenFixerNotImplemented,         ///< 21 - SMMUv1 or SMMUv2
-  TokenFixerNotImplemented,         ///< 22 - SMMUv3
-  TokenFixerNotImplemented,         ///< 23 - PMCG
-  NULL,                             ///< 24 - GIC ITS Identifier Array
-  NULL,                             ///< 25 - ID Mapping Array
-  NULL,                             ///< 26 - SMMU Interrupt Array
-  TokenFixerNotImplemented,         ///< 27 - Processor Hierarchy Info
-  TokenFixerNotImplemented,         ///< 28 - Cache Info
-  TokenFixerNotImplemented,         ///< 29 - Processor Node ID Info
-  NULL,                             ///< 30 - CM Object Reference
-  NULL,                             ///< 31 - Memory Affinity Info
-  NULL,                             ///< 32 - Device Handle Acpi
-  NULL,                             ///< 33 - Device Handle Pci
-  NULL,                             ///< 34 - Generic Initiator Affinity
-  NULL,                             ///< 35 - Generic Serial Port Info
-  NULL,                             ///< 36 - CMN-600 Info
-  NULL,                             ///< 37 - Lpi Info
-  NULL,                             ///< 38 - Pci Address Map Info
-  NULL,                             ///< 39 - Pci Interrupt Map Info
+  NULL,                             ///<  2 - GIC CPU Interface Info
+  NULL,                             ///<  3 - GIC Distributor Info
+  NULL,                             ///<  4 - GIC MSI Frame Info
+  NULL,                             ///<  5 - GIC Redistributor Info
+  NULL,                             ///<  6 - GIC ITS Info
+  NULL,                             ///<  7 - Generic Timer Info
+  NULL,                             ///<  8 - Platform GT Block Info
+  NULL,                             ///<  9 - Generic Timer Block Frame Info
+  NULL,                             ///< 10 - Platform Generic Watchdog
+  TokenFixerItsGroup,               ///< 11 - ITS Group
+  TokenFixerNamedComponentNode,     ///< 12 - Named Component
+  TokenFixerRootComplexNode,        ///< 13 - Root Complex
+  TokenFixerNotImplemented,         ///< 14 - SMMUv1 or SMMUv2
+  TokenFixerSmmuV3Node,             ///< 15 - SMMUv3
+  TokenFixerNotImplemented,         ///< 16 - PMCG
+  NULL,                             ///< 17 - GIC ITS Identifier Array
+  NULL,                             ///< 18 - ID Mapping Array
+  NULL,                             ///< 19 - SMMU Interrupt Array
+  NULL,                             ///< 20 - CMN Info
+  NULL,                             ///< 21 - Reserved Memory Range Node
+  NULL,                             ///< 22 - Memory Range Descriptor
+  NULL                              ///< 23 - Embedded Trace Extension/Module Info
+};
+
+/** TokenFixer functions table for RISC-V.
+
+  A CmObj having a CM_OBJECT_TOKEN field might need to have its
+  Token fixed. Each CmObj can have its Token in a specific way.
+*/
+CONST
+CM_OBJECT_TOKEN_FIXER  RiscVTokenFixer[ERiscVObjMax] = {
+  NULL,                             ///<  0 - Reserved
+  NULL,                             ///<  1 - RINTC Info
+  NULL,                             ///<  2 - IMSIC Info
+  NULL,                             ///<  3 - APLIC Info
+  NULL,                             ///<  4 - PLIC Info
+  TokenFixerIsaStringNode,          ///<  5 - ISA String Info
+  TokenFixerCmoNode,                ///<  6 - CMO Info
+  TokenFixerMmuNode,                ///<  7 - MMU Info
+  NULL,                             ///<  8 - Timer Type Info
 };
 
 /** CmObj token fixer.
@@ -136,23 +282,40 @@ FixupCmObjectSelfToken (
   EFI_STATUS             Status;
   CM_OBJECT_TOKEN_FIXER  TokenFixerFunc;
   CM_OBJECT_ID           ArmNamespaceObjId;
+  CM_OBJECT_ID           RiscVNamespaceObjId;
 
-  // Only support Arm objects for now.
-  if ((CmObjDesc == NULL)   ||
-      (GET_CM_NAMESPACE_ID (CmObjDesc->ObjectId) != EObjNameSpaceArm))
-  {
+  if (CmObjDesc == NULL) {
     ASSERT (0);
     return EFI_INVALID_PARAMETER;
   }
 
-  ArmNamespaceObjId = GET_CM_OBJECT_ID (CmObjDesc->ObjectId);
-  if (ArmNamespaceObjId >= EArmObjMax) {
-    ASSERT (0);
-    return EFI_INVALID_PARAMETER;
+  // Only support Arm and RISC-V objects for now.
+  if (GET_CM_NAMESPACE_ID (CmObjDesc->ObjectId) == EObjNameSpaceArm) {
+    ArmNamespaceObjId = GET_CM_OBJECT_ID (CmObjDesc->ObjectId);
+    if (ArmNamespaceObjId >= EArmObjMax) {
+      ASSERT (0);
+      return EFI_INVALID_PARAMETER;
+    }
+
+    // Fixup self-token if necessary.
+    TokenFixerFunc = ArmTokenFixer[ArmNamespaceObjId];
+  } else if (GET_CM_NAMESPACE_ID (CmObjDesc->ObjectId) == EObjNameSpaceRiscV) {
+    RiscVNamespaceObjId = GET_CM_OBJECT_ID (CmObjDesc->ObjectId);
+    if (RiscVNamespaceObjId >= ERiscVObjMax) {
+      ASSERT (0);
+      return EFI_INVALID_PARAMETER;
+    }
+
+    // Fixup self-token if necessary.
+    TokenFixerFunc = RiscVTokenFixer[RiscVNamespaceObjId];
+  } else {
+    ASSERT (
+      (GET_CM_NAMESPACE_ID (CmObjDesc->ObjectId) == EObjNameSpaceArm) ||
+      (GET_CM_NAMESPACE_ID (CmObjDesc->ObjectId) == EObjNameSpaceRiscV)
+      );
+    return EFI_UNSUPPORTED;
   }
 
-  // Fixup self-token if necessary.
-  TokenFixerFunc = TokenFixer[ArmNamespaceObjId];
   if (TokenFixerFunc != NULL) {
     Status = TokenFixerFunc (CmObjDesc, Token);
     if (EFI_ERROR (Status)) {

@@ -20,6 +20,8 @@ Copyright (c) 2013 - 2018, Intel Corporation. All rights reserved.<BR>
 (C) Copyright 2015 Hewlett Packard Enterprise Development LP<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
+Copyright (c) Microsoft Corporation.<BR>
+SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
 #include <PiDxe.h>
@@ -31,6 +33,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Protocol/FirmwareVolumeBlock.h>
 
 #include <Guid/MeasuredFvHob.h>
+#include <Ppi/FirmwareVolumeInfoMeasurementExcluded.h>
+#include <Guid/FirmwareVolumeMeasurementExcludedHob.h>
 
 #include <Library/BaseLib.h>
 #include <Library/DebugLib.h>
@@ -42,7 +46,10 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Library/PeCoffLib.h>
 #include <Library/SecurityManagementLib.h>
 #include <Library/HobLib.h>
+#include <Library/GptLib.h>
 #include <Protocol/CcMeasurement.h>
+
+#include "DxeTpm2MeasureBootLibSanitization.h"
 
 typedef struct {
   EFI_TCG2_PROTOCOL              *Tcg2Protocol;
@@ -59,8 +66,9 @@ UINTN    mTcg2ImageSize;
 //
 // Measured FV handle cache
 //
-EFI_HANDLE         mTcg2CacheMeasuredHandle = NULL;
-MEASURED_HOB_DATA  *mTcg2MeasuredHobData    = NULL;
+EFI_HANDLE                                           mTcg2CacheMeasuredHandle = NULL;
+MEASURED_HOB_DATA                                    *mTcg2MeasuredHobData    = NULL;
+EDKII_FIRMWARE_VOLUME_MEASUREMENT_EXCLUDED_HOB_DATA  *mExcludedFvHobData      = NULL;
 
 /**
   Reads contents of a PE/COFF image in memory buffer.
@@ -136,6 +144,7 @@ Tcg2MeasureGptTable (
   EFI_BLOCK_IO_PROTOCOL        *BlockIo;
   EFI_DISK_IO_PROTOCOL         *DiskIo;
   EFI_PARTITION_TABLE_HEADER   *PrimaryHeader;
+  EFI_PARTITION_TABLE_HEADER   *BackupHeader;
   EFI_PARTITION_ENTRY          *PartitionEntry;
   UINT8                        *EntryPtr;
   UINTN                        NumberOfPartition;
@@ -144,16 +153,18 @@ Tcg2MeasureGptTable (
   EFI_TCG2_EVENT               *Tcg2Event;
   EFI_CC_EVENT                 *CcEvent;
   EFI_GPT_DATA                 *GptData;
-  UINT32                       EventSize;
+  UINT32                       TcgEventSize;
   EFI_TCG2_PROTOCOL            *Tcg2Protocol;
   EFI_CC_MEASUREMENT_PROTOCOL  *CcProtocol;
   EFI_CC_MR_INDEX              MrIndex;
+  UINT32                       AllocSize;
 
   if (mTcg2MeasureGptCount > 0) {
     return EFI_SUCCESS;
   }
 
   PrimaryHeader = NULL;
+  BackupHeader  = NULL;
   EntryPtr      = NULL;
   EventPtr      = NULL;
 
@@ -181,39 +192,57 @@ Tcg2MeasureGptTable (
   }
 
   //
-  // Read the EFI Partition Table Header
+  // Obtain the GPT partition table header that the platform actually parses
+  // and uses, applying the same strict validation (including the header CRC32
+  // and the partition-entry-array CRC32) as the PartitionDxe driver, via the
+  // shared GptLib parser. Previously this code read LBA 1 directly and
+  // validated it with a relaxed, CRC-less check, which allowed the table
+  // measured into PCR[5] to differ from the table the driver actually used
+  // (CVE-2024-13745).
   //
-  PrimaryHeader = (EFI_PARTITION_TABLE_HEADER *)AllocatePool (BlockIo->Media->BlockSize);
+  PrimaryHeader = (EFI_PARTITION_TABLE_HEADER *)AllocatePool (sizeof (EFI_PARTITION_TABLE_HEADER));
   if (PrimaryHeader == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
 
-  Status = DiskIo->ReadDisk (
-                     DiskIo,
-                     BlockIo->Media->MediaId,
-                     1 * BlockIo->Media->BlockSize,
-                     BlockIo->Media->BlockSize,
-                     (UINT8 *)PrimaryHeader
-                     );
-  if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "Failed to Read Partition Table Header!\n"));
-    FreePool (PrimaryHeader);
-    return EFI_DEVICE_ERROR;
-  }
+  if (!PartitionValidGptTable (BlockIo, DiskIo, PRIMARY_PART_HEADER_LBA, PrimaryHeader)) {
+    //
+    // The primary GPT header is not valid. Mirror the driver's recovery
+    // selection: when a valid backup header exists, the driver restores and
+    // then uses the header located at the backup's AlternateLBA. Validate and
+    // use that same header (read-only) so the measured table matches the used
+    // one. If neither the primary nor the backup table is valid, fail closed
+    // and measure nothing.
+    //
+    BackupHeader = (EFI_PARTITION_TABLE_HEADER *)AllocatePool (sizeof (EFI_PARTITION_TABLE_HEADER));
+    if (BackupHeader == NULL) {
+      FreePool (PrimaryHeader);
+      return EFI_OUT_OF_RESOURCES;
+    }
 
-  //
-  // PrimaryHeader->SizeOfPartitionEntry should not be zero
-  //
-  if (PrimaryHeader->SizeOfPartitionEntry == 0) {
-    DEBUG ((DEBUG_ERROR, "SizeOfPartitionEntry should not be zero!\n"));
-    FreePool (PrimaryHeader);
-    return EFI_BAD_BUFFER_SIZE;
+    if (!PartitionValidGptTable (BlockIo, DiskIo, BlockIo->Media->LastBlock, BackupHeader) ||
+        !PartitionValidGptTable (BlockIo, DiskIo, BackupHeader->AlternateLBA, PrimaryHeader))
+    {
+      DEBUG ((DEBUG_ERROR, "Failed to obtain a valid GPT partition table header to measure!\n"));
+      FreePool (BackupHeader);
+      FreePool (PrimaryHeader);
+      return EFI_DEVICE_ERROR;
+    }
+
+    FreePool (BackupHeader);
+    BackupHeader = NULL;
   }
 
   //
   // Read the partition entry.
   //
-  EntryPtr = (UINT8 *)AllocatePool (PrimaryHeader->NumberOfPartitionEntries * PrimaryHeader->SizeOfPartitionEntry);
+  Status = Tpm2SanitizePrimaryHeaderAllocationSize (PrimaryHeader, &AllocSize);
+  if (EFI_ERROR (Status)) {
+    FreePool (PrimaryHeader);
+    return EFI_BAD_BUFFER_SIZE;
+  }
+
+  EntryPtr = (UINT8 *)AllocatePool (AllocSize);
   if (EntryPtr == NULL) {
     FreePool (PrimaryHeader);
     return EFI_OUT_OF_RESOURCES;
@@ -223,7 +252,7 @@ Tcg2MeasureGptTable (
                      DiskIo,
                      BlockIo->Media->MediaId,
                      MultU64x32 (PrimaryHeader->PartitionEntryLBA, BlockIo->Media->BlockSize),
-                     PrimaryHeader->NumberOfPartitionEntries * PrimaryHeader->SizeOfPartitionEntry,
+                     AllocSize,
                      EntryPtr
                      );
   if (EFI_ERROR (Status)) {
@@ -234,6 +263,14 @@ Tcg2MeasureGptTable (
 
   //
   // Count the valid partition
+  //
+  // Empty entries (zero PartitionTypeGUID) are intentionally not measured
+  // individually. Their content is already fully covered by the
+  // partition-entry-array CRC32, which PartitionValidGptTable() verified above
+  // before any data was measured. Any tampering with an empty entry therefore
+  // changes that CRC32 and makes the primary GPT validation fail (causing a
+  // fall back to the backup, or a fail-closed with no PCR[5] extend), so
+  // re-measuring the all-zero entries would add no additional protection.
   //
   PartitionEntry    = (EFI_PARTITION_ENTRY *)EntryPtr;
   NumberOfPartition = 0;
@@ -248,16 +285,21 @@ Tcg2MeasureGptTable (
   //
   // Prepare Data for Measurement (CcProtocol and Tcg2Protocol)
   //
-  EventSize = (UINT32)(sizeof (EFI_GPT_DATA) - sizeof (GptData->Partitions)
-                       + NumberOfPartition * PrimaryHeader->SizeOfPartitionEntry);
-  EventPtr = (UINT8 *)AllocateZeroPool (EventSize + sizeof (EFI_TCG2_EVENT) - sizeof (Tcg2Event->Event));
+  Status = Tpm2SanitizePrimaryHeaderGptEventSize (PrimaryHeader, NumberOfPartition, &TcgEventSize);
+  if (EFI_ERROR (Status)) {
+    FreePool (PrimaryHeader);
+    FreePool (EntryPtr);
+    return EFI_DEVICE_ERROR;
+  }
+
+  EventPtr = (UINT8 *)AllocateZeroPool (TcgEventSize);
   if (EventPtr == NULL) {
     Status = EFI_OUT_OF_RESOURCES;
     goto Exit;
   }
 
   Tcg2Event                       = (EFI_TCG2_EVENT *)EventPtr;
-  Tcg2Event->Size                 = EventSize + sizeof (EFI_TCG2_EVENT) - sizeof (Tcg2Event->Event);
+  Tcg2Event->Size                 = TcgEventSize;
   Tcg2Event->Header.HeaderSize    = sizeof (EFI_TCG2_EVENT_HEADER);
   Tcg2Event->Header.HeaderVersion = EFI_TCG2_EVENT_HEADER_VERSION;
   Tcg2Event->Header.PCRIndex      = 5;
@@ -310,14 +352,12 @@ Tcg2MeasureGptTable (
                                             CcProtocol,
                                             0,
                                             (EFI_PHYSICAL_ADDRESS)(UINTN)(VOID *)GptData,
-                                            (UINT64)EventSize,
+                                            (UINT64)TcgEventSize - OFFSET_OF (EFI_TCG2_EVENT, Event),
                                             CcEvent
                                             );
     if (!EFI_ERROR (Status)) {
       mTcg2MeasureGptCount++;
     }
-
-    DEBUG ((DEBUG_INFO, "DxeTpm2MeasureBootHandler - Cc MeasureGptTable - %r\n", Status));
   } else if (Tcg2Protocol != NULL) {
     //
     // If Tcg2Protocol is installed, then Measure GPT data with this protocol.
@@ -326,14 +366,12 @@ Tcg2MeasureGptTable (
                              Tcg2Protocol,
                              0,
                              (EFI_PHYSICAL_ADDRESS)(UINTN)(VOID *)GptData,
-                             (UINT64)EventSize,
+                             (UINT64)TcgEventSize -  OFFSET_OF (EFI_TCG2_EVENT, Event),
                              Tcg2Event
                              );
     if (!EFI_ERROR (Status)) {
       mTcg2MeasureGptCount++;
     }
-
-    DEBUG ((DEBUG_INFO, "DxeTpm2MeasureBootHandler - Tcg2 MeasureGptTable - %r\n", Status));
   }
 
 Exit:
@@ -371,7 +409,6 @@ Exit:
   @retval EFI_OUT_OF_RESOURCES   No enough resource to measure image.
   @retval EFI_UNSUPPORTED        ImageType is unsupported or PE image is mal-format.
   @retval other error value
-
 **/
 EFI_STATUS
 EFIAPI
@@ -398,6 +435,7 @@ Tcg2MeasurePeImage (
   Status    = EFI_UNSUPPORTED;
   ImageLoad = NULL;
   EventPtr  = NULL;
+  Tcg2Event = NULL;
 
   Tcg2Protocol = MeasureBootProtocols->Tcg2Protocol;
   CcProtocol   = MeasureBootProtocols->CcProtocol;
@@ -413,18 +451,22 @@ Tcg2MeasurePeImage (
   }
 
   FilePathSize = (UINT32)GetDevicePathSize (FilePath);
+  Status       = Tpm2SanitizePeImageEventSize (FilePathSize, &EventSize);
+  if (EFI_ERROR (Status)) {
+    return EFI_UNSUPPORTED;
+  }
 
   //
   // Determine destination PCR by BootPolicy
   //
-  EventSize = sizeof (*ImageLoad) - sizeof (ImageLoad->DevicePath) + FilePathSize;
-  EventPtr  = AllocateZeroPool (EventSize + sizeof (EFI_TCG2_EVENT) - sizeof (Tcg2Event->Event));
+  // from a malicious GPT disk partition
+  EventPtr = AllocateZeroPool (EventSize);
   if (EventPtr == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
 
   Tcg2Event                       = (EFI_TCG2_EVENT *)EventPtr;
-  Tcg2Event->Size                 = EventSize + sizeof (EFI_TCG2_EVENT) - sizeof (Tcg2Event->Event);
+  Tcg2Event->Size                 = EventSize;
   Tcg2Event->Header.HeaderSize    = sizeof (EFI_TCG2_EVENT_HEADER);
   Tcg2Event->Header.HeaderVersion = EFI_TCG2_EVENT_HEADER_VERSION;
   ImageLoad                       = (EFI_IMAGE_LOAD_EVENT *)Tcg2Event->Event;
@@ -443,11 +485,13 @@ Tcg2MeasurePeImage (
       Tcg2Event->Header.PCRIndex  = 2;
       break;
     default:
-      DEBUG ((
-        DEBUG_ERROR,
-        "Tcg2MeasurePeImage: Unknown subsystem type %d",
-        ImageType
-        ));
+      DEBUG (
+        (
+         DEBUG_ERROR,
+         "Tcg2MeasurePeImage: Unknown subsystem type %d",
+         ImageType
+        )
+        );
       goto Finish;
   }
 
@@ -479,7 +523,6 @@ Tcg2MeasurePeImage (
                            ImageSize,
                            CcEvent
                            );
-    DEBUG ((DEBUG_INFO, "DxeTpm2MeasureBootHandler - Cc MeasurePeImage - %r\n", Status));
   } else if (Tcg2Protocol != NULL) {
     Status = Tcg2Protocol->HashLogExtendEvent (
                              Tcg2Protocol,
@@ -488,7 +531,6 @@ Tcg2MeasurePeImage (
                              ImageSize,
                              Tcg2Event
                              );
-    DEBUG ((DEBUG_INFO, "DxeTpm2MeasureBootHandler - Tcg2 MeasurePeImage - %r\n", Status));
   }
 
   if (Status == EFI_VOLUME_FULL) {
@@ -515,7 +557,7 @@ Finish:
 
   @param  MeasureBootProtocols  Pointer to the located measure boot protocol instances.
 
-  @retval EFI_SUCCESS           Sucessfully locate the measure boot protocol instances (at least one instance).
+  @retval EFI_SUCCESS           Successfully locate the measure boot protocol instances (at least one instance).
   @retval EFI_UNSUPPORTED       Measure boot is not supported.
 **/
 EFI_STATUS
@@ -541,7 +583,7 @@ GetMeasureBootProtocols (
     ZeroMem (&CcProtocolCapability, sizeof (CcProtocolCapability));
     CcProtocolCapability.Size = sizeof (CcProtocolCapability);
     Status                    = CcProtocol->GetCapability (CcProtocol, &CcProtocolCapability);
-    if (EFI_ERROR (Status) || (CcProtocolCapability.CcType.Type == EFI_CC_TYPE_NONE)) {
+    if (EFI_ERROR (Status) || (CcProtocolCapability.CcType.Type == EFI_ACPI_6_5_CC_TYPE_NONE)) {
       DEBUG ((DEBUG_ERROR, " CcProtocol->GetCapability returns : %x, %r\n", CcProtocolCapability.CcType.Type, Status));
       CcProtocol = NULL;
     }
@@ -608,6 +650,9 @@ GetMeasureBootProtocols (
   @retval EFI_SUCCESS             The file specified by DevicePath and non-NULL
                                   FileBuffer did authenticate, and the platform policy dictates
                                   that the DXE Foundation may use the file.
+
+  @retval EFI_OUT_OF_RESOURCES    A necessary memory buffer could not be allocated.
+
   @retval other error value
 **/
 EFI_STATUS
@@ -645,13 +690,6 @@ DxeTpm2MeasureBootHandler (
     DEBUG ((DEBUG_INFO, "None of Tcg2Protocol/CcMeasurementProtocol is installed.\n"));
     return EFI_SUCCESS;
   }
-
-  DEBUG ((
-    DEBUG_INFO,
-    "Tcg2Protocol = %p, CcMeasurementProtocol = %p\n",
-    MeasureBootProtocols.Tcg2Protocol,
-    MeasureBootProtocols.CcProtocol
-    ));
 
   //
   // Copy File Device Path
@@ -708,9 +746,17 @@ DxeTpm2MeasureBootHandler (
             }
           }
 
-          FreePool (OrigDevicePathNode);
+          if (OrigDevicePathNode != NULL) {
+            FreePool (OrigDevicePathNode);
+          }
+
           OrigDevicePathNode = DuplicateDevicePath (File);
-          ASSERT (OrigDevicePathNode != NULL);
+          if (OrigDevicePathNode == NULL) {
+            ASSERT (OrigDevicePathNode != NULL);
+            Status = EFI_OUT_OF_RESOURCES;
+            goto Finish;
+          }
+
           break;
         }
       }
@@ -746,7 +792,9 @@ DxeTpm2MeasureBootHandler (
     //
     ApplicationRequired = TRUE;
 
-    if ((mTcg2CacheMeasuredHandle != Handle) && (mTcg2MeasuredHobData != NULL)) {
+    if ((mTcg2CacheMeasuredHandle != Handle) &&
+        ((mTcg2MeasuredHobData != NULL) || (mExcludedFvHobData != NULL)))
+    {
       //
       // Search for Root FV of this PE image
       //
@@ -761,7 +809,7 @@ DxeTpm2MeasureBootHandler (
       } while (!EFI_ERROR (Status) && FvbProtocol->ParentHandle != NULL);
 
       //
-      // Search in measured FV Hob
+      // Get the root FV address to search the measured and excluded FV HOBs.
       //
       Status = FvbProtocol->GetPhysicalAddress (FvbProtocol, &FvAddress);
       if (EFI_ERROR (Status)) {
@@ -770,14 +818,32 @@ DxeTpm2MeasureBootHandler (
 
       ApplicationRequired = FALSE;
 
-      for (Index = 0; Index < mTcg2MeasuredHobData->Num; Index++) {
-        if (mTcg2MeasuredHobData->MeasuredFvBuf[Index].BlobBase == FvAddress) {
-          //
-          // Cache measured FV for next measurement
-          //
-          mTcg2CacheMeasuredHandle = Handle;
-          ApplicationRequired      = TRUE;
-          break;
+      if (mTcg2MeasuredHobData != NULL) {
+        for (Index = 0; Index < mTcg2MeasuredHobData->Num; Index++) {
+          if (mTcg2MeasuredHobData->MeasuredFvBuf[Index].BlobBase == FvAddress) {
+            //
+            // Cache measured FV for next measurement
+            //
+            mTcg2CacheMeasuredHandle = Handle;
+            ApplicationRequired      = TRUE;
+            break;
+          }
+        }
+      }
+
+      if ((ApplicationRequired == FALSE) && (mExcludedFvHobData != NULL)) {
+        //
+        // The FV was not found in the measured list. Check the excluded list.
+        //
+        for (Index = 0; Index < mExcludedFvHobData->NumberOfEntries; Index++) {
+          if (mExcludedFvHobData->ExcludedFvs[Index].FvBase == FvAddress) {
+            //
+            // Cache the excluded FV for the next image.
+            //
+            mTcg2CacheMeasuredHandle = Handle;
+            ApplicationRequired      = TRUE;
+            break;
+          }
         }
       }
     }
@@ -838,7 +904,6 @@ DxeTpm2MeasureBootHandler (
                TRUE
                );
     if (ToText != NULL) {
-      DEBUG ((DEBUG_INFO, "The measured image path is %s.\n", ToText));
       FreePool (ToText);
     }
 
@@ -865,8 +930,6 @@ Finish:
     FreePool (OrigDevicePathNode);
   }
 
-  DEBUG ((DEBUG_INFO, "DxeTpm2MeasureBootHandler - %r\n", Status));
-
   return Status;
 }
 
@@ -886,7 +949,9 @@ DxeTpm2MeasureBootLibConstructor (
   IN EFI_SYSTEM_TABLE  *SystemTable
   )
 {
-  EFI_HOB_GUID_TYPE  *GuidHob;
+  EFI_HOB_GUID_TYPE                                    *GuidHob;
+  EDKII_FIRMWARE_VOLUME_MEASUREMENT_EXCLUDED_HOB_DATA  *ExcludedHobData;
+  UINTN                                                HobDataSize;
 
   GuidHob = NULL;
 
@@ -894,6 +959,28 @@ DxeTpm2MeasureBootLibConstructor (
 
   if (GuidHob != NULL) {
     mTcg2MeasuredHobData = GET_GUID_HOB_DATA (GuidHob);
+  }
+
+  //
+  // Get excluded FV list if present.
+  //
+  GuidHob = GetFirstGuidHob (&gEdkiiFirmwareVolumeMeasurementExcludedHobGuid);
+
+  if (GuidHob != NULL) {
+    HobDataSize = GET_GUID_HOB_DATA_SIZE (GuidHob);
+    if (HobDataSize < sizeof (EDKII_FIRMWARE_VOLUME_MEASUREMENT_EXCLUDED_HOB_DATA)) {
+      DEBUG ((DEBUG_ERROR, "Excluded FV HOB is too small\n"));
+    } else {
+      ExcludedHobData = GET_GUID_HOB_DATA (GuidHob);
+      if (ExcludedHobData->NumberOfEntries >
+          ((HobDataSize - sizeof (EDKII_FIRMWARE_VOLUME_MEASUREMENT_EXCLUDED_HOB_DATA)) /
+           sizeof (EFI_PEI_FIRMWARE_VOLUME_INFO_MEASUREMENT_EXCLUDED_FV)))
+      {
+        DEBUG ((DEBUG_ERROR, "Excluded FV HOB entry count exceeds its data size\n"));
+      } else {
+        mExcludedFvHobData = ExcludedHobData;
+      }
+    }
   }
 
   return RegisterSecurity2Handler (

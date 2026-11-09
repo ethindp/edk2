@@ -1,12 +1,11 @@
 /** @file
   Configuration manager Object Descriptor Utility.
 
-  Copyright (c) 2021, ARM Limited. All rights reserved.<BR>
+  Copyright (c) 2021 - 2026, ARM Limited. All rights reserved.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#ifndef CM_OBJECT_DESC_UTILITY_H_
-#define CM_OBJECT_DESC_UTILITY_H_
+#pragma once
 
 #include <ConfigurationManagerObject.h>
 
@@ -71,6 +70,50 @@ AddSingleCmObj (
   OUT       CM_OBJECT_TOKEN            *Token    OPTIONAL
   );
 
+/** Add a CmObj representing an array to the Configuration Manager.
+  @param  [in]  FdtParserHandle   A handle to the parser instance.
+  @param  [in]  ObjectId          CmObj ObjectId.
+  @param  [in]  Data              CmObj Data.
+  @param  [in]  Size              Total size of array, in bytes.
+  @param  [in]  Count             Count of objects in array.
+  @param  [out] Token             If provided and success,
+                                  token generated for this CmObj.
+  @retval EFI_SUCCESS             The function completed successfully.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+**/
+EFI_STATUS
+EFIAPI
+AddSingleCmObjArray (
+  IN  CONST FDT_HW_INFO_PARSER_HANDLE  FdtParserHandle,
+  IN        CM_OBJECT_ID               ObjectId,
+  IN        VOID                       *Data,
+  IN        UINT32                     Size,
+  IN        UINT32                     Count,
+  OUT       CM_OBJECT_TOKEN            *Token    OPTIONAL
+  );
+
+/** Add a single CmObj to the Configuration Manager.
+
+  @param  [in]  FdtParserHandle   A handle to the parser instance.
+  @param  [in]  ObjectId          CmObj ObjectId.
+  @param  [in]  Data              CmObj Data.
+  @param  [in]  Size              CmObj Size.
+  @param  [out] Token             If provided and success,
+                                  token generated for this CmObj.
+
+  @retval EFI_SUCCESS             The function completed successfully.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+**/
+EFI_STATUS
+EFIAPI
+AddSingleCmObjWithToken (
+  IN  CONST FDT_HW_INFO_PARSER_HANDLE  FdtParserHandle,
+  IN        CM_OBJECT_ID               ObjectId,
+  IN        VOID                       *Data,
+  IN        UINT32                     Size,
+  IN  CONST CM_OBJECT_TOKEN            Token
+  );
+
 /** Add multiple CmObj to the Configuration Manager.
 
   @param  [in]  FdtParserHandle   A handle to the parser instance.
@@ -96,13 +139,35 @@ AddMultipleCmObj (
   OUT       CM_OBJECT_TOKEN             *TokenTable   OPTIONAL
   );
 
+/** Add multiple CmObj to the Configuration Manager with caller-provided
+    tokens.
+
+  @param  [in]  FdtParserHandle   A handle to the parser instance.
+  @param  [in]  CmObjDesc         CmObjDesc containing multiple CmObj
+                                  to add.
+  @param  [in]  TokenTable        Tokens to assign to each CmObj.
+                                  Address of an array of CM_OBJECT_TOKEN
+                                  with the same number of elements as the
+                                  CmObjDesc.
+
+  @retval EFI_SUCCESS             The function completed successfully.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+**/
+EFI_STATUS
+EFIAPI
+AddMultipleCmObjWithToken (
+  IN  CONST FDT_HW_INFO_PARSER_HANDLE  FdtParserHandle,
+  IN  CONST CM_OBJ_DESCRIPTOR          *CmObjDesc,
+  IN  CONST CM_OBJECT_TOKEN            *TokenTable
+  );
+
 /** Add multiple CmObj to the Configuration Manager.
 
-  Get one token referencing a EArmObjCmRef CmObj itself referencing
+  Get one token referencing a EArchCommonObjCmRef CmObj itself referencing
   the input CmObj. In the table below, RefToken is returned.
 
   Token referencing an      Array of tokens             Array of CmObj
-  array of EArmObjCmRef     referencing each            from the input:
+  array of EArchCommonObjCmRef     referencing each            from the input:
   CmObj:                    CmObj from the input:
 
   RefToken         --->     CmObjToken[0]        --->   CmObj[0]
@@ -113,7 +178,7 @@ AddMultipleCmObj (
   @param  [in]  CmObjDesc         CmObjDesc containing multiple CmObj
                                   to add.
   @param  [out] Token             If success, token referencing an array
-                                  of EArmObjCmRef CmObj, themselves
+                                  of EArchCommonObjCmRef CmObj, themselves
                                   referencing the input CmObjs.
 
   @retval EFI_SUCCESS             The function completed successfully.
@@ -127,5 +192,3 @@ AddMultipleCmObjWithCmObjRef (
   IN  CM_OBJ_DESCRIPTOR                *CmObjDesc,
   OUT CM_OBJECT_TOKEN                  *Token
   );
-
-#endif // CM_OBJECT_DESC_UTILITY_H_

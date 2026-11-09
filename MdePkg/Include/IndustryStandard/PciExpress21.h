@@ -3,12 +3,12 @@
 
   Copyright (c) 2006 - 2021, Intel Corporation. All rights reserved.<BR>
   (C) Copyright 2016 Hewlett Packard Enterprise Development LP<BR>
+  Copyright (c) 2026, American Megatrends International LLC. All rights reserved.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _PCIEXPRESS21_H_
-#define _PCIEXPRESS21_H_
+#pragma once
 
 #include <IndustryStandard/Pci30.h>
 
@@ -30,9 +30,17 @@
   (((Offset) & 0xfff) | (((Function) & 0x07) << 12) | (((Device) & 0x1f) << 15) | (((Bus) & 0xff) << 20))
 
 #pragma pack(1)
-///
-/// PCI Express Capability Structure
-///
+
+//
+// PCI Express Capability Structure version 2.
+// Mandatory for PCI Express devices. If not present it is not PCI Express device, thus no extended config space.
+// Version 1 ends at PCI_CAPABILITY_PCIEXP::RootStatus register.
+// Version 2 extends version 1 up to PCI_CAPABILITY_PCIEXP::SlotStatus2 register.
+//
+#define PCI_EXPRESS_CAPABILITY_ID    0x0010
+#define PCI_EXPRESS_CAPABILITY_VER1  0x1
+#define PCI_EXPRESS_CAPABILITY_VER2  0x2
+
 typedef union {
   struct {
     UINT16    Version                : 4;
@@ -40,7 +48,7 @@ typedef union {
     UINT16    SlotImplemented        : 1;
     UINT16    InterruptMessageNumber : 5;
     UINT16    Undefined              : 1;
-    UINT16    Reserved               : 1;
+    UINT16    FlitModeSupported      : 1;
   } Bits;
   UINT16    Uint16;
 } PCI_REG_PCIE_CAPABILITY;
@@ -64,11 +72,13 @@ typedef union {
     UINT32    EndpointL1AcceptableLatency  : 3;
     UINT32    Undefined                    : 3;
     UINT32    RoleBasedErrorReporting      : 1;
-    UINT32    Reserved                     : 2;
+    UINT32    ErrCorSubclassCapable        : 1;
+    UINT32    RxMpsFixed                   : 1;
     UINT32    CapturedSlotPowerLimitValue  : 8;
     UINT32    CapturedSlotPowerLimitScale  : 2;
     UINT32    FunctionLevelReset           : 1;
-    UINT32    Reserved2                    : 3;
+    UINT32    MixedMpsSupported            : 1;
+    UINT32    Reserved2                    : 2;
   } Bits;
   UINT32    Uint32;
 } PCI_REG_PCIE_DEVICE_CAPABILITY;
@@ -111,13 +121,14 @@ typedef union {
 
 typedef union {
   struct {
-    UINT16    CorrectableError    : 1;
-    UINT16    NonFatalError       : 1;
-    UINT16    FatalError          : 1;
-    UINT16    UnsupportedRequest  : 1;
-    UINT16    AuxPower            : 1;
-    UINT16    TransactionsPending : 1;
-    UINT16    Reserved            : 10;
+    UINT16    CorrectableError                : 1;
+    UINT16    NonFatalError                   : 1;
+    UINT16    FatalError                      : 1;
+    UINT16    UnsupportedRequest              : 1;
+    UINT16    AuxPower                        : 1;
+    UINT16    TransactionsPending             : 1;
+    UINT16    EmergencyPowerReductionDetected : 1;
+    UINT16    Reserved                        : 9;
   } Bits;
   UINT16    Uint16;
 } PCI_REG_PCIE_DEVICE_STATUS;
@@ -146,7 +157,7 @@ typedef union {
 typedef union {
   struct {
     UINT16    AspmControl                      : 2;
-    UINT16    Reserved                         : 1;
+    UINT16    PtmPropagationDelayB             : 1;
     UINT16    ReadCompletionBoundary           : 1;
     UINT16    LinkDisable                      : 1;
     UINT16    RetrainLink                      : 1;
@@ -156,6 +167,9 @@ typedef union {
     UINT16    HardwareAutonomousWidthDisable   : 1;
     UINT16    LinkBandwidthManagementInterrupt : 1;
     UINT16    LinkAutonomousBandwidthInterrupt : 1;
+    UINT16    SrisClocking                     : 1;
+    UINT16    FlitModeDisable                  : 1;
+    UINT16    DrsSignalingControl              : 2;
   } Bits;
   UINT16    Uint16;
 } PCI_REG_PCIE_LINK_CONTROL;
@@ -205,7 +219,9 @@ typedef union {
     UINT16    PowerController            : 1;
     UINT16    ElectromechanicalInterlock : 1;
     UINT16    DataLinkLayerStateChanged  : 1;
-    UINT16    Reserved                   : 3;
+    UINT16    AutoSlotPowerLimitDisable  : 1;
+    UINT16    InbandPdDisable            : 1;
+    UINT16    Reserved                   : 1;
   } Bits;
   UINT16    Uint16;
 } PCI_REG_PCIE_SLOT_CONTROL;
@@ -233,7 +249,8 @@ typedef union {
     UINT16    SystemErrorOnFatalError       : 1;
     UINT16    PmeInterrupt                  : 1;
     UINT16    CrsSoftwareVisibility         : 1;
-    UINT16    Reserved                      : 11;
+    UINT16    NoNfmSubtree                  : 1;
+    UINT16    Reserved                      : 10;
   } Bits;
   UINT16    Uint16;
 } PCI_REG_PCIE_ROOT_CONTROL;
@@ -268,7 +285,7 @@ typedef union {
     UINT32    NoRoEnabledPrPrPassing                        : 1;
     UINT32    LtrMechanism                                  : 1;
     UINT32    TphCompleter                                  : 2;
-    UINT32    LnSystemCLS                                   : 2;
+    UINT32    Reserved                                      : 2;
     UINT32    TenBitTagCompleterSupported                   : 1;
     UINT32    TenBitTagRequesterSupported                   : 1;
     UINT32    Obff                                          : 2;
@@ -277,7 +294,9 @@ typedef union {
     UINT32    MaxEndEndTlpPrefixes                          : 2;
     UINT32    EmergencyPowerReductionSupported              : 2;
     UINT32    EmergencyPowerReductionInitializationRequired : 1;
-    UINT32    Reserved3                                     : 4;
+    UINT32    Reserved2                                     : 1;
+    UINT32    DmwrCompleter                                 : 1;
+    UINT32    DmwrLengths                                   : 2;
     UINT32    FrsSupported                                  : 1;
   } Bits;
   UINT32    Uint32;
@@ -330,10 +349,16 @@ typedef union {
 
 typedef union {
   struct {
-    UINT32    Reserved         : 1;
-    UINT32    LinkSpeedsVector : 7;
-    UINT32    Crosslink        : 1;
-    UINT32    Reserved2        : 23;
+    UINT32    Reserved                  : 1;
+    UINT32    LinkSpeedsVector          : 7;
+    UINT32    Crosslink                 : 1;
+    UINT32    LowerSkpOsGeneration      : 7;
+    UINT32    LowerSkpOsReception       : 7;
+    UINT32    RetimerPresenceDetect     : 1;
+    UINT32    TwoRetimersPresenceDetect : 1;
+    UINT32    FRAPresenceDetect         : 1;
+    UINT32    Reserved2                 : 5;
+    UINT32    DrsSupported              : 1;
   } Bits;
   UINT32    Uint32;
 } PCI_REG_PCIE_LINK_CAPABILITY2;
@@ -360,35 +385,49 @@ typedef union {
     UINT16    EqualizationPhase2Successful : 1;
     UINT16    EqualizationPhase3Successful : 1;
     UINT16    LinkEqualizationRequest      : 1;
-    UINT16    Reserved                     : 10;
+    UINT16    RetimerPresence              : 1;
+    UINT16    TwoRetimersPresence          : 1;
+    UINT16    CrosslinkResolution          : 2;
+    UINT16    FlitModeStatus               : 1;
+    UINT16    Reserved                     : 1;
+    UINT16    DownstreamComponentPresence  : 3;
+    UINT16    DRSMessageReceived           : 1;
   } Bits;
   UINT16    Uint16;
 } PCI_REG_PCIE_LINK_STATUS2;
 
+typedef union {
+  struct {
+    UINT32    InbandPdDisable : 1;
+    UINT32    Reserved        : 30;
+  } Bits;
+  UINT32    Uint32;
+} PCI_REG_PCIE_SLOT_CAPABILITY2;
+
 typedef struct {
-  EFI_PCI_CAPABILITY_HDR             Hdr;
-  PCI_REG_PCIE_CAPABILITY            Capability;
-  PCI_REG_PCIE_DEVICE_CAPABILITY     DeviceCapability;
-  PCI_REG_PCIE_DEVICE_CONTROL        DeviceControl;
-  PCI_REG_PCIE_DEVICE_STATUS         DeviceStatus;
-  PCI_REG_PCIE_LINK_CAPABILITY       LinkCapability;
-  PCI_REG_PCIE_LINK_CONTROL          LinkControl;
-  PCI_REG_PCIE_LINK_STATUS           LinkStatus;
-  PCI_REG_PCIE_SLOT_CAPABILITY       SlotCapability;
-  PCI_REG_PCIE_SLOT_CONTROL          SlotControl;
-  PCI_REG_PCIE_SLOT_STATUS           SlotStatus;
-  PCI_REG_PCIE_ROOT_CONTROL          RootControl;
-  PCI_REG_PCIE_ROOT_CAPABILITY       RootCapability;
-  PCI_REG_PCIE_ROOT_STATUS           RootStatus;
-  PCI_REG_PCIE_DEVICE_CAPABILITY2    DeviceCapability2;
-  PCI_REG_PCIE_DEVICE_CONTROL2       DeviceControl2;
-  UINT16                             DeviceStatus2;
-  PCI_REG_PCIE_LINK_CAPABILITY2      LinkCapability2;
-  PCI_REG_PCIE_LINK_CONTROL2         LinkControl2;
-  PCI_REG_PCIE_LINK_STATUS2          LinkStatus2;
-  UINT32                             SlotCapability2;
-  UINT16                             SlotControl2;
-  UINT16                             SlotStatus2;
+  EFI_PCI_CAPABILITY_HDR             Hdr;                         // Offset 00 size 2
+  PCI_REG_PCIE_CAPABILITY            Capability;                  // Offset 02 size 2
+  PCI_REG_PCIE_DEVICE_CAPABILITY     DeviceCapability;            // Offset 04 size 4
+  PCI_REG_PCIE_DEVICE_CONTROL        DeviceControl;               // Offset 08 size 2
+  PCI_REG_PCIE_DEVICE_STATUS         DeviceStatus;                // Offset 0A size 2
+  PCI_REG_PCIE_LINK_CAPABILITY       LinkCapability;              // Offset 0C size 4
+  PCI_REG_PCIE_LINK_CONTROL          LinkControl;                 // Offset 10 size 2
+  PCI_REG_PCIE_LINK_STATUS           LinkStatus;                  // Offset 12 size 2
+  PCI_REG_PCIE_SLOT_CAPABILITY       SlotCapability;              // Offset 14 size 4
+  PCI_REG_PCIE_SLOT_CONTROL          SlotControl;                 // Offset 18 size 2
+  PCI_REG_PCIE_SLOT_STATUS           SlotStatus;                  // Offset 1A size 2
+  PCI_REG_PCIE_ROOT_CONTROL          RootControl;                 // Offset 1C size 2
+  PCI_REG_PCIE_ROOT_CAPABILITY       RootCapability;              // Offset 1E size 2
+  PCI_REG_PCIE_ROOT_STATUS           RootStatus;                  // Offset 20 size 4 - Ver1 ends here
+  PCI_REG_PCIE_DEVICE_CAPABILITY2    DeviceCapability2;           // Offset 24 size 4
+  PCI_REG_PCIE_DEVICE_CONTROL2       DeviceControl2;              // Offset 28 size 2
+  UINT16                             DeviceStatus2;               // Offset 2A size 2
+  PCI_REG_PCIE_LINK_CAPABILITY2      LinkCapability2;             // Offset 2C size 4
+  PCI_REG_PCIE_LINK_CONTROL2         LinkControl2;                // Offset 30 size 2
+  PCI_REG_PCIE_LINK_STATUS2          LinkStatus2;                 // Offset 32 size 2
+  PCI_REG_PCIE_SLOT_CAPABILITY2      SlotCapability2;             // Offset 34 size 4
+  UINT16                             SlotControl2;                // Offset 38 size 2
+  UINT16                             SlotStatus2;                 // Offset 3A size 2
 } PCI_CAPABILITY_PCIEXP;
 
 #define EFI_PCIE_CAPABILITY_BASE_OFFSET                           0x100
@@ -399,12 +438,22 @@ typedef struct {
 #define EFI_PCIE_CAPABILITY_DEVICE_CONTROL_2_ARI_FORWARDING       0x20
 
 //
-// for SR-IOV
+// Definitions EFI_PCIE_CAPABILITY_ID_ARI, EFI_PCIE_CAPABILITY_ID_ATS, EFI_PCIE_CAPABILITY_ID_SRIOV,
+// are obsolete, will be removed in future. Instead use PCI Express definitions
+// PCI_EXPRESS_EXTENDED_CAPABILITY_ARI_CAPABILITY_ID, PCI_EXPRESS_EXTENDED_CAPABILITY_ATS_ID,
+// PCI_EXPRESS_EXTENDED_CAPABILITY_SRIOV_ID.
+// MR-IOV is deprecated in PCIe 6.0 specification and EFI_PCIE_CAPABILITY_ID_MRIOV should not be used.
 //
-#define EFI_PCIE_CAPABILITY_ID_ARI    0x0E
-#define EFI_PCIE_CAPABILITY_ID_ATS    0x0F
-#define EFI_PCIE_CAPABILITY_ID_SRIOV  0x10
+#define EFI_PCIE_CAPABILITY_ID_ARI    PCI_EXPRESS_EXTENDED_CAPABILITY_ARI_CAPABILITY_ID
+#define EFI_PCIE_CAPABILITY_ID_ATS    PCI_EXPRESS_EXTENDED_CAPABILITY_ATS_ID
+#define EFI_PCIE_CAPABILITY_ID_SRIOV  PCI_EXPRESS_EXTENDED_CAPABILITY_SRIOV_ID
 #define EFI_PCIE_CAPABILITY_ID_MRIOV  0x11
+
+//
+// Single Root IO Virtualization (SR-IOV) Extended Capability Structure.
+//
+#define PCI_EXPRESS_EXTENDED_CAPABILITY_SRIOV_ID    0x0010
+#define PCI_EXPRESS_EXTENDED_CAPABILITY_SRIOV_VER1  0x1
 
 typedef struct {
   UINT32    CapabilityHeader;
@@ -425,6 +474,28 @@ typedef struct {
   UINT32    VFBar[6];
   UINT32    VFMigrationStateArrayOffset;
 } SR_IOV_CAPABILITY_REGISTER;
+
+typedef union {
+  struct {
+    UINT16    VfEnable                        : 1;
+    UINT16    VfMigrationEnable               : 1;
+    UINT16    VfMigrationInterruptEnable      : 1;
+    UINT16    VfMemorySpaceEnable             : 1;
+    UINT16    AriCapableHierarchy             : 1;
+    UINT16    VfTenBitTagRequesterEnable      : 1;
+    UINT16    VfFourteenBitTagRequesterEnable : 1;
+    UINT16    Reserved                        : 9;
+  } Bits;
+  UINT16    Uint16;
+} PCI_EXPRESS_EXTENDED_CAPABILITIES_SRIOV_CONTROL_REGISTER;
+
+typedef union {
+  struct {
+    UINT16    VfMigrationStatus : 1;
+    UINT16    Reserved          : 15;
+  } Bits;
+  UINT16    Uint16;
+} PCI_EXPRESS_EXTENDED_CAPABILITIES_SRIOV_STATUS_REGISTER;
 
 #define EFI_PCIE_CAPABILITY_ID_SRIOV_CAPABILITIES              0x04
 #define EFI_PCIE_CAPABILITY_ID_SRIOV_CONTROL                   0x08
@@ -500,9 +571,61 @@ typedef struct {
   UINT32                                      TlpPrefixLog[4];
 } PCI_EXPRESS_EXTENDED_CAPABILITIES_ADVANCED_ERROR_REPORTING;
 
-#define PCI_EXPRESS_EXTENDED_CAPABILITY_VIRTUAL_CHANNEL_ID    0x0002
-#define PCI_EXPRESS_EXTENDED_CAPABILITY_VIRTUAL_CHANNEL_MFVC  0x0009
-#define PCI_EXPRESS_EXTENDED_CAPABILITY_VIRTUAL_CHANNEL_VER1  0x1
+#define PCI_EXPRESS_EXTENDED_CAPABILITY_VIRTUAL_CHANNEL_ID                          0x0002
+#define PCI_EXPRESS_EXTENDED_CAPABILITY_VIRTUAL_CHANNEL_MFVC                        0x0009
+#define PCI_EXPRESS_EXTENDED_CAPABILITY_VIRTUAL_CHANNEL_VER1                        0x1
+#define PCI_EXPRESS_EXTENDED_CAPABILITY_PORT_VIRTUAL_CHANNEL_CAPABILITIES_1_OFFSET  0x004
+#define PCI_EXPRESS_EXTENDED_CAPABILITY_PORT_VIRTUAL_CHANNEL_CAPABILITIES_2_OFFSET  0x008
+
+typedef union {
+  struct {
+    UINT32    ExtendedVirtualChannelCnt       : 3;
+    UINT32    Reserved1                       : 1;
+    UINT32    LowPriExtendedVirtualChannelCnt : 3;
+    UINT32    Reserved2                       : 1;
+    UINT32    ReferenceClock                  : 2;
+    UINT32    PortArbitrationTableEntrySize   : 2;
+    UINT32    Reserved                        : 20;
+  } Bits;
+  UINT32    Uint32;
+} PCI_EXPRESS_EXTENDED_CAPABILITIES_PORT_VC_CAPABILITY_REGISTER_1;
+
+typedef union {
+  struct {
+    UINT32    VirtualChannelArbitrationCapability  : 8;
+    UINT32    Reserved                             : 16;
+    UINT32    VirtualChannelArbitrationTableOffset : 8;
+  } Bits;
+  UINT32    Uint32;
+} PCI_EXPRESS_EXTENDED_CAPABILITIES_PORT_VC_CAPABILITY_REGISTER_2;
+
+typedef union {
+  struct {
+    UINT32    PortArbitrationCapability  : 8;
+    UINT32    Reserved1                  : 6;
+    UINT32    Undefined                  : 1;
+    UINT32    RejectSnoopTransactions    : 1;
+    UINT32    MaximumTimeSlots           : 7;
+    UINT32    Reserved2                  : 1;
+    UINT32    PortArbitrationTableOffset : 8;
+  } Bits;
+  UINT32    Uint32;
+} PCI_EXPRESS_EXTENDED_CAPABILITIES_VC_RESOURCE_CAPABILITY_REGISTER;
+
+typedef union {
+  struct {
+    UINT32    TcVcMap                           : 8;
+    UINT32    Reserved1                         : 8;
+    UINT32    LoadPortArbitrationTable          : 1;
+    UINT32    PortArbitrationSelect             : 3;
+    UINT32    Reserved2                         : 4;
+    UINT32    VirtualChannelId                  : 3;
+    UINT32    SharedFlowControlUsageLimit       : 3;
+    UINT32    SharedFlowControlUsageLimitEnable : 1;
+    UINT32    VirtualChannelEnable              : 1;
+  } Bits;
+  UINT32    Uint32;
+} PCI_EXPRESS_EXTENDED_CAPABILITIES_VC_RESOURCE_CONTROL_REGISTER;
 
 typedef struct {
   UINT32    VcResourceCapability : 24;
@@ -576,8 +699,48 @@ typedef struct {
   UINT8                                       EgressControlVectorArray[1];
 } PCI_EXPRESS_EXTENDED_CAPABILITIES_ACS_EXTENDED;
 
-#define PCI_EXPRESS_EXTENDED_CAPABILITY_ACS_EXTENDED_GET_EGRES_CONTROL(ACS_EXTENDED)      (UINT8)(((ACS_EXTENDED->AcsCapability)&0x00000020))
-#define PCI_EXPRESS_EXTENDED_CAPABILITY_ACS_EXTENDED_GET_EGRES_VECTOR_SIZE(ACS_EXTENDED)  (UINT8)(((ACS_EXTENDED->AcsCapability)&0x0000FF00))
+typedef union {
+  struct {
+    UINT16    AcsSourceValidation             : 1;
+    UINT16    AcsTranslationBlocking          : 1;
+    UINT16    AcsPeerToPeerRequestRedirect    : 1;
+    UINT16    AcsPeerToPeerCompletionRedirect : 1;
+    UINT16    AcsUpstreamForwarding           : 1;
+    UINT16    AcsPeerToPeerEgressControl      : 1;
+    UINT16    AcsDirectTranslatedPeerToPeer   : 1;
+    UINT16    AcsEnhancedCapability           : 1;
+    UINT16    EgressControlVectorSize         : 8;
+  } Bits;
+  UINT16    Uint16;
+} PCI_EXPRESS_EXTENDED_CAPABILITIES_ACS_CAPABILITY_REGISTER;
+
+typedef union {
+  struct {
+    UINT16    AcsSourceValidationEnable             : 1;
+    UINT16    AcsTranslationBlockingEnable          : 1;
+    UINT16    AcsPeerToPeerRequestRedirectEnable    : 1;
+    UINT16    AcsPeerToPeerCompletionRedirectEnable : 1;
+    UINT16    AcsUpstreamForwardingEnable           : 1;
+    UINT16    AcsPeerToPeerEgressControlEnable      : 1;
+    UINT16    AcsDirectTranslatedPeerToPeerEnable   : 1;
+    UINT16    AcsIoRequestBlockingEnable            : 1;
+    UINT16    AcsDspMemoryTargetAccessControl       : 2;
+    UINT16    AcsUspMemoryTargetAccessControl       : 2;
+    UINT16    AcsUnclaimedRequestRedirectControl    : 1;
+    UINT16    Reserved                              : 3;
+  } Bits;
+  UINT16    Uint16;
+} PCI_EXPRESS_EXTENDED_CAPABILITIES_ACS_CONTROL_REGISTER;
+
+#define PCI_EXPRESS_EXTENDED_CAPABILITY_ACS_EXTENDED_GET_EGRESS_CONTROL(ACS_EXTENDED)      (UINT8)(((ACS_EXTENDED->AcsCapability)&0x00000020))
+#define PCI_EXPRESS_EXTENDED_CAPABILITY_ACS_EXTENDED_GET_EGRESS_VECTOR_SIZE(ACS_EXTENDED)  (UINT8)(((ACS_EXTENDED->AcsCapability)&0x0000FF00))
+
+// This misspelling is kept temporarily for backwards compatibility and will
+// be removed in a future PR. Consumers must migrate to the new definition
+#define PCI_EXPRESS_EXTENDED_CAPABILITY_ACS_EXTENDED_GET_EGRES_CONTROL(ACS_EXTENDED)  PCI_EXPRESS_EXTENDED_CAPABILITY_ACS_EXTENDED_GET_EGRESS_CONTROL(ACS_EXTENDED)
+// This misspelling is kept temporarily for backwards compatibility and will
+// be removed in a future PR. Consumers must migrate to the new definition
+#define PCI_EXPRESS_EXTENDED_CAPABILITY_ACS_EXTENDED_GET_EGRES_VECTOR_SIZE(ACS_EXTENDED)  PCI_EXPRESS_EXTENDED_CAPABILITY_ACS_EXTENDED_GET_EGRESS_VECTOR_SIZE(ACS_EXTENDED)
 
 #define PCI_EXPRESS_EXTENDED_CAPABILITY_EVENT_COLLECTOR_ENDPOINT_ASSOCIATION_ID    0x0007
 #define PCI_EXPRESS_EXTENDED_CAPABILITY_EVENT_COLLECTOR_ENDPOINT_ASSOCIATION_VER1  0x1
@@ -603,8 +766,26 @@ typedef struct {
 
 #define PCI_EXPRESS_EXTENDED_CAPABILITY_VENDOR_SPECIFIC_GET_SIZE(VENDOR)  (UINT16)(((VENDOR->VendorSpecificHeader)&0xFFF00000)>>20)
 
-#define PCI_EXPRESS_EXTENDED_CAPABILITY_RCRB_HEADER_ID    0x000A
-#define PCI_EXPRESS_EXTENDED_CAPABILITY_RCRB_HEADER_VER1  0x1
+#define PCI_EXPRESS_EXTENDED_CAPABILITY_RCRB_HEADER_ID            0x000A
+#define PCI_EXPRESS_EXTENDED_CAPABILITY_RCRB_HEADER_VER1          0x1
+#define PCI_EXPRESS_EXTENDED_CAPABILITY_RCRB_CAPABILITIES_OFFSET  0x8
+#define PCI_EXPRESS_EXTENDED_CAPABILITY_RCRB_CONTROL_OFFSET       0xC
+
+typedef union {
+  struct {
+    UINT32    ConfigRrsSoftwareVisibility : 1;
+    UINT32    Reserved                    : 31;
+  } Bits;
+  UINT32    Uint32;
+} PCI_EXPRESS_EXTENDED_CAPABILITIES_RCRB_CAPABILITY_REGISTER;
+
+typedef union {
+  struct {
+    UINT32    ConfigRrsSoftwareVisibilityEnable : 1;
+    UINT32    Reserved                          : 31;
+  } Bits;
+  UINT32    Uint32;
+} PCI_EXPRESS_EXTENDED_CAPABILITIES_RCRB_CONTROL_REGISTER;
 
 typedef struct {
   PCI_EXPRESS_EXTENDED_CAPABILITIES_HEADER    Header;
@@ -673,6 +854,27 @@ typedef struct {
   UINT16                                      AriControl;
 } PCI_EXPRESS_EXTENDED_CAPABILITIES_ARI_CAPABILITY;
 
+typedef union {
+  struct {
+    UINT16    MfvcFunctionGroupsCapability : 1;
+    UINT16    AcsFunctionGroupsCapability  : 1;
+    UINT16    Reserved                     : 6;
+    UINT16    NextFunctionNumber           : 8;
+  } Bits;
+  UINT16    Uint16;
+} PCI_EXPRESS_EXTENDED_CAPABILITIES_ARI_CAPABILITY_REGISTER;
+
+typedef union {
+  struct {
+    UINT16    MfvcFunctionGroupsEnable : 1;
+    UINT16    AcsFunctionGroupsEnable  : 1;
+    UINT16    Reserved1                : 2;
+    UINT16    FunctionGroup            : 3;
+    UINT16    Reserved2                : 9;
+  } Bits;
+  UINT16    Uint16;
+} PCI_EXPRESS_EXTENDED_CAPABILITIES_ARI_CONTROL_REGISTER;
+
 #define PCI_EXPRESS_EXTENDED_CAPABILITY_DYNAMIC_POWER_ALLOCATION_ID    0x0016
 #define PCI_EXPRESS_EXTENDED_CAPABILITY_DYNAMIC_POWER_ALLOCATION_VER1  0x1
 
@@ -684,9 +886,7 @@ typedef struct {
   UINT16                                      DpaControl;
   UINT8                                       DpaPowerAllocationArray[1];
 } PCI_EXPRESS_EXTENDED_CAPABILITIES_DYNAMIC_POWER_ALLOCATION;
-
-#define PCI_EXPRESS_EXTENDED_CAPABILITY_DYNAMIC_POWER_ALLOCATION_GET_SUBSTATE_MAX(POWER)  (UINT16)(((POWER->DpaCapability)&0x0000000F))
-
+#define PCI_EXPRESS_EXTENDED_CAPABILITY_DYNAMIC_POWER_ALLOCATION_GET_SUBSTATE_MAX(POWER)  (UINT32)(((POWER->DpaCapability)&0x0000000F))
 #define PCI_EXPRESS_EXTENDED_CAPABILITY_LATENCE_TOLERANCE_REPORTING_ID    0x0018
 #define PCI_EXPRESS_EXTENDED_CAPABILITY_LATENCE_TOLERANCE_REPORTING_VER1  0x1
 
@@ -708,6 +908,35 @@ typedef struct {
 
 #define GET_TPH_TABLE_SIZE(x)  ((x->TphRequesterCapability & 0x7FF0000)>>16) * sizeof(UINT16)
 
-#pragma pack()
+//
+// Address Translation Services (ATS) Extended Capability Structure.
+//
+#define PCI_EXPRESS_EXTENDED_CAPABILITY_ATS_ID    0x000F
+#define PCI_EXPRESS_EXTENDED_CAPABILITY_ATS_VER1  0x1
 
-#endif
+typedef union {
+  struct {
+    UINT16    InvalidateQueueDepth      : 5;
+    UINT16    Reserved                  : 9;
+    UINT16    GlobalInvalidateSupported : 1;
+    UINT16    Reserved2                 : 1;
+  } Bits;
+  UINT16    Uint16;
+} PCI_EXPRESS_EXTENDED_CAPABILITIES_ATS_CAPABILITY;
+
+typedef union {
+  struct {
+    UINT16    EnableATS        : 1;
+    UINT16    GlobalInvalidate : 1;
+    UINT16    Reserved         : 14;
+  } Bits;
+  UINT16    Uint16;
+} PCI_EXPRESS_EXTENDED_CAPABILITIES_ATS_CONTROL;
+
+typedef struct {
+  PCI_EXPRESS_EXTENDED_CAPABILITIES_HEADER            Header;
+  PCI_EXPRESS_EXTENDED_CAPABILITIES_ATS_CAPABILITY    Capability;
+  PCI_EXPRESS_EXTENDED_CAPABILITIES_ATS_CONTROL       Control;
+} PCI_EXPRESS_EXTENDED_CAPABILITIES_ATS;
+
+#pragma pack()

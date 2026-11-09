@@ -16,83 +16,48 @@
 #include <Register/Amd/Msr.h>
 #include <Register/Cpuid.h>
 #include <Uefi/UefiBaseType.h>
-
-STATIC BOOLEAN  mSevStatus        = FALSE;
-STATIC BOOLEAN  mSevEsStatus      = FALSE;
-STATIC BOOLEAN  mSevSnpStatus     = FALSE;
-STATIC BOOLEAN  mSevStatusChecked = FALSE;
+#include "PeiDxeMemEncryptSevLibInternal.h"
 
 STATIC UINT64   mSevEncryptionMask      = 0;
-STATIC BOOLEAN  mSevEncryptionMaskSaved = FALSE;
+STATIC BOOLEAN  mSevIsEnabled           = FALSE;
+STATIC BOOLEAN  mSevEsIsEnabled         = FALSE;
+STATIC BOOLEAN  mSevSnpIsEnabled        = FALSE;
+STATIC BOOLEAN  mSevDebugVirtualization = FALSE;
+STATIC BOOLEAN  mSevSnpCoherencySfwNo   = FALSE;
 
-/**
-  Reads and sets the status of SEV features.
-
-  **/
-STATIC
-VOID
+RETURN_STATUS
 EFIAPI
-InternalMemEncryptSevStatus (
+DxeMemEncryptSevLibConstructor (
   VOID
   )
 {
-  UINT32                            RegEax;
-  MSR_SEV_STATUS_REGISTER           Msr;
-  CPUID_MEMORY_ENCRYPTION_INFO_EAX  Eax;
-  BOOLEAN                           ReadSevMsr;
-  UINT64                            EncryptionMask;
+  SEC_SEV_ES_WORK_AREA     *SevEsWorkArea;
+  MSR_SEV_STATUS_REGISTER  Msr;
 
-  ReadSevMsr = FALSE;
-
-  EncryptionMask = PcdGet64 (PcdPteMemoryEncryptionAddressOrMask);
-  if (EncryptionMask != 0) {
-    //
-    // The MSR has been read before, so it is safe to read it again and avoid
-    // having to validate the CPUID information.
-    //
-    ReadSevMsr = TRUE;
-  } else {
-    //
-    // Check if memory encryption leaf exist
-    //
-    AsmCpuid (CPUID_EXTENDED_FUNCTION, &RegEax, NULL, NULL, NULL);
-    if (RegEax >= CPUID_MEMORY_ENCRYPTION_INFO) {
-      //
-      // CPUID Fn8000_001F[EAX] Bit 1 (Sev supported)
-      //
-      AsmCpuid (CPUID_MEMORY_ENCRYPTION_INFO, &Eax.Uint32, NULL, NULL, NULL);
-
-      if (Eax.Bits.SevBit) {
-        ReadSevMsr = TRUE;
-      }
-    }
+  //
+  // The work area should at least be EfiBootServicesData since the work area
+  // is also used for AP bring up to setup the AP jump table.
+  //
+  SevEsWorkArea = GetSevEsWorkArea ();
+  if (SevEsWorkArea == NULL) {
+    return RETURN_SUCCESS;
   }
 
-  if (ReadSevMsr) {
-    //
-    // Check MSR_0xC0010131 Bit 0 (Sev Enabled)
-    //
-    Msr.Uint32 = AsmReadMsr32 (MSR_SEV_STATUS);
-    if (Msr.Bits.SevBit) {
-      mSevStatus = TRUE;
-    }
+  //
+  // The work area will not be mapped at the expected physical address once
+  // SetVirtualAddressMap() is called. So fetch the values from the work area
+  // and store them in variables so the MemEncryptSev*() functions do not need
+  // to access the work area.
+  //
+  Msr.Uint32              = (UINT32)(UINTN)SevEsWorkArea->SevStatusMsrValue;
+  mSevEncryptionMask      = SevEsWorkArea->EncryptionMask;
+  mSevIsEnabled           = Msr.Bits.SevBit ? TRUE : FALSE;
+  mSevEsIsEnabled         = Msr.Bits.SevEsBit ? TRUE : FALSE;
+  mSevSnpIsEnabled        = Msr.Bits.SevSnpBit ? TRUE : FALSE;
+  mSevDebugVirtualization = Msr.Bits.DebugVirtualization ? TRUE : FALSE;
+  mSevSnpCoherencySfwNo   = (SevEsWorkArea->Flags & SEV_ES_WORK_AREA_FLAG_CSFW_NO) != 0;
 
-    //
-    // Check MSR_0xC0010131 Bit 1 (Sev-Es Enabled)
-    //
-    if (Msr.Bits.SevEsBit) {
-      mSevEsStatus = TRUE;
-    }
-
-    //
-    // Check MSR_0xC0010131 Bit 2 (Sev-Snp Enabled)
-    //
-    if (Msr.Bits.SevSnpBit) {
-      mSevSnpStatus = TRUE;
-    }
-  }
-
-  mSevStatusChecked = TRUE;
+  return RETURN_SUCCESS;
 }
 
 /**
@@ -107,11 +72,7 @@ MemEncryptSevSnpIsEnabled (
   VOID
   )
 {
-  if (!mSevStatusChecked) {
-    InternalMemEncryptSevStatus ();
-  }
-
-  return mSevSnpStatus;
+  return mSevSnpIsEnabled;
 }
 
 /**
@@ -126,11 +87,7 @@ MemEncryptSevEsIsEnabled (
   VOID
   )
 {
-  if (!mSevStatusChecked) {
-    InternalMemEncryptSevStatus ();
-  }
-
-  return mSevEsStatus;
+  return mSevEsIsEnabled;
 }
 
 /**
@@ -145,11 +102,7 @@ MemEncryptSevIsEnabled (
   VOID
   )
 {
-  if (!mSevStatusChecked) {
-    InternalMemEncryptSevStatus ();
-  }
-
-  return mSevStatus;
+  return mSevIsEnabled;
 }
 
 /**
@@ -163,10 +116,37 @@ MemEncryptSevGetEncryptionMask (
   VOID
   )
 {
-  if (!mSevEncryptionMaskSaved) {
-    mSevEncryptionMask      = PcdGet64 (PcdPteMemoryEncryptionAddressOrMask);
-    mSevEncryptionMaskSaved = TRUE;
-  }
-
   return mSevEncryptionMask;
+}
+
+/**
+  Returns a boolean to indicate whether DebugVirtualization is enabled.
+
+  @retval TRUE           DebugVirtualization is enabled
+  @retval FALSE          DebugVirtualization is not enabled
+**/
+BOOLEAN
+EFIAPI
+MemEncryptSevEsDebugVirtualizationIsEnabled (
+  VOID
+  )
+{
+  return mSevDebugVirtualization;
+}
+
+/**
+  Returns a boolean to indicate whether the SEV-SNP cache line eviction
+  mitigation is needed.
+
+  @retval TRUE           Cache line eviction mitigation required
+  @retval FALSE          Cache line eviction migigation not required
+
+**/
+BOOLEAN
+EFIAPI
+MemEncryptSevSnpDoCoherencyMitigation (
+  VOID
+  )
+{
+  return MemEncryptSevSnpIsEnabled () && !mSevSnpCoherencySfwNo;
 }

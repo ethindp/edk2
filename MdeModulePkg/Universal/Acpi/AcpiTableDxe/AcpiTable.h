@@ -6,8 +6,7 @@
 
 **/
 
-#ifndef _ACPI_TABLE_H_
-#define _ACPI_TABLE_H_
+#pragma once
 
 #include <PiDxe.h>
 
@@ -126,6 +125,12 @@ typedef struct {
       EFI_ACPI_TABLE_SIGNATURE \
       )
 
+//
+// ACPI HOB produced by silicon initialization code will provide the RSDP structure.
+//
+typedef struct {
+  EFI_PHYSICAL_ADDRESS    Rsdp;
+} ACPI_SILICON_HOB;
 //
 // Protocol Constructor functions
 //
@@ -267,5 +272,3 @@ SdtGetAcpiTable (
 //
 extern EFI_HANDLE               mHandle;
 extern EFI_ACPI_TABLE_INSTANCE  *mPrivateData;
-
-#endif

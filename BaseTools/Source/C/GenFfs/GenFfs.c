@@ -7,7 +7,9 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
 #ifndef __GNUC__
+#define RUNTIME_FUNCTION  _WINNT_DUP_RUNTIME_FUNCTION
 #include <windows.h>
+#undef RUNTIME_FUNCTION
 #include <io.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -396,7 +398,7 @@ Returns:
     // Based on section type to adjust offset? Todo
     //
     if ((InputFileAlign [Index] != 0) && (((Size + HeaderSize + TeOffset) % InputFileAlign [Index]) != 0)) {
-      Offset = (Size + sizeof (EFI_COMMON_SECTION_HEADER) + HeaderSize + TeOffset + InputFileAlign [Index] - 1) & ~(InputFileAlign [Index] - 1);
+      Offset = (Size + (UINT32)sizeof (EFI_COMMON_SECTION_HEADER) + HeaderSize + TeOffset + InputFileAlign [Index] - 1) & ~(InputFileAlign [Index] - 1);
       Offset = Offset - Size - HeaderSize - TeOffset;
 
       if (FileBuffer != NULL && ((Size + Offset) < *BufferLength)) {
@@ -542,7 +544,7 @@ GetAlignmentFromFile(char *InFile, UINT32 *Alignment)
   PeFileBuffer = (UINT8 *) malloc (PeFileSize);
   if (PeFileBuffer == NULL) {
     fclose (InFileHandle);
-    Error(NULL, 0, 4001, "Resource", "memory cannot be allocated  of %s", InFileHandle);
+    Error(NULL, 0, 4001, "Resource", "memory cannot be allocated for %s", InFile);
     return EFI_OUT_OF_RESOURCES;
   }
   fread (PeFileBuffer, sizeof (UINT8), PeFileSize, InFileHandle);

@@ -9,10 +9,10 @@
 
 #include <Library/BaseLib.h>
 #include <Library/DebugLib.h>
+#include <Library/FdtLib.h>
 #include <Library/UefiDriverEntryPoint.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/HobLib.h>
-#include <libfdt.h>
 
 #include <Guid/Fdt.h>
 #include <Guid/FdtHob.h>
@@ -38,7 +38,7 @@ GetNodeProperty (
   ASSERT (mDeviceTreeBase != NULL);
   ASSERT (Prop != NULL);
 
-  *Prop = fdt_getprop (mDeviceTreeBase, Node, PropertyName, &Len);
+  *Prop = FdtGetProp (mDeviceTreeBase, Node, PropertyName, &Len);
   if (*Prop == NULL) {
     return EFI_NOT_FOUND;
   }
@@ -65,7 +65,7 @@ SetNodeProperty (
 
   ASSERT (mDeviceTreeBase != NULL);
 
-  Ret = fdt_setprop (mDeviceTreeBase, Node, PropertyName, Prop, PropSize);
+  Ret = FdtSetProp (mDeviceTreeBase, Node, PropertyName, Prop, PropSize);
   if (Ret != 0) {
     return EFI_DEVICE_ERROR;
   }
@@ -87,7 +87,7 @@ IsNodeEnabled (
   // may occur here. If the status property is present, check whether
   // it is set to 'ok' or 'okay', anything else is treated as 'disabled'.
   //
-  NodeStatus = fdt_getprop (mDeviceTreeBase, Node, "status", &Len);
+  NodeStatus = FdtGetProp (mDeviceTreeBase, Node, "status", &Len);
   if (NodeStatus == NULL) {
     return TRUE;
   }
@@ -121,7 +121,7 @@ FindNextCompatibleNode (
   ASSERT (Node != NULL);
 
   for (Prev = PrevNode; ; Prev = Next) {
-    Next = fdt_next_node (mDeviceTreeBase, Prev, NULL);
+    Next = FdtNextNode (mDeviceTreeBase, Prev, NULL);
     if (Next < 0) {
       break;
     }
@@ -130,7 +130,7 @@ FindNextCompatibleNode (
       continue;
     }
 
-    Type = fdt_getprop (mDeviceTreeBase, Next, "compatible", &Len);
+    Type = FdtGetProp (mDeviceTreeBase, Next, "compatible", &Len);
     if (Type == NULL) {
       continue;
     }
@@ -222,7 +222,7 @@ FindCompatibleNodeReg (
     DEBUG ((
       DEBUG_ERROR,
       "%a: '%a' compatible node has invalid 'reg' property (size == 0x%x)\n",
-      __FUNCTION__,
+      __func__,
       CompatibleString,
       *RegSize
       ));
@@ -257,48 +257,50 @@ FindNextMemoryNodeReg (
   ASSERT (Node != NULL);
 
   for (Prev = PrevNode; ; Prev = Next) {
-    Next = fdt_next_node (mDeviceTreeBase, Prev, NULL);
+    Next = FdtNextNode (mDeviceTreeBase, Prev, NULL);
     if (Next < 0) {
       break;
     }
 
-    if (!IsNodeEnabled (Next)) {
-      DEBUG ((DEBUG_WARN, "%a: ignoring disabled memory node\n", __FUNCTION__));
+    DeviceType = FdtGetProp (mDeviceTreeBase, Next, "device_type", &Len);
+    if ((DeviceType == NULL) || (AsciiStrCmp (DeviceType, "memory") != 0)) {
       continue;
     }
 
-    DeviceType = fdt_getprop (mDeviceTreeBase, Next, "device_type", &Len);
-    if ((DeviceType != NULL) && (AsciiStrCmp (DeviceType, "memory") == 0)) {
-      //
-      // Get the 'reg' property of this memory node. For now, we will assume
-      // 8 byte quantities for base and size, respectively.
-      // TODO use #cells root properties instead
-      //
-      Status = GetNodeProperty (This, Next, "reg", Reg, RegSize);
-      if (EFI_ERROR (Status)) {
-        DEBUG ((
-          DEBUG_WARN,
-          "%a: ignoring memory node with no 'reg' property\n",
-          __FUNCTION__
-          ));
-        continue;
-      }
-
-      if ((*RegSize % 16) != 0) {
-        DEBUG ((
-          DEBUG_WARN,
-          "%a: ignoring memory node with invalid 'reg' property (size == 0x%x)\n",
-          __FUNCTION__,
-          *RegSize
-          ));
-        continue;
-      }
-
-      *Node         = Next;
-      *AddressCells = 2;
-      *SizeCells    = 2;
-      return EFI_SUCCESS;
+    if (!IsNodeEnabled (Next)) {
+      DEBUG ((DEBUG_WARN, "%a: ignoring disabled memory node\n", __func__));
+      continue;
     }
+
+    //
+    // Get the 'reg' property of this memory node. For now, we will assume
+    // 8 byte quantities for base and size, respectively.
+    // TODO use #cells root properties instead
+    //
+    Status = GetNodeProperty (This, Next, "reg", Reg, RegSize);
+    if (EFI_ERROR (Status)) {
+      DEBUG ((
+        DEBUG_WARN,
+        "%a: ignoring memory node with no 'reg' property\n",
+        __func__
+        ));
+      continue;
+    }
+
+    if ((*RegSize % 16) != 0) {
+      DEBUG ((
+        DEBUG_WARN,
+        "%a: ignoring memory node with invalid 'reg' property (size == 0x%x)\n",
+        __func__,
+        *RegSize
+        ));
+      continue;
+    }
+
+    *Node         = Next;
+    *AddressCells = 2;
+    *SizeCells    = 2;
+    return EFI_SUCCESS;
   }
 
   return EFI_NOT_FOUND;
@@ -340,9 +342,9 @@ GetOrInsertChosenNode (
   ASSERT (mDeviceTreeBase != NULL);
   ASSERT (Node != NULL);
 
-  NewNode = fdt_path_offset (mDeviceTreeBase, "/chosen");
+  NewNode = FdtPathOffset (mDeviceTreeBase, "/chosen");
   if (NewNode < 0) {
-    NewNode = fdt_add_subnode (mDeviceTreeBase, 0, "/chosen");
+    NewNode = FdtAddSubnode (mDeviceTreeBase, 0, "/chosen");
   }
 
   if (NewNode < 0) {
@@ -391,7 +393,7 @@ OnPlatformHasDeviceTree (
   DEBUG ((
     DEBUG_INFO,
     "%a: exposing DTB @ 0x%p to OS\n",
-    __FUNCTION__,
+    __func__,
     DeviceTreeBase
     ));
   Status = gBS->InstallConfigurationTable (&gFdtTableGuid, DeviceTreeBase);
@@ -420,11 +422,11 @@ InitializeFdtClientDxe (
 
   DeviceTreeBase = (VOID *)(UINTN)*(UINT64 *)GET_GUID_HOB_DATA (Hob);
 
-  if (fdt_check_header (DeviceTreeBase) != 0) {
+  if (FdtCheckHeader (DeviceTreeBase) != 0) {
     DEBUG ((
       DEBUG_ERROR,
       "%a: No DTB found @ 0x%p\n",
-      __FUNCTION__,
+      __func__,
       DeviceTreeBase
       ));
     return EFI_NOT_FOUND;
@@ -432,7 +434,7 @@ InitializeFdtClientDxe (
 
   mDeviceTreeBase = DeviceTreeBase;
 
-  DEBUG ((DEBUG_INFO, "%a: DTB @ 0x%p\n", __FUNCTION__, mDeviceTreeBase));
+  DEBUG ((DEBUG_INFO, "%a: DTB @ 0x%p\n", __func__, mDeviceTreeBase));
 
   //
   // Register a protocol notify for the EDKII Platform Has Device Tree
@@ -446,7 +448,7 @@ InitializeFdtClientDxe (
                   &PlatformHasDeviceTreeEvent
                   );
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "%a: CreateEvent(): %r\n", __FUNCTION__, Status));
+    DEBUG ((DEBUG_ERROR, "%a: CreateEvent(): %r\n", __func__, Status));
     return Status;
   }
 
@@ -459,7 +461,7 @@ InitializeFdtClientDxe (
     DEBUG ((
       DEBUG_ERROR,
       "%a: RegisterProtocolNotify(): %r\n",
-      __FUNCTION__,
+      __func__,
       Status
       ));
     goto CloseEvent;
@@ -470,7 +472,7 @@ InitializeFdtClientDxe (
   //
   Status = gBS->SignalEvent (PlatformHasDeviceTreeEvent);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "%a: SignalEvent(): %r\n", __FUNCTION__, Status));
+    DEBUG ((DEBUG_ERROR, "%a: SignalEvent(): %r\n", __func__, Status));
     goto CloseEvent;
   }
 
@@ -484,7 +486,7 @@ InitializeFdtClientDxe (
     DEBUG ((
       DEBUG_ERROR,
       "%a: InstallProtocolInterface(): %r\n",
-      __FUNCTION__,
+      __func__,
       Status
       ));
     goto CloseEvent;

@@ -3,6 +3,8 @@
   Intelligent Platform Management Interface Specification Second Generation.
 
   Copyright (c) 2018, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
   @par Revision Reference:
@@ -11,8 +13,7 @@
       https://www.intel.com/content/dam/www/public/us/en/documents/specification-updates/ipmi-intelligent-platform-mgt-interface-spec-2nd-gen-v2-0-spec-update.pdf
 **/
 
-#ifndef _SERVICE_PROCESSOR_MANAGEMENT_INTERFACE_TABLE_H_
-#define _SERVICE_PROCESSOR_MANAGEMENT_INTERFACE_TABLE_H_
+#pragma once
 
 #include <IndustryStandard/Acpi.h>
 
@@ -95,4 +96,15 @@ typedef struct {
 
 #pragma pack()
 
-#endif
+///
+/// SPMI Revision (defined in spec)
+///
+#define EFI_ACPI_SERVICE_PROCESSOR_MANAGEMENT_INTERFACE_5_TABLE_REVISION  0x05
+
+///
+/// SPMI Interface Type
+///
+#define EFI_ACPI_SPMI_INTERFACE_TYPE_KCS   0x01
+#define EFI_ACPI_SPMI_INTERFACE_TYPE_SMIC  0x02
+#define EFI_ACPI_SPMI_INTERFACE_TYPE_BT    0x03
+#define EFI_ACPI_SPMI_INTERFACE_TYPE_SSIF  0x04

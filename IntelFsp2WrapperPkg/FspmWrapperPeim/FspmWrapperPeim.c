@@ -3,7 +3,7 @@
   register TemporaryRamDonePpi to call TempRamExit API, and register MemoryDiscoveredPpi
   notify to call FspSiliconInit API.
 
-  Copyright (c) 2014 - 2021, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2014 - 2024, Intel Corporation. All rights reserved.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
@@ -23,6 +23,7 @@
 #include <Library/PerformanceLib.h>
 #include <Library/FspWrapperPlatformLib.h>
 #include <Library/FspWrapperHobProcessLib.h>
+#include <Library/FspWrapperMultiPhaseProcessLib.h>
 #include <Library/FspWrapperApiLib.h>
 #include <Library/FspMeasurementLib.h>
 
@@ -35,6 +36,9 @@
 #include <Library/FspWrapperApiTestLib.h>
 #include <FspEas.h>
 #include <FspStatusCode.h>
+#include <FspGlobalData.h>
+#include <Library/FspCommonLib.h>
+#include <Guid/MigratedFvInfo.h>
 
 extern EFI_GUID  gFspHobGuid;
 
@@ -43,16 +47,15 @@ extern EFI_GUID  gFspHobGuid;
 
   @return FSP-M UPD Data Address
 **/
-
 UINTN
 GetFspmUpdDataAddress (
   VOID
   )
 {
   if (PcdGet64 (PcdFspmUpdDataAddress64) != 0) {
-    return (UINTN) PcdGet64 (PcdFspmUpdDataAddress64);
+    return (UINTN)PcdGet64 (PcdFspmUpdDataAddress64);
   } else {
-    return (UINTN) PcdGet32 (PcdFspmUpdDataAddress);
+    return (UINTN)PcdGet32 (PcdFspmUpdDataAddress);
   }
 }
 
@@ -71,7 +74,7 @@ PeiFspMemoryInit (
   UINT64           TimeStampCounterStart;
   VOID             *FspHobListPtr;
   VOID             *HobData;
-  FSPM_UPD_COMMON  *FspmUpdDataPtr;
+  VOID             *FspmUpdDataPtr;
   UINTN            *SourceData;
 
   DEBUG ((DEBUG_INFO, "PeiFspMemoryInit enter\n"));
@@ -89,7 +92,7 @@ PeiFspMemoryInit (
     //
     // Copy default FSP-M UPD data from Flash
     //
-    FspmUpdDataPtr = (FSPM_UPD_COMMON *)AllocateZeroPool ((UINTN)FspmHeaderPtr->CfgRegionSize);
+    FspmUpdDataPtr = AllocateZeroPool ((UINTN)FspmHeaderPtr->CfgRegionSize);
     ASSERT (FspmUpdDataPtr != NULL);
     SourceData = (UINTN *)((UINTN)FspmHeaderPtr->ImageBase + (UINTN)FspmHeaderPtr->CfgRegionOffset);
     CopyMem (FspmUpdDataPtr, SourceData, (UINTN)FspmHeaderPtr->CfgRegionSize);
@@ -97,50 +100,29 @@ PeiFspMemoryInit (
     //
     // External UPD is ready, get the buffer from PCD pointer.
     //
-    FspmUpdDataPtr = (FSPM_UPD_COMMON *) GetFspmUpdDataAddress();
+    FspmUpdDataPtr = (VOID *)GetFspmUpdDataAddress ();
     ASSERT (FspmUpdDataPtr != NULL);
   }
 
   DEBUG ((DEBUG_INFO, "UpdateFspmUpdData enter\n"));
-  UpdateFspmUpdData ((VOID *)FspmUpdDataPtr);
-  DEBUG ((DEBUG_INFO, "  NvsBufferPtr        - 0x%x\n", FspmUpdDataPtr->FspmArchUpd.NvsBufferPtr));
-  DEBUG ((DEBUG_INFO, "  StackBase           - 0x%x\n", FspmUpdDataPtr->FspmArchUpd.StackBase));
-  DEBUG ((DEBUG_INFO, "  StackSize           - 0x%x\n", FspmUpdDataPtr->FspmArchUpd.StackSize));
-  DEBUG ((DEBUG_INFO, "  BootLoaderTolumSize - 0x%x\n", FspmUpdDataPtr->FspmArchUpd.BootLoaderTolumSize));
-  DEBUG ((DEBUG_INFO, "  BootMode            - 0x%x\n", FspmUpdDataPtr->FspmArchUpd.BootMode));
+  UpdateFspmUpdData (FspmUpdDataPtr);
+  if (((FSPM_UPD_COMMON *)FspmUpdDataPtr)->FspmArchUpd.Revision >= 3) {
+    DEBUG ((DEBUG_INFO, "  StackBase           - 0x%lx\n", ((FSPM_UPD_COMMON_FSP24 *)FspmUpdDataPtr)->FspmArchUpd.StackBase));
+    DEBUG ((DEBUG_INFO, "  StackSize           - 0x%lx\n", ((FSPM_UPD_COMMON_FSP24 *)FspmUpdDataPtr)->FspmArchUpd.StackSize));
+    DEBUG ((DEBUG_INFO, "  BootLoaderTolumSize - 0x%x\n", ((FSPM_UPD_COMMON_FSP24 *)FspmUpdDataPtr)->FspmArchUpd.BootLoaderTolumSize));
+    DEBUG ((DEBUG_INFO, "  BootMode            - 0x%x\n", ((FSPM_UPD_COMMON_FSP24 *)FspmUpdDataPtr)->FspmArchUpd.BootMode));
+  } else {
+    DEBUG ((DEBUG_INFO, "  NvsBufferPtr        - 0x%x\n", ((FSPM_UPD_COMMON *)FspmUpdDataPtr)->FspmArchUpd.NvsBufferPtr));
+    DEBUG ((DEBUG_INFO, "  StackBase           - 0x%x\n", ((FSPM_UPD_COMMON *)FspmUpdDataPtr)->FspmArchUpd.StackBase));
+    DEBUG ((DEBUG_INFO, "  StackSize           - 0x%x\n", ((FSPM_UPD_COMMON *)FspmUpdDataPtr)->FspmArchUpd.StackSize));
+    DEBUG ((DEBUG_INFO, "  BootLoaderTolumSize - 0x%x\n", ((FSPM_UPD_COMMON *)FspmUpdDataPtr)->FspmArchUpd.BootLoaderTolumSize));
+    DEBUG ((DEBUG_INFO, "  BootMode            - 0x%x\n", ((FSPM_UPD_COMMON *)FspmUpdDataPtr)->FspmArchUpd.BootMode));
+  }
+
   DEBUG ((DEBUG_INFO, "  HobListPtr          - 0x%x\n", &FspHobListPtr));
 
   TimeStampCounterStart = AsmReadTsc ();
   Status                = CallFspMemoryInit (FspmUpdDataPtr, &FspHobListPtr);
-  // Create hobs after memory initialization and not in temp RAM. Hence passing the recorded timestamp here
-  PERF_START_EX (&gFspApiPerformanceGuid, "EventRec", NULL, TimeStampCounterStart, FSP_STATUS_CODE_MEMORY_INIT | FSP_STATUS_CODE_COMMON_CODE | FSP_STATUS_CODE_API_ENTRY);
-  PERF_END_EX (&gFspApiPerformanceGuid, "EventRec", NULL, 0, FSP_STATUS_CODE_MEMORY_INIT | FSP_STATUS_CODE_COMMON_CODE | FSP_STATUS_CODE_API_EXIT);
-  DEBUG ((DEBUG_INFO, "Total time spent executing FspMemoryInitApi: %d millisecond\n", DivU64x32 (GetTimeInNanoSecond (AsmReadTsc () - TimeStampCounterStart), 1000000)));
-
-  //
-  // Reset the system if FSP API returned FSP_STATUS_RESET_REQUIRED status
-  //
-  if ((Status >= FSP_STATUS_RESET_REQUIRED_COLD) && (Status <= FSP_STATUS_RESET_REQUIRED_8)) {
-    DEBUG ((DEBUG_INFO, "FspMemoryInitApi requested reset 0x%x\n", Status));
-    CallFspWrapperResetSystem ((UINT32)Status);
-  }
-
-  if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "ERROR - Failed to execute FspMemoryInitApi(), Status = %r\n", Status));
-  }
-
-  DEBUG ((DEBUG_INFO, "FspMemoryInit status: 0x%x\n", Status));
-  ASSERT_EFI_ERROR (Status);
-
-  Status = TestFspMemoryInitApiOutput (FspmUpdDataPtr, &FspHobListPtr);
-  if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "ERROR - TestFspMemoryInitApiOutput () fail, Status = %r\n", Status));
-  }
-
-  DEBUG ((DEBUG_INFO, "  FspHobListPtr (returned) - 0x%x\n", FspHobListPtr));
-  ASSERT (FspHobListPtr != NULL);
-
-  PostFspmHobProcess (FspHobListPtr);
 
   //
   // FspHobList is not complete at this moment.
@@ -152,6 +134,49 @@ PeiFspMemoryInit (
               );
   ASSERT (HobData != NULL);
   CopyMem (HobData, &FspHobListPtr, sizeof (FspHobListPtr));
+
+  //
+  // Reset the system if FSP API returned FSP_STATUS_RESET_REQUIRED status
+  //
+  if ((Status >= FSP_STATUS_RESET_REQUIRED_COLD) && (Status <= FSP_STATUS_RESET_REQUIRED_8)) {
+    DEBUG ((DEBUG_INFO, "FspMemoryInitApi requested reset %r\n", Status));
+    CallFspWrapperResetSystem (Status);
+  }
+
+  if ((Status != FSP_STATUS_VARIABLE_REQUEST) && EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "ERROR - Failed to execute FspMemoryInitApi(), Status = %r\n", Status));
+    ASSERT_EFI_ERROR (Status);
+  }
+
+  DEBUG ((DEBUG_INFO, "FspMemoryInit status: %r\n", Status));
+  if (Status == FSP_STATUS_VARIABLE_REQUEST) {
+    //
+    // call to Variable request handler
+    //
+    FspWrapperVariableRequestHandler (&FspHobListPtr, FspMultiPhaseMemInitApiIndex);
+  }
+
+  //
+  // See if MultiPhase process is required or not
+  //
+  FspWrapperMultiPhaseHandler (&FspHobListPtr, FspMultiPhaseMemInitApiIndex);    // FspM MultiPhase
+
+  //
+  // Create hobs after memory initialization and not in temp RAM. Hence passing the recorded timestamp here
+  //
+  PERF_START_EX (&gFspApiPerformanceGuid, "EventRec", NULL, TimeStampCounterStart, FSP_STATUS_CODE_MEMORY_INIT | FSP_STATUS_CODE_COMMON_CODE | FSP_STATUS_CODE_API_ENTRY);
+  PERF_END_EX (&gFspApiPerformanceGuid, "EventRec", NULL, 0, FSP_STATUS_CODE_MEMORY_INIT | FSP_STATUS_CODE_COMMON_CODE | FSP_STATUS_CODE_API_EXIT);
+  DEBUG ((DEBUG_INFO, "Total time spent executing FspMemoryInitApi: %d millisecond\n", DivU64x32 (GetTimeInNanoSecond (AsmReadTsc () - TimeStampCounterStart), 1000000)));
+
+  Status = TestFspMemoryInitApiOutput (FspmUpdDataPtr, &FspHobListPtr);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "ERROR - TestFspMemoryInitApiOutput () fail, Status = %r\n", Status));
+  }
+
+  DEBUG ((DEBUG_INFO, "  FspHobListPtr (returned) - 0x%x\n", FspHobListPtr));
+  ASSERT (FspHobListPtr != NULL);
+
+  PostFspmHobProcess (FspHobListPtr);
 
   return Status;
 }
@@ -173,12 +198,20 @@ FspmWrapperInit (
 
   MeasurementExcludedFvPpi = AllocatePool (sizeof (*MeasurementExcludedFvPpi));
   ASSERT (MeasurementExcludedFvPpi != NULL);
+  if (MeasurementExcludedFvPpi == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
   MeasurementExcludedFvPpi->Count          = 1;
   MeasurementExcludedFvPpi->Fv[0].FvBase   = PcdGet32 (PcdFspmBaseAddress);
   MeasurementExcludedFvPpi->Fv[0].FvLength = ((EFI_FIRMWARE_VOLUME_HEADER *)(UINTN)PcdGet32 (PcdFspmBaseAddress))->FvLength;
 
   MeasurementExcludedPpiList = AllocatePool (sizeof (*MeasurementExcludedPpiList));
   ASSERT (MeasurementExcludedPpiList != NULL);
+  if (MeasurementExcludedPpiList == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
   MeasurementExcludedPpiList->Flags = EFI_PEI_PPI_DESCRIPTOR_PPI | EFI_PEI_PPI_DESCRIPTOR_TERMINATE_LIST;
   MeasurementExcludedPpiList->Guid  = &gEfiPeiFirmwareVolumeInfoMeasurementExcludedPpiGuid;
   MeasurementExcludedPpiList->Ppi   = MeasurementExcludedFvPpi;
@@ -193,7 +226,7 @@ FspmWrapperInit (
     ASSERT_EFI_ERROR (Status);
 
     PeiServicesInstallFvInfoPpi (
-      NULL,
+      &((EFI_FIRMWARE_VOLUME_HEADER *)(UINTN)PcdGet32 (PcdFspmBaseAddress))->FileSystemGuid,
       (VOID *)(UINTN)PcdGet32 (PcdFspmBaseAddress),
       (UINT32)((EFI_FIRMWARE_VOLUME_HEADER *)(UINTN)PcdGet32 (PcdFspmBaseAddress))->FvLength,
       NULL,
@@ -246,18 +279,41 @@ TcgPpiNotify (
   IN VOID                       *Ppi
   )
 {
-  UINT32  FspMeasureMask;
+  UINT32                  FspMeasureMask;
+  EFI_PHYSICAL_ADDRESS    FsptBaseAddress;
+  EFI_PHYSICAL_ADDRESS    FspmBaseAddress;
+  EDKII_MIGRATED_FV_INFO  *MigratedFvInfo;
+  EFI_PEI_HOB_POINTERS    Hob;
 
   DEBUG ((DEBUG_INFO, "TcgPpiNotify FSPM\n"));
 
-  FspMeasureMask = PcdGet32 (PcdFspMeasurementConfig);
+  FspMeasureMask  = PcdGet32 (PcdFspMeasurementConfig);
+  FsptBaseAddress = (EFI_PHYSICAL_ADDRESS)PcdGet32 (PcdFsptBaseAddress);
+  FspmBaseAddress = (EFI_PHYSICAL_ADDRESS)PcdGet32 (PcdFspmBaseAddress);
+  Hob.Raw         = GetFirstGuidHob (&gEdkiiMigratedFvInfoGuid);
+  while (Hob.Raw != NULL) {
+    MigratedFvInfo = GET_GUID_HOB_DATA (Hob);
+    if ((MigratedFvInfo->FvOrgBase == PcdGet32 (PcdFsptBaseAddress)) && (MigratedFvInfo->FvDataBase != 0)) {
+      //
+      // Found the migrated FspT raw data
+      //
+      FsptBaseAddress = MigratedFvInfo->FvDataBase;
+    }
+
+    if ((MigratedFvInfo->FvOrgBase == PcdGet32 (PcdFspmBaseAddress)) && (MigratedFvInfo->FvDataBase != 0)) {
+      FspmBaseAddress = MigratedFvInfo->FvDataBase;
+    }
+
+    Hob.Raw = GET_NEXT_HOB (Hob);
+    Hob.Raw = GetNextGuidHob (&gEdkiiMigratedFvInfoGuid, Hob.Raw);
+  }
 
   if ((FspMeasureMask & FSP_MEASURE_FSPT) != 0) {
     MeasureFspFirmwareBlob (
       0,
       "FSPT",
-      PcdGet32 (PcdFsptBaseAddress),
-      (UINT32)((EFI_FIRMWARE_VOLUME_HEADER *)(UINTN)PcdGet32 (PcdFsptBaseAddress))->FvLength
+      FsptBaseAddress,
+      (UINT32)((EFI_FIRMWARE_VOLUME_HEADER *)(UINTN)FsptBaseAddress)->FvLength
       );
   }
 
@@ -265,8 +321,8 @@ TcgPpiNotify (
     MeasureFspFirmwareBlob (
       0,
       "FSPM",
-      PcdGet32 (PcdFspmBaseAddress),
-      (UINT32)((EFI_FIRMWARE_VOLUME_HEADER *)(UINTN)PcdGet32 (PcdFspmBaseAddress))->FvLength
+      FspmBaseAddress,
+      (UINT32)((EFI_FIRMWARE_VOLUME_HEADER *)(UINTN)FspmBaseAddress)->FvLength
       );
   }
 

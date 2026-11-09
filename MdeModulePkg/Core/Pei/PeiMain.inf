@@ -6,7 +6,7 @@
 # 2) Dispatch PEIM from discovered FV.
 # 3) Handoff control to DxeIpl to load DXE core and enter DXE phase.
 #
-# Copyright (c) 2006 - 2019, Intel Corporation. All rights reserved.<BR>
+# Copyright (c) 2006 - 2024, Intel Corporation. All rights reserved.<BR>
 #
 #  SPDX-License-Identifier: BSD-2-Clause-Patent
 #
@@ -34,6 +34,7 @@
   Reset/Reset.c
   Ppi/Ppi.c
   PeiMain/PeiMain.c
+  Memory/MemoryBin.c
   Memory/MemoryServices.c
   Image/Image.c
   Hob/Hob.c
@@ -66,6 +67,8 @@
   PeCoffLib
   PeiServicesTablePointerLib
   PcdLib
+  TimerLib
+  SafeIntLib
 
 [Guids]
   gPeiAprioriFileNameGuid       ## SOMETIMES_CONSUMES   ## File
@@ -78,6 +81,9 @@
   gEfiFirmwareFileSystem3Guid
   gStatusCodeCallbackGuid
   gEdkiiMigratedFvInfoGuid                      ## SOMETIMES_PRODUCES     ## HOB
+  gEdkiiMigrationInfoGuid                       ## SOMETIMES_CONSUMES     ## HOB
+  gEfiDelayedDispatchTableGuid                  ## SOMETIMES_PRODUCES     ## HOB
+  gEfiMemoryTypeInformationGuid                 ## SOMETIMES_CONSUMES     ## HOB
 
 [Ppis]
   gEfiPeiStatusCodePpiGuid                      ## SOMETIMES_CONSUMES # PeiReportStatusService is not ready if this PPI doesn't exist
@@ -100,6 +106,9 @@
   gEfiPeiReset2PpiGuid                          ## SOMETIMES_CONSUMES
   gEfiSecHobDataPpiGuid                         ## SOMETIMES_CONSUMES
   gEfiPeiCoreFvLocationPpiGuid                  ## SOMETIMES_CONSUMES
+  gEdkiiPeiMigrateTempRamPpiGuid                ## PRODUCES
+  gEfiPeiDelayedDispatchPpiGuid                 ## PRODUCES
+  gEfiEndOfPeiSignalPpiGuid                     ## CONSUMES
 
 [Pcd]
   gEfiMdeModulePkgTokenSpaceGuid.PcdPeiCoreMaxPeiStackSize                  ## CONSUMES
@@ -112,6 +121,10 @@
   gEfiMdeModulePkgTokenSpaceGuid.PcdShadowPeimOnBoot                        ## CONSUMES
   gEfiMdeModulePkgTokenSpaceGuid.PcdInitValueInTempStack                    ## CONSUMES
   gEfiMdeModulePkgTokenSpaceGuid.PcdMigrateTemporaryRamFirmwareVolumes      ## CONSUMES
+  gEfiMdeModulePkgTokenSpaceGuid.PcdDelayedDispatchMaxDelayUs               ## CONSUMES
+  gEfiMdeModulePkgTokenSpaceGuid.PcdDelayedDispatchCompletionTimeoutUs      ## CONSUMES
+  gEfiMdeModulePkgTokenSpaceGuid.PcdDelayedDispatchMaxEntries               ## CONSUMES
+  gEfiMdeModulePkgTokenSpaceGuid.PcdPeiMemoryBinsEnable                     ## CONSUMES
 
 # [BootMode]
 # S3_RESUME             ## SOMETIMES_CONSUMES

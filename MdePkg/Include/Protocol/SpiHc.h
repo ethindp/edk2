@@ -2,15 +2,15 @@
   This file defines the SPI Host Controller Protocol.
 
   Copyright (c) 2017, Intel Corporation. All rights reserved.<BR>
+  Copyright (C) 2024 Advanced Micro Devices, Inc. All rights reserved.
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
   @par Revision Reference:
-    This Protocol was introduced in UEFI PI Specification 1.6.
+    This Protocol was introduced in UEFI PI Specification 1.8 A.
 
 **/
 
-#ifndef __SPI_HC_PROTOCOL_H__
-#define __SPI_HC_PROTOCOL_H__
+#pragma once
 
 #include <Protocol/SpiConfiguration.h>
 #include <Protocol/SpiIo.h>
@@ -42,7 +42,7 @@ typedef struct _EFI_SPI_HC_PROTOCOL EFI_SPI_HC_PROTOCOL;
                             describing the SPI peripheral whose chip select pin
                             is to be manipulated. The routine may access the
                             ChipSelectParameter field to gain sufficient
-                            context to complete the operati on.
+                            context to complete the operation.
   @param[in] PinValue       The value to be applied to the chip select line of
                             the SPI peripheral.
 
@@ -122,6 +122,19 @@ typedef EFI_STATUS
   );
 
 ///
+/// Definitions of SPI Host Controller Attributes.
+///
+#define HC_SUPPORTS_WRITE_ONLY_OPERATIONS       BIT0
+#define HC_SUPPORTS_READ_ONLY_OPERATIONS        BIT1
+#define HC_SUPPORTS_WRITE_THEN_READ_OPERATIONS  BIT2
+#define HC_TX_FRAME_IN_MOST_SIGNIFICANT_BITS    BIT3
+#define HC_RX_FRAME_IN_MOST_SIGNIFICANT_BITS    BIT4
+#define HC_SUPPORTS_2_BIT_DATA_BUS_WIDTH        BIT5
+#define HC_SUPPORTS_4_BIT_DATA_BUS_WIDTH        BIT6
+#define HC_SUPPORTS_8_BIT_DATA_BUS_WIDTH        BIT7
+#define HC_TRANSFER_SIZE_INCLUDES_OPCODE        BIT8
+#define HC_TRANSFER_SIZE_INCLUDES_ADDRESS       BIT9
+///
 /// Support a SPI data transaction between the SPI controller and a SPI chip.
 ///
 struct _EFI_SPI_HC_PROTOCOL {
@@ -161,7 +174,7 @@ struct _EFI_SPI_HC_PROTOCOL {
   UINT32                             FrameSizeSupportMask;
 
   ///
-  /// Maximum transfer size in bytes: 1 - Oxffffffff
+  /// Maximum transfer size in bytes: 1 - 0xffffffff
   ///
   UINT32                             MaximumTransferBytes;
 
@@ -184,5 +197,3 @@ struct _EFI_SPI_HC_PROTOCOL {
 };
 
 extern EFI_GUID  gEfiSpiHcProtocolGuid;
-
-#endif // __SPI_HC_PROTOCOL_H__

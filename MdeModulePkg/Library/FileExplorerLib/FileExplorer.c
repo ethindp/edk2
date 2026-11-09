@@ -560,7 +560,10 @@ LibFileInfo (
                     );
   if (Status == EFI_BUFFER_TOO_SMALL) {
     Buffer = AllocatePool (BufferSize);
-    ASSERT (Buffer != NULL);
+    if (Buffer == NULL) {
+      ASSERT (Buffer != NULL);
+      return NULL;
+    }
   }
 
   Status = FHand->GetInfo (
@@ -870,7 +873,7 @@ LibFindFileSystem (
   @param  MenuEntry        Input Menu info.
   @param  RetFileHandle    Return the file handle for the input device path.
 
-  @retval EFI_SUCESS       Find the file handle success.
+  @retval EFI_SUCCESS      Find the file handle success.
   @retval Other            Find the file handle failure.
 **/
 EFI_STATUS
@@ -918,7 +921,7 @@ LibGetFileHandleFromMenu (
   @param  ParentFileName   Parent file name.
   @param  DeviceHandle     Driver handle for this partition.
 
-  @retval EFI_SUCESS       Find the file handle success.
+  @retval EFI_SUCCESS      Find the file handle success.
   @retval Other            Find the file handle failure.
 **/
 EFI_STATUS
@@ -1075,7 +1078,10 @@ LibCreateNewFile (
   NewHandle    = NULL;
   FullFileName = NULL;
 
-  LibGetFileHandleFromDevicePath (gFileExplorerPrivate.RetDevicePath, &FileHandle, &ParentName, &DeviceHandle);
+  if (EFI_ERROR (LibGetFileHandleFromDevicePath (gFileExplorerPrivate.RetDevicePath, &FileHandle, &ParentName, &DeviceHandle))) {
+    return EFI_DEVICE_ERROR;
+  }
+
   FullFileName = LibAppendFileName (ParentName, FileName);
   if (FullFileName == NULL) {
     return EFI_OUT_OF_RESOURCES;
@@ -1475,7 +1481,7 @@ LibGetDevicePath (
                            after choose one file.
   @param  File             Return the device path for the last time chosed file.
 
-  @retval EFI_SUCESS             Choose file success.
+  @retval EFI_SUCCESS            Choose file success.
   @retval EFI_INVALID_PARAMETER  Both ChooseHandler and return device path are NULL
                                  One of them must not NULL.
   @retval Other errors           Choose file failed.

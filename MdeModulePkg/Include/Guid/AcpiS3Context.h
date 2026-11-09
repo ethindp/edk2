@@ -1,14 +1,13 @@
 /** @file
   Definitions for data structures used in S3 resume.
 
-Copyright (c) 2011 - 2018, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2011 - 2024, Intel Corporation. All rights reserved.<BR>
 
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _ACPI_S3_DATA_H_
-#define _ACPI_S3_DATA_H_
+#pragma once
 
 #include <Library/BaseLib.h>
 
@@ -61,5 +60,3 @@ typedef struct {
 extern EFI_GUID  gEfiAcpiS3ContextGuid;
 
 extern EFI_GUID  gEfiAcpiVariableGuid;
-
-#endif

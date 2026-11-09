@@ -7,8 +7,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _VIRTUAL_KEYBOARD_H_
-#define _VIRTUAL_KEYBOARD_H_
+#pragma once
 
 #include <Guid/StatusCodeDataTypeId.h>
 #include <Protocol/DevicePath.h>
@@ -43,7 +42,7 @@ extern EFI_COMPONENT_NAME2_PROTOCOL  gVirtualKeyboardComponentName2;
 #define KEYBOARD_TIMEOUT               65536         // 0.07s
 #define KEYBOARD_WAITFORVALUE_TIMEOUT  1000000       // 1s
 #define KEYBOARD_BAT_TIMEOUT           4000000       // 4s
-#define KEYBOARD_TIMER_INTERVAL        500000        // 0.5s
+#define KEYBOARD_TIMER_INTERVAL        500000        // 0.05s
 
 #define QUEUE_MAX_COUNT  32
 
@@ -496,11 +495,12 @@ KeyNotifyProcessHandler (
 /**
   Read out the scan code of the key that has just been stroked.
 
-  @param  This        Pointer of simple text Protocol.
-  @param  Key         Pointer for store the key that read out.
+  @param  This              Pointer of simple text Protocol.
+  @param  Key               Pointer for store the key that read out.
 
-  @retval EFI_SUCCESS The key is read out successfully.
-  @retval other       The key reading failed.
+  @retval EFI_SUCCESS       The key is read out successfully.
+  @retval other             The key reading failed.
+  @retval EFI_UNSUPPORTED   The device does not support the ability to read keystroke data.
 
 **/
 EFI_STATUS
@@ -523,6 +523,7 @@ VirtualKeyboardReadKeyStroke (
   @retval  EFI_DEVICE_ERROR      The keystroke information was not returned due to
                                  hardware errors.
   @retval  EFI_INVALID_PARAMETER KeyData is NULL.
+  @retval  EFI_UNSUPPORTED       The device does not support the ability to read keystroke data.
 
 **/
 EFI_STATUS
@@ -531,5 +532,3 @@ VirtualKeyboardReadKeyStrokeEx (
   IN  EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL  *This,
   OUT EFI_KEY_DATA                       *KeyData
   );
-
-#endif /* _VIRTUAL_KEYBOARD_H_ */

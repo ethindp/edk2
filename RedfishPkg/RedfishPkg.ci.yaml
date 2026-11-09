@@ -2,9 +2,13 @@
 # CI configuration for NetworkPkg
 #
 # (C) Copyright 2021 Hewlett Packard Enterprise Development LP<BR>
+# Copyright (c) 2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 ##
 {
+    "PrEval": {
+        "DscPath": "RedfishPkg.dsc",
+    },
     "LicenseCheck": {
         "IgnoreFiles": []
     },
@@ -35,6 +39,7 @@
             "PrivateInclude/Crt/string.h",
             "PrivateInclude/Crt/time.h",
             "PrivateLibrary/RedfishCrtLib/RedfishCrtLib.c",
+            "PrivateLibrary/RedfishCrtLib/Ia32/MathFtol.c",
             "Include/Library/RedfishCrtLib.h",
             ##
             ## For jansson library open source
@@ -101,5 +106,11 @@
     "Defines": {
         "BLD_*_CONTINUOUS_INTEGRATION": "TRUE",
         "BLD_*_REDFISH_ENABLE": "TRUE"
+    },
+
+    ## options defined .pytool/Plugin/MarkdownLintCheck
+    "MarkdownLintCheck": {
+        "AuditOnly": True,           # If True, log all errors and then mark as skipped
+        "IgnoreFiles": []            # package root relative file, folder, or glob pattern to ignore
     }
 }

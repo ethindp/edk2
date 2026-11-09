@@ -18,7 +18,7 @@
 #  may not be modified without authorization. If platform fails to protect these resources,
 #  the authentication service provided in this driver will be broken, and the behavior is undefined.
 #
-# Copyright (c) 2010 - 2019, Intel Corporation. All rights reserved.<BR>
+# Copyright (c) 2010 - 2024, Intel Corporation. All rights reserved.<BR>
 # Copyright (c) 2018, Linaro, Ltd. All rights reserved.<BR>
 # Copyright (c) Microsoft Corporation.
 # SPDX-License-Identifier: BSD-2-Clause-Patent
@@ -33,13 +33,6 @@
   VERSION_STRING                 = 1.0
   PI_SPECIFICATION_VERSION       = 0x00010032
   ENTRY_POINT                    = VariableServiceInitialize
-
-#
-# The following information is for reference only and not required by the build tools.
-#
-#  VALID_ARCHITECTURES           = IA32 X64 ARM AARCH64
-#
-
 
 [Sources]
   Reclaim.c
@@ -71,11 +64,14 @@
   BaseMemoryLib
   DebugLib
   HobLib
+  MemLib
   MemoryAllocationLib
   MmServicesTableLib
+  SafeIntLib
   StandaloneMmDriverEntryPoint
   SynchronizationLib
   VarCheckLib
+  VariableFlashInfoLib
   VariablePolicyLib
   VariablePolicyHelperLib
 
@@ -112,6 +108,7 @@
   gEfiMemoryOverwriteControlDataGuid            ## SOMETIMES_CONSUMES   ## Variable:L"MemoryOverwriteRequestControl"
   gEfiMemoryOverwriteRequestControlLockGuid     ## SOMETIMES_PRODUCES   ## Variable:L"MemoryOverwriteRequestControlLock"
 
+  gSmmVariableWriteGuid                         ## PRODUCES             ## GUID # Install protocol
   gEfiSystemNvDataFvGuid                        ## CONSUMES             ## GUID
   gEdkiiFaultTolerantWriteGuid                  ## SOMETIMES_CONSUMES   ## HOB
 
@@ -120,9 +117,6 @@
   gEdkiiVarErrorFlagGuid
 
 [Pcd]
-  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageVariableBase       ## SOMETIMES_CONSUMES
-  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageVariableBase64     ## CONSUMES
-  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageVariableSize       ## CONSUMES
   gEfiMdeModulePkgTokenSpaceGuid.PcdMaxVariableSize                  ## CONSUMES
   gEfiMdeModulePkgTokenSpaceGuid.PcdMaxAuthVariableSize              ## CONSUMES
   gEfiMdeModulePkgTokenSpaceGuid.PcdMaxVolatileVariableSize          ## CONSUMES

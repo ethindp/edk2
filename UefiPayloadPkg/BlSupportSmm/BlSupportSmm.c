@@ -191,6 +191,7 @@ SmmFeatureLockOnS3 (
   @param[in] ProcedureArgument  Pointer to SMRR_BASE_MASK structure.
 **/
 VOID
+EFIAPI
 SetSmrr (
   IN VOID  *ProcedureArgument
   )
@@ -253,7 +254,7 @@ SetSmrrOnS3 (
   //
   // Calculate smrr base, mask and pass them as arguments.
   //
-  Arguments.Base = (SmmSize | MTRR_CACHE_WRITE_BACK);
+  Arguments.Base = (SmmBase | MTRR_CACHE_WRITE_BACK);
   Arguments.Mask = (~(SmmSize - 1) & EFI_MSR_SMRR_MASK);
 
   //

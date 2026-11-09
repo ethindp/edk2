@@ -9,7 +9,7 @@
 #  support hot plug CPUs.  This module can be copied into a CPU specific package
 #  and customized if these additional features are required.
 #
-#  Copyright (c) 2013-2016, Intel Corporation. All rights reserved.<BR>
+#  Copyright (c) 2013-2024, Intel Corporation. All rights reserved.<BR>
 #  Copyright (c) 2015-2020, Red Hat, Inc.
 #
 #  SPDX-License-Identifier: BSD-2-Clause-Patent
@@ -27,7 +27,7 @@
 # The following information is for reference only and not required by the build
 # tools.
 #
-#  VALID_ARCHITECTURES           = IA32 X64
+#  VALID_ARCHITECTURES           = X64
 
 [Sources]
   CpuS3Data.c
@@ -46,9 +46,11 @@
   MtrrLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
+  LockBoxLib
 
 [Guids]
   gEfiEndOfDxeEventGroupGuid         ## CONSUMES   ## Event
+  gEdkiiS3MtrrSettingGuid
 
 [Protocols]
   gEfiMpServiceProtocolGuid          ## CONSUMES

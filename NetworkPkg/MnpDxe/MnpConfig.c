@@ -214,7 +214,7 @@ MnpFreeNbuf (
 EFI_STATUS
 MnpAddFreeTxBuf (
   IN OUT MNP_DEVICE_DATA  *MnpDeviceData,
-  IN     UINTN            Count
+  IN     UINT32           Count
   )
 {
   EFI_STATUS       Status;
@@ -234,7 +234,7 @@ MnpAddFreeTxBuf (
       break;
     }
 
-    DEBUG ((DEBUG_INFO, "MnpAddFreeTxBuf: Add TxBufWrap %p, TxBuf %p\n", TxBufWrap, TxBufWrap->TxBuf));
+    DEBUG ((DEBUG_VERBOSE, "MnpAddFreeTxBuf: Add TxBufWrap %p, TxBuf %p\n", TxBufWrap, TxBufWrap->TxBuf));
     TxBufWrap->Signature = MNP_TX_BUF_WRAP_SIGNATURE;
     TxBufWrap->InUse     = FALSE;
     InsertTailList (&MnpDeviceData->FreeTxBufList, &TxBufWrap->WrapEntry);
@@ -1199,8 +1199,6 @@ MnpStart (
   MNP_DEVICE_DATA  *MnpDeviceData;
 
   NET_CHECK_SIGNATURE (MnpServiceData, MNP_SERVICE_DATA_SIGNATURE);
-
-  Status        = EFI_SUCCESS;
   MnpDeviceData = MnpServiceData->MnpDeviceData;
 
   if (!IsConfigUpdate) {
@@ -1330,19 +1328,19 @@ MnpStop (
     //
     //  The system poll in on, cancel the poll timer.
     //
-    Status                          = gBS->SetTimer (MnpDeviceData->PollTimer, TimerCancel, 0);
+    gBS->SetTimer (MnpDeviceData->PollTimer, TimerCancel, 0);
     MnpDeviceData->EnableSystemPoll = FALSE;
   }
 
   //
   // Cancel the timeout timer.
   //
-  Status = gBS->SetTimer (MnpDeviceData->TimeoutCheckTimer, TimerCancel, 0);
+  gBS->SetTimer (MnpDeviceData->TimeoutCheckTimer, TimerCancel, 0);
 
   //
   // Cancel the media detect timer.
   //
-  Status = gBS->SetTimer (MnpDeviceData->MediaDetectTimer, TimerCancel, 0);
+  gBS->SetTimer (MnpDeviceData->MediaDetectTimer, TimerCancel, 0);
 
   //
   // Stop the simple network.
@@ -1421,8 +1419,6 @@ MnpConfigureInstance (
     //
     return EFI_UNSUPPORTED;
   }
-
-  Status = EFI_SUCCESS;
 
   MnpServiceData = Instance->MnpServiceData;
   MnpDeviceData  = MnpServiceData->MnpDeviceData;

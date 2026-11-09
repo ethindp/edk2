@@ -4,15 +4,47 @@
   primitives (Hash Serials, HMAC, RSA, Diffie-Hellman, etc) for UEFI security
   functionality enabling.
 
-Copyright (c) 2009 - 2020, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2009 - 2026, Intel Corporation. All rights reserved.<BR>
+Copyright (c) Microsoft Corporation. All rights reserved.
+(c) Copyright 2026 HP Development Company, L.P.
+Copyright (c) 2026, Arm Limited. All rights reserved.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef __BASE_CRYPT_LIB_H__
-#define __BASE_CRYPT_LIB_H__
+#pragma once
 
 #include <Uefi/UefiBaseType.h>
+
+#define CRYPTO_NID_NULL  0x0000
+
+// Hash
+#define CRYPTO_NID_SHA256  0x0001
+#define CRYPTO_NID_SHA384  0x0002
+#define CRYPTO_NID_SHA512  0x0003
+
+// Key Exchange
+#define CRYPTO_NID_SECP256R1        0x0204
+#define CRYPTO_NID_SECP384R1        0x0205
+#define CRYPTO_NID_SECP521R1        0x0206
+#define CRYPTO_NID_BRAINPOOLP512R1  0x03A5
+
+// EdDSA
+#define CRYPTO_NID_ED448  0x0440
+
+// ML-DSA
+#define CRYPTO_NID_ML_DSA_87  0x05B3
+
+// SLH-DSA
+#define CRYPTO_NID_SLH_DSA_SHAKE_256S  0x05CD
+
+// Symmetric ciphers usable with Pkcs7Encrypt.
+#define CRYPTO_NID_AES128CBC  0x01A3 // NID_aes_128_cbc
+#define CRYPTO_NID_AES192CBC  0x01A7 // NID_aes_192_cbc
+#define CRYPTO_NID_AES256CBC  0x01AB // NID_aes_256_cbc
+
+// Flags usable with Pkcs7Encrypt and Pkcs7Decrypt.
+#define CRYPTO_PKCS7_DEFAULT  0x0 // Treat the input as binary data.
 
 ///
 /// MD5 digest size in bytes
@@ -754,6 +786,35 @@ Sha512HashAll (
   );
 
 /**
+  Parallel hash function ParallelHash256, as defined in NIST's Special Publication 800-185,
+  published December 2016.
+
+  @param[in]   Input            Pointer to the input message (X).
+  @param[in]   InputByteLen     The number(>0) of input bytes provided for the input data.
+  @param[in]   BlockSize        The size of each block (B).
+  @param[out]  Output           Pointer to the output buffer.
+  @param[in]   OutputByteLen    The desired number of output bytes (L).
+  @param[in]   Customization    Pointer to the customization string (S).
+  @param[in]   CustomByteLen    The length of the customization string in bytes.
+
+  @retval TRUE   ParallelHash256 digest computation succeeded.
+  @retval FALSE  ParallelHash256 digest computation failed.
+  @retval FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+ParallelHash256HashAll (
+  IN CONST VOID   *Input,
+  IN       UINTN  InputByteLen,
+  IN       UINTN  BlockSize,
+  OUT      VOID   *Output,
+  IN       UINTN  OutputByteLen,
+  IN CONST VOID   *Customization,
+  IN       UINTN  CustomByteLen
+  );
+
+/**
   Retrieves the size, in bytes, of the context buffer required for SM3 hash operations.
 
   @return  The size, in bytes, of the context buffer required for SM3 hash operations.
@@ -1016,6 +1077,194 @@ HmacSha256Final (
   OUT     UINT8  *HmacValue
   );
 
+/**
+  Computes the HMAC-SHA256 digest of a input data buffer.
+
+  This function performs the HMAC-SHA256 digest of a given data buffer, and places
+  the digest value into the specified memory.
+
+  If this interface is not supported, then return FALSE.
+
+  @param[in]   Data        Pointer to the buffer containing the data to be digested.
+  @param[in]   DataSize    Size of Data buffer in bytes.
+  @param[in]   Key         Pointer to the user-supplied key.
+  @param[in]   KeySize     Key size in bytes.
+  @param[out]  HashValue   Pointer to a buffer that receives the HMAC-SHA256 digest
+                           value (32 bytes).
+
+  @retval TRUE   HMAC-SHA256 digest computation succeeded.
+  @retval FALSE  HMAC-SHA256 digest computation failed.
+  @retval FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+HmacSha256All (
+  IN   CONST VOID   *Data,
+  IN   UINTN        DataSize,
+  IN   CONST UINT8  *Key,
+  IN   UINTN        KeySize,
+  OUT  UINT8        *HmacValue
+  );
+
+/**
+  Allocates and initializes one HMAC_CTX context for subsequent HMAC-SHA384 use.
+
+  @return  Pointer to the HMAC_CTX context that has been initialized.
+           If the allocations fails, HmacSha384New() returns NULL.
+
+**/
+VOID *
+EFIAPI
+HmacSha384New (
+  VOID
+  );
+
+/**
+  Release the specified HMAC_CTX context.
+
+  @param[in]  HmacSha384Ctx  Pointer to the HMAC_CTX context to be released.
+
+**/
+VOID
+EFIAPI
+HmacSha384Free (
+  IN  VOID  *HmacSha384Ctx
+  );
+
+/**
+  Set user-supplied key for subsequent use. It must be done before any
+  calling to HmacSha384Update().
+
+  If HmacSha384Context is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[out]  HmacSha384Context  Pointer to HMAC-SHA384 context.
+  @param[in]   Key                Pointer to the user-supplied key.
+  @param[in]   KeySize            Key size in bytes.
+
+  @retval TRUE   The Key is set successfully.
+  @retval FALSE  The Key is set unsuccessfully.
+  @retval FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+HmacSha384SetKey (
+  OUT  VOID         *HmacSha384Context,
+  IN   CONST UINT8  *Key,
+  IN   UINTN        KeySize
+  );
+
+/**
+  Makes a copy of an existing HMAC-SHA384 context.
+
+  If HmacSha384Context is NULL, then return FALSE.
+  If NewHmacSha384Context is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]  HmacSha384Context     Pointer to HMAC-SHA384 context being copied.
+  @param[out] NewHmacSha384Context  Pointer to new HMAC-SHA384 context.
+
+  @retval TRUE   HMAC-SHA384 context copy succeeded.
+  @retval FALSE  HMAC-SHA384 context copy failed.
+  @retval FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+HmacSha384Duplicate (
+  IN   CONST VOID  *HmacSha384Context,
+  OUT  VOID        *NewHmacSha384Context
+  );
+
+/**
+  Digests the input data and updates HMAC-SHA384 context.
+
+  This function performs HMAC-SHA384 digest on a data buffer of the specified size.
+  It can be called multiple times to compute the digest of long or discontinuous data streams.
+  HMAC-SHA384 context should be initialized by HmacSha384New(), and should not be finalized
+  by HmacSha384Final(). Behavior with invalid context is undefined.
+
+  If HmacSha384Context is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in, out]  HmacSha384Context Pointer to the HMAC-SHA384 context.
+  @param[in]       Data              Pointer to the buffer containing the data to be digested.
+  @param[in]       DataSize          Size of Data buffer in bytes.
+
+  @retval TRUE   HMAC-SHA384 data digest succeeded.
+  @retval FALSE  HMAC-SHA384 data digest failed.
+  @retval FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+HmacSha384Update (
+  IN OUT  VOID        *HmacSha384Context,
+  IN      CONST VOID  *Data,
+  IN      UINTN       DataSize
+  );
+
+/**
+  Completes computation of the HMAC-SHA384 digest value.
+
+  This function completes HMAC-SHA384 hash computation and retrieves the digest value into
+  the specified memory. After this function has been called, the HMAC-SHA384 context cannot
+  be used again.
+  HMAC-SHA384 context should be initialized by HmacSha384New(), and should not be finalized
+  by HmacSha384Final(). Behavior with invalid HMAC-SHA384 context is undefined.
+
+  If HmacSha384Context is NULL, then return FALSE.
+  If HmacValue is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in, out]  HmacSha384Context  Pointer to the HMAC-SHA384 context.
+  @param[out]      HmacValue          Pointer to a buffer that receives the HMAC-SHA384 digest
+                                      value (48 bytes).
+
+  @retval TRUE   HMAC-SHA384 digest computation succeeded.
+  @retval FALSE  HMAC-SHA384 digest computation failed.
+  @retval FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+HmacSha384Final (
+  IN OUT  VOID   *HmacSha384Context,
+  OUT     UINT8  *HmacValue
+  );
+
+/**
+  Computes the HMAC-SHA384 digest of a input data buffer.
+
+  This function performs the HMAC-SHA384 digest of a given data buffer, and places
+  the digest value into the specified memory.
+
+  If this interface is not supported, then return FALSE.
+
+  @param[in]   Data        Pointer to the buffer containing the data to be digested.
+  @param[in]   DataSize    Size of Data buffer in bytes.
+  @param[in]   Key         Pointer to the user-supplied key.
+  @param[in]   KeySize     Key size in bytes.
+  @param[out]  HashValue   Pointer to a buffer that receives the HMAC-SHA384 digest
+                           value (48 bytes).
+
+  @retval TRUE   HMAC-SHA384 digest computation succeeded.
+  @retval FALSE  HMAC-SHA384 digest computation failed.
+  @retval FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+HmacSha384All (
+  IN   CONST VOID   *Data,
+  IN   UINTN        DataSize,
+  IN   CONST UINT8  *Key,
+  IN   UINTN        KeySize,
+  OUT  UINT8        *HmacValue
+  );
+
 // =====================================================================================
 //    Symmetric Cryptography Primitive
 // =====================================================================================
@@ -1140,6 +1389,250 @@ AesCbcDecrypt (
   IN   CONST UINT8  *Input,
   IN   UINTN        InputSize,
   IN   CONST UINT8  *Ivec,
+  OUT  UINT8        *Output
+  );
+
+/**
+  Performs AES encryption on single block (AES_BLOCK_SIZE)
+
+  This function performs AES encryption on single block pointed by Input.
+
+  Caller must perform padding, if necessary, to ensure single block size.
+  AesContext should be already correctly initialized by AesInit().
+  Behavior with invalid AES context is undefined.
+
+  If AesContext is NULL, then return FALSE.
+  If Input is NULL, then return FALSE.
+  If Output is NULL, then return FALSE.
+
+  @param[in]   AesContext  Pointer to the AES context.
+  @param[in]   Input       Pointer to the buffer containing single block data
+  @param[out]  Output      Pointer to a buffer that receives the AES encryption output.
+
+  @retval TRUE   AES encryption succeeded.
+  @retval FALSE  AES encryption failed.
+
+**/
+BOOLEAN
+EFIAPI
+AesEncrypt (
+  IN   VOID         *AesContext,
+  IN   CONST UINT8  *Input,
+  OUT  UINT8        *Output
+  );
+
+/**
+  Performs AES decryption on single block (AES_BLOCK_SIZE)
+
+  This function performs AES decryption on single block pointed by Input.
+
+  Caller must perform padding, if necessary, to ensure single block size.
+  AesContext should be already correctly initialized by AesInit().
+  Behavior with invalid AES context is undefined.
+
+  If AesContext is NULL, then return FALSE.
+  If Input is NULL, then return FALSE.
+  If Output is NULL, then return FALSE.
+
+  @param[in]   AesContext  Pointer to the AES context.
+  @param[in]   Input       Pointer to the buffer containing single block encrpyted data.
+  @param[out]  Output      Pointer to a buffer that receives the AES decryption output.
+
+  @retval TRUE   AES decryption succeeded.
+  @retval FALSE  AES decryption failed.
+
+**/
+BOOLEAN
+EFIAPI
+AesDecrypt (
+  IN   VOID         *AesContext,
+  IN   CONST UINT8  *Input,
+  OUT  UINT8        *Output
+  );
+
+// =====================================================================================
+//    Authenticated Encryption with Associated Data (AEAD) Cryptography Primitive
+// =====================================================================================
+
+/**
+  Performs AEAD AES-GCM authenticated encryption on a data buffer and additional authenticated data (AAD).
+
+  IvSize must be 12, otherwise FALSE is returned.
+  KeySize must be 16, 24 or 32, otherwise FALSE is returned.
+  TagSize must be 12, 13, 14, 15, 16, otherwise FALSE is returned.
+
+  @param[in]   Key         Pointer to the encryption key.
+  @param[in]   KeySize     Size of the encryption key in bytes.
+  @param[in]   Iv          Pointer to the IV value.
+  @param[in]   IvSize      Size of the IV value in bytes.
+  @param[in]   AData       Pointer to the additional authenticated data (AAD).
+  @param[in]   ADataSize   Size of the additional authenticated data (AAD) in bytes.
+  @param[in]   DataIn      Pointer to the input data buffer to be encrypted.
+  @param[in]   DataInSize  Size of the input data buffer in bytes.
+  @param[out]  TagOut      Pointer to a buffer that receives the authentication tag output.
+  @param[in]   TagSize     Size of the authentication tag in bytes.
+  @param[out]  DataOut     Pointer to a buffer that receives the encryption output.
+  @param[out]  DataOutSize Size of the output data buffer in bytes.
+
+  @retval TRUE   AEAD AES-GCM authenticated encryption succeeded.
+  @retval FALSE  AEAD AES-GCM authenticated encryption failed.
+
+**/
+BOOLEAN
+EFIAPI
+AeadAesGcmEncrypt (
+  IN   CONST UINT8  *Key,
+  IN   UINTN        KeySize,
+  IN   CONST UINT8  *Iv,
+  IN   UINTN        IvSize,
+  IN   CONST UINT8  *AData,
+  IN   UINTN        ADataSize,
+  IN   CONST UINT8  *DataIn,
+  IN   UINTN        DataInSize,
+  OUT  UINT8        *TagOut,
+  IN   UINTN        TagSize,
+  OUT  UINT8        *DataOut,
+  OUT  UINTN        *DataOutSize
+  );
+
+/**
+  Performs AEAD AES-GCM authenticated decryption on a data buffer and additional authenticated data (AAD).
+
+  IvSize must be 12, otherwise FALSE is returned.
+  KeySize must be 16, 24 or 32, otherwise FALSE is returned.
+  TagSize must be 12, 13, 14, 15, 16, otherwise FALSE is returned.
+  If additional authenticated data verification fails, FALSE is returned.
+
+  @param[in]   Key         Pointer to the encryption key.
+  @param[in]   KeySize     Size of the encryption key in bytes.
+  @param[in]   Iv          Pointer to the IV value.
+  @param[in]   IvSize      Size of the IV value in bytes.
+  @param[in]   AData       Pointer to the additional authenticated data (AAD).
+  @param[in]   ADataSize   Size of the additional authenticated data (AAD) in bytes.
+  @param[in]   DataIn      Pointer to the input data buffer to be decrypted.
+  @param[in]   DataInSize  Size of the input data buffer in bytes.
+  @param[in]   Tag         Pointer to a buffer that contains the authentication tag.
+  @param[in]   TagSize     Size of the authentication tag in bytes.
+  @param[out]  DataOut     Pointer to a buffer that receives the decryption output.
+  @param[out]  DataOutSize Size of the output data buffer in bytes.
+
+  @retval TRUE   AEAD AES-GCM authenticated decryption succeeded.
+  @retval FALSE  AEAD AES-GCM authenticated decryption failed.
+
+**/
+BOOLEAN
+EFIAPI
+AeadAesGcmDecrypt (
+  IN   CONST UINT8  *Key,
+  IN   UINTN        KeySize,
+  IN   CONST UINT8  *Iv,
+  IN   UINTN        IvSize,
+  IN   CONST UINT8  *AData,
+  IN   UINTN        ADataSize,
+  IN   CONST UINT8  *DataIn,
+  IN   UINTN        DataInSize,
+  IN   CONST UINT8  *Tag,
+  IN   UINTN        TagSize,
+  OUT  UINT8        *DataOut,
+  OUT  UINTN        *DataOutSize
+  );
+
+/**
+  Retrieves the size, in bytes, of the context buffer required for CAMELLIA operations.
+
+  @return  The size, in bytes, of the context buffer required for CAMELLIA operations.
+
+**/
+UINTN
+EFIAPI
+CamelliaGetContextSize (
+  VOID
+  );
+
+/**
+  Initializes user-supplied memory as Camellia context for subsequent use.
+
+  This function initializes user-supplied memory pointed by CamelliaContext as
+  CAMELLIA context.
+  In addition, it sets up all CAMELLIA key materials for subsequent
+  encryption and decryption operations.
+  There are 3 options for key length, 128 bits, 192 bits, and 256 bits.
+
+  If CamelliaContext is NULL, then return FALSE.
+  If Key is NULL, then return FALSE.
+  If KeyLength is not valid, then return FALSE.
+
+  @param[out]  CamelliaContext  Pointer to CAMELLIA context being initialized.
+  @param[in]   Key              Pointer to the user-supplied CAMELLIA key.
+  @param[in]   KeyLength        Length of CAMELLIA key in bits.
+
+  @retval TRUE   CAMELLIA context initialization succeeded.
+  @retval FALSE  CAMELLIA context initialization failed.
+
+**/
+BOOLEAN
+EFIAPI
+CamelliaInit (
+  OUT  VOID         *CamelliaContext,
+  IN   CONST UINT8  *Key,
+  IN   UINTN        KeyLength
+  );
+
+/**
+  Performs CAMELLIA encryption on single block (128 bits)
+
+  This function performs CAMELLIA encryption on single block pointed by Input.
+
+  Caller must perform padding, if necessary, to ensure single block size.
+  CamelliaContext should be already correctly initialized by CamelliaInit().
+  Behavior with invalid Camellia context is undefined.
+
+  If CamelliaContext is NULL, then return FALSE.
+  If Input is NULL, then return FALSE.
+  If Output is NULL, then return FALSE.
+
+  @param[in]   CamelliaContext  Pointer to the CAMELLIA context.
+  @param[in]   Input            Pointer to the buffer containing single block data
+  @param[out]  Output           Pointer to a buffer that receives the CAMELLIA encryption output.
+
+  @retval TRUE   CAMELLIA encryption succeeded.
+  @retval FALSE  CAMELLIA encryption failed.
+
+**/
+BOOLEAN
+EFIAPI
+CamelliaEncrypt (
+  IN   VOID         *CamelliaContext,
+  IN   CONST UINT8  *Input,
+  OUT  UINT8        *Output
+  );
+
+/**
+  Performs CAMELLIA decryption on single block (128 bits)
+
+  This function performs CAMELLIA decryption on single block pointed by Input.
+
+  Caller must perform padding, if necessary, to ensure single block size.
+  CamelliaContext should be already correctly initialized by CamelliaInit().
+  Behavior with invalid CAMELLIA context is undefined.
+
+  If CamelliaContext is NULL, then return FALSE.
+  If Input is NULL, then return FALSE.
+  If Output is NULL, then return FALSE.
+
+  @param[in]   CamelliaContext  Pointer to the CAMELLIA context.
+  @param[in]   Input            Pointer to the buffer containing single block encrpyted data.
+  @param[out]  Output           Pointer to a buffer that receives the CAMELLIA decryption output.
+
+  @retval TRUE   CAMELLIA decryption succeeded.
+  @retval FALSE  CAMELLIA decryption failed.
+
+**/
+BOOLEAN
+EFIAPI
+CamelliaDecrypt (
+  IN   VOID         *CamelliaContext,
+  IN   CONST UINT8  *Input,
   OUT  UINT8        *Output
   );
 
@@ -1439,6 +1932,73 @@ RsaPssVerify (
   IN  UINTN        SigSize,
   IN  UINT16       DigestLen,
   IN  UINT16       SaltLen
+  );
+
+/**
+  Carries out the RSA-PSS signature generation with EMSA-PSS encoding scheme
+  over a precomputed message digest.
+
+  This function carries out the RSA-PSS signature generation with EMSA-PSS encoding scheme defined in
+  RFC 8017.
+  Mask generation function is the same as the message digest algorithm.
+  If the Signature buffer is too small to hold the contents of signature, FALSE
+  is returned and SigSize is set to the required buffer size to obtain the signature.
+
+  If RsaContext is NULL, then return FALSE.
+  If Digest is NULL, then return FALSE.
+  If DigestSize is not one of SHA-256, SHA-384 or SHA-512 digest sizes, then return FALSE.
+  If SigSize is large enough but Signature is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]      RsaContext   Pointer to RSA context for signature generation.
+  @param[in]      Digest       Pointer to the precomputed message digest.
+  @param[in]      DigestSize   Digest size in bytes (32=SHA-256, 48=SHA-384, 64=SHA-512).
+  @param[out]     Signature    Pointer to buffer to receive RSA PSS signature.
+  @param[in, out] SigSize      On input, the size of Signature buffer in bytes.
+                               On output, the size of data returned in Signature buffer in bytes.
+
+  @retval  TRUE   Signature successfully generated in RSASSA-PSS.
+  @retval  FALSE  Signature generation failed.
+  @retval  FALSE  SigSize is too small.
+  @retval  FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+RsaPssSignDigest (
+  IN      VOID         *RsaContext,
+  IN      CONST UINT8  *Digest,
+  IN      UINTN        DigestSize,
+  OUT     UINT8        *Signature,
+  IN OUT  UINTN        *SigSize
+  );
+
+/**
+  Verifies an RSA-PSS signature over a precomputed message digest.
+
+  If RsaContext is NULL, then return FALSE.
+  If Digest is NULL, then return FALSE.
+  If Signature is NULL, then return FALSE.
+  If DigestSize is not one of SHA-256, SHA-384 or SHA-512 digest sizes,
+  then return FALSE.
+
+  @param[in]  RsaContext   Pointer to RSA context for signature verification.
+  @param[in]  Digest       Pointer to the message digest.
+  @param[in]  DigestSize   Digest size in bytes (32=SHA-256, 48=SHA-384, 64=SHA-512).
+  @param[in]  Signature    Pointer to RSASSA-PSS signature to be verified.
+  @param[in]  SigSize      Size of signature in bytes.
+
+  @retval  TRUE   Valid signature encoded in RSASSA-PSS.
+  @retval  FALSE  Invalid signature or invalid RSA context.
+**/
+BOOLEAN
+EFIAPI
+RsaPssVerifyDigest (
+  IN  VOID         *RsaContext,
+  IN  CONST UINT8  *Digest,
+  IN  UINTN        DigestSize,
+  IN  CONST UINT8  *Signature,
+  IN  UINTN        SigSize
   );
 
 /**
@@ -1832,6 +2392,122 @@ Pkcs1v2Encrypt (
   );
 
 /**
+  Encrypts a blob using PKCS1v2 (RSAES-OAEP) schema. On success, will return the
+  encrypted message in a newly allocated buffer.
+
+  Things that can cause a failure include:
+  - X509 key size does not match any known key size.
+  - Fail to allocate an intermediate buffer.
+  - Null pointer provided for a non-optional parameter.
+  - Data size is too large for the provided key size (max size is a function of key size
+    and hash digest size).
+
+  @param[in]  RsaContext          A pointer to an RSA context created by RsaNew() and
+                                  provisioned with a public key using RsaSetKey().
+  @param[in]  InData              Data to be encrypted.
+  @param[in]  InDataSize          Size of the data buffer.
+  @param[in]  PrngSeed            [Optional] If provided, a pointer to a random seed buffer
+                                  to be used when initializing the PRNG. NULL otherwise.
+  @param[in]  PrngSeedSize        [Optional] If provided, size of the random seed buffer.
+                                  0 otherwise.
+  @param[in]  DigestLen           [Optional] If provided, size of the hash used:
+                                  SHA1_DIGEST_SIZE
+                                  SHA256_DIGEST_SIZE
+                                  SHA384_DIGEST_SIZE
+                                  SHA512_DIGEST_SIZE
+                                  0 to use default (SHA1)
+  @param[out] EncryptedData       Pointer to an allocated buffer containing the encrypted
+                                  message.
+  @param[out] EncryptedDataSize   Size of the encrypted message buffer.
+
+  @retval     TRUE                Encryption was successful.
+  @retval     FALSE               Encryption failed.
+
+**/
+BOOLEAN
+EFIAPI
+RsaOaepEncrypt (
+  IN   VOID         *RsaContext,
+  IN   UINT8        *InData,
+  IN   UINTN        InDataSize,
+  IN   CONST UINT8  *PrngSeed   OPTIONAL,
+  IN   UINTN        PrngSeedSize   OPTIONAL,
+  IN   UINT16       DigestLen   OPTIONAL,
+  OUT  UINT8        **EncryptedData,
+  OUT  UINTN        *EncryptedDataSize
+  );
+
+/**
+  Decrypts a blob using PKCS1v2 (RSAES-OAEP) schema. On success, will return the
+  decrypted message in a newly allocated buffer.
+
+  Things that can cause a failure include:
+  - Fail to parse private key.
+  - Fail to allocate an intermediate buffer.
+  - Null pointer provided for a non-optional parameter.
+
+  @param[in]  PrivateKey          A pointer to the DER-encoded private key.
+  @param[in]  PrivateKeySize      Size of the private key buffer.
+  @param[in]  EncryptedData       Data to be decrypted.
+  @param[in]  EncryptedDataSize   Size of the encrypted buffer.
+  @param[out] OutData             Pointer to an allocated buffer containing the encrypted
+                                  message.
+  @param[out] OutDataSize         Size of the encrypted message buffer.
+
+  @retval     TRUE                Encryption was successful.
+  @retval     FALSE               Encryption failed.
+
+**/
+BOOLEAN
+EFIAPI
+Pkcs1v2Decrypt (
+  IN   CONST UINT8  *PrivateKey,
+  IN   UINTN        PrivateKeySize,
+  IN   UINT8        *EncryptedData,
+  IN   UINTN        EncryptedDataSize,
+  OUT  UINT8        **OutData,
+  OUT  UINTN        *OutDataSize
+  );
+
+/**
+  Decrypts a blob using PKCS1v2 (RSAES-OAEP) schema. On success, will return the
+  decrypted message in a newly allocated buffer.
+
+  Things that can cause a failure include:
+  - Fail to parse private key.
+  - Fail to allocate an intermediate buffer.
+  - Null pointer provided for a non-optional parameter.
+
+  @param[in]  RsaContext          A pointer to an RSA context created by RsaNew() and
+                                  provisioned with a private key using RsaSetKey().
+  @param[in]  EncryptedData       Data to be decrypted.
+  @param[in]  EncryptedDataSize   Size of the encrypted buffer.
+  @param[in]  DigestLen           [Optional] If provided, size of the hash used:
+                                  SHA1_DIGEST_SIZE
+                                  SHA256_DIGEST_SIZE
+                                  SHA384_DIGEST_SIZE
+                                  SHA512_DIGEST_SIZE
+                                  0 to use default (SHA1)
+  @param[out] OutData             Pointer to an allocated buffer containing the encrypted
+                                  message.
+  @param[out] OutDataSize         Size of the encrypted message buffer.
+
+  @retval     TRUE                Encryption was successful.
+  @retval     FALSE               Encryption failed.
+
+**/
+BOOLEAN
+EFIAPI
+RsaOaepDecrypt (
+  IN   VOID    *RsaContext,
+  IN   UINT8   *EncryptedData,
+  IN   UINTN   EncryptedDataSize,
+  IN   UINT16  DigestLen   OPTIONAL,
+  OUT  UINT8   **OutData,
+  OUT  UINTN   *OutDataSize
+  );
+
+/**
   The 3rd parameter of Pkcs7GetSigners will return all embedded
   X.509 certificate in one given PKCS7 signature. The format is:
   //
@@ -1917,6 +2593,8 @@ Pkcs7FreeSigners (
   Cryptographic Message Syntax Standard", and outputs two certificate lists chained and
   unchained to the signer's certificates.
   The input signed data could be wrapped in a ContentInfo structure.
+
+  Pkcs7GetCertificatesList has not been implemented in BaseCryptoLibMbedTls.
 
   @param[in]  P7Data            Pointer to the PKCS#7 message.
   @param[in]  P7Length          Length of the PKCS#7 message in bytes.
@@ -2017,6 +2695,109 @@ Pkcs7Verify (
   IN  UINTN        CertLength,
   IN  CONST UINT8  *InData,
   IN  UINTN        DataLength
+  );
+
+/**
+  Creates a DER-encoded PKCS#7 ContentInfo containing an envelopedData structure
+  that wraps content encrypted for secure transmission to one or more recipients.
+
+  If this interface is not supported, return FALSE.
+
+  @param[in]  X509Stack        Pointer to a stack of X.509 certificates for the
+                               intended recipients of this message, created using
+                               X509ConstructCertificateStack or similar. Each
+                               certificate must provide an RSA public key. Any of the
+                               corresponding private keys will be able to decrypt the
+                               content of the returned ContentInfo.
+  @param[in]  InData           Pointer to the content to be encrypted.
+  @param[in]  InDataSize       Size of the content to be encrypted in bytes.
+  @param[in]  CipherNid        NID of the symmetric cipher to use for encryption.
+                               Supported values are CRYPTO_NID_AES128CBC,
+                               CRYPTO_NID_AES192CBC, and CRYPTO_NID_AES256CBC.
+  @param[in]  Flags            Flags for the encryption operation. Currently only
+                               CRYPTO_PKCS7_DEFAULT is supported, which indicates that
+                               the input data is treated as binary data.
+  @param[out] ContentInfo      Receives a pointer to the output, which is a PKCS#7
+                               DER-encoded ContentInfo that wraps an envelopedData. The
+                               caller must free the returned buffer with FreePool().
+  @param[out] ContentInfoSize  Receives the size of the output in bytes.
+
+  @retval     TRUE             PKCS#7 data encryption succeeded.
+  @retval     FALSE            PKCS#7 data encryption failed.
+  @retval     FALSE            This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+Pkcs7Encrypt (
+  IN   UINT8   *X509Stack,
+  IN   UINT8   *InData,
+  IN   UINTN   InDataSize,
+  IN   UINT32  CipherNid,
+  IN   UINT32  Flags,
+  OUT  UINT8   **ContentInfo,
+  OUT  UINTN   *ContentInfoSize
+  );
+
+/**
+  Decrypts a DER-encoded PKCS#7 ContentInfo containing an envelopedData structure
+  (such as one produced by Pkcs7Encrypt) and recovers the original content.
+
+  The private key is supplied in PEM form so that this interface is not tied to any
+  particular key algorithm (currently supports RSA).
+
+  The correct recipient within the envelopedData is identified automatically. The
+  envelopedData carries, for each recipient, an issuer name and serial number that
+  identify the recipient certificate. If RecipientCert is supplied, its issuer name
+  and serial number are used to select the matching recipient. If RecipientCert is
+  NULL, the supplied private key is tried against every recipient in the envelope.
+
+  If this interface is not supported, return FALSE.
+
+  @param[in]  PemData           Pointer to the PEM-encoded private key of a recipient
+                                of the message. May be an RSA or other supported key
+                                type.
+  @param[in]  PemSize           Size of the PEM key data in bytes.
+  @param[in]  Password          [Optional] NULL-terminated passphrase used to decrypt an
+                                encrypted PEM key. Pass NULL if the PEM key is not
+                                password protected.
+  @param[in]  RecipientCert     [Optional] Pointer to the DER-encoded X.509 certificate
+                                of the recipient whose private key is supplied in
+                                PemData. If provided, it is used to select the matching
+                                recipient in the envelope by issuer name and serial
+                                number. Pass NULL to try the private key against every
+                                recipient.
+  @param[in]  RecipientCertSize Size of the DER-encoded certificate in bytes. Ignored
+                                (and may be 0) when RecipientCert is NULL.
+  @param[in]  ContentInfo       Pointer to the PKCS#7 DER-encoded ContentInfo that wraps
+                                an envelopedData to be decrypted.
+  @param[in]  ContentInfoSize   Size of the ContentInfo in bytes.
+  @param[in]  Flags             Flags for the decryption operation. Currently only
+                                CRYPTO_PKCS7_DEFAULT is supported, which indicates that
+                                the decrypted content is treated as binary data.
+  @param[out] OutData           Receives a pointer to the newly allocated buffer
+                                containing the decrypted content. The caller must free
+                                the returned buffer with FreePool().
+  @param[out] OutDataSize       Receives the size of the decrypted content in bytes.
+
+  @retval     TRUE              PKCS#7 data decryption succeeded.
+  @retval     FALSE             PKCS#7 data decryption failed.
+  @retval     FALSE             This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+Pkcs7Decrypt (
+  IN   CONST UINT8  *PemData,
+  IN   UINTN        PemSize,
+  IN   CONST CHAR8  *Password           OPTIONAL,
+  IN   CONST UINT8  *RecipientCert      OPTIONAL,
+  IN   UINTN        RecipientCertSize   OPTIONAL,
+  IN   CONST UINT8  *ContentInfo,
+  IN   UINTN        ContentInfoSize,
+  IN   UINT32       Flags,
+  OUT  UINT8        **OutData,
+  OUT  UINTN        *OutDataSize
   );
 
 /**
@@ -2153,6 +2934,380 @@ ImageTimestampVerify (
   IN  CONST UINT8  *TsaCert,
   IN  UINTN        CertSize,
   OUT EFI_TIME     *SigningTime
+  );
+
+/**
+  Retrieve the version from one X.509 certificate.
+
+  If Cert is NULL, then return FALSE.
+  If CertSize is 0, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]      Cert         Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize     Size of the X509 certificate in bytes.
+  @param[out]     Version      Pointer to the retrieved version integer.
+
+  @retval TRUE           The certificate version retrieved successfully.
+  @retval FALSE          If  Cert is NULL or CertSize is Zero.
+  @retval FALSE          The operation is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+X509GetVersion (
+  IN      CONST UINT8  *Cert,
+  IN      UINTN        CertSize,
+  OUT     UINTN        *Version
+  );
+
+/**
+  Retrieve the serialNumber from one X.509 certificate.
+
+  If Cert is NULL, then return FALSE.
+  If CertSize is 0, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]      Cert         Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize     Size of the X509 certificate in bytes.
+  @param[out]     SerialNumber  Pointer to the retrieved certificate SerialNumber bytes.
+  @param[in, out] SerialNumberSize  The size in bytes of the SerialNumber buffer on input,
+                               and the size of buffer returned SerialNumber on output.
+
+  @retval TRUE                     The certificate serialNumber retrieved successfully.
+  @retval FALSE                    If Cert is NULL or CertSize is Zero.
+                                   If SerialNumberSize is NULL.
+                                   If Certificate is invalid.
+  @retval FALSE                    If no SerialNumber exists.
+  @retval FALSE                    If the SerialNumber is NULL. The required buffer size
+                                   (including the final null) is returned in the
+                                   SerialNumberSize parameter.
+  @retval FALSE                    The operation is not supported.
+**/
+BOOLEAN
+EFIAPI
+X509GetSerialNumber (
+  IN      CONST UINT8 *Cert,
+  IN      UINTN CertSize,
+  OUT     UINT8 *SerialNumber, OPTIONAL
+  IN OUT  UINTN         *SerialNumberSize
+  );
+
+/**
+  Retrieve the issuer bytes from one X.509 certificate.
+
+  If Cert is NULL, then return FALSE.
+  If CertIssuerSize is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]      Cert         Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize     Size of the X509 certificate in bytes.
+  @param[out]     CertIssuer  Pointer to the retrieved certificate subject bytes.
+  @param[in, out] CertIssuerSize  The size in bytes of the CertIssuer buffer on input,
+                               and the size of buffer returned CertSubject on output.
+
+  @retval  TRUE   The certificate issuer retrieved successfully.
+  @retval  FALSE  Invalid certificate, or the CertIssuerSize is too small for the result.
+                  The CertIssuerSize will be updated with the required size.
+  @retval  FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+X509GetIssuerName (
+  IN      CONST UINT8  *Cert,
+  IN      UINTN        CertSize,
+  OUT     UINT8        *CertIssuer,
+  IN OUT  UINTN        *CertIssuerSize
+  );
+
+/**
+  Retrieve the Signature Algorithm from one X.509 certificate.
+
+  @param[in]      Cert             Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize         Size of the X509 certificate in bytes.
+  @param[out]     Oid              Signature Algorithm Object identifier buffer.
+  @param[in,out]  OidSize          Signature Algorithm Object identifier buffer size
+
+  @retval TRUE           The certificate Extension data retrieved successfully.
+  @retval FALSE                    If Cert is NULL.
+                                   If OidSize is NULL.
+                                   If Oid is not NULL and *OidSize is 0.
+                                   If Certificate is invalid.
+  @retval FALSE                    If no SignatureType.
+  @retval FALSE                    If the Oid is NULL. The required buffer size
+                                   is returned in the OidSize.
+  @retval FALSE                    The operation is not supported.
+**/
+BOOLEAN
+EFIAPI
+X509GetSignatureAlgorithm (
+  IN CONST UINT8 *Cert,
+  IN       UINTN CertSize,
+  OUT   UINT8 *Oid, OPTIONAL
+  IN OUT   UINTN       *OidSize
+  );
+
+/**
+  Retrieve Extension data from one X.509 certificate.
+
+  @param[in]      Cert             Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize         Size of the X509 certificate in bytes.
+  @param[in]      Oid              Object identifier buffer
+  @param[in]      OidSize          Object identifier buffer size
+  @param[out]     ExtensionData    Extension bytes.
+  @param[in, out] ExtensionDataSize Extension bytes size.
+
+  @retval TRUE                     The certificate Extension data retrieved successfully.
+  @retval TRUE                     The Certificate Extension is found, but the oid extension is not found.
+  @retval FALSE                    If Cert is NULL.
+                                   If ExtensionDataSize is NULL.
+                                   If ExtensionData is not NULL and *ExtensionDataSize is 0.
+                                   If Certificate is invalid.
+  @retval FALSE                    If the ExtensionData is NULL. The required buffer size
+                                   is returned in the ExtensionDataSize parameter.
+  @retval FALSE                    The operation is not supported.
+**/
+BOOLEAN
+EFIAPI
+X509GetExtensionData (
+  IN     CONST UINT8  *Cert,
+  IN     UINTN        CertSize,
+  IN     CONST UINT8  *Oid,
+  IN     UINTN        OidSize,
+  OUT UINT8           *ExtensionData,
+  IN OUT UINTN        *ExtensionDataSize
+  );
+
+/**
+  Retrieve the Validity from one X.509 certificate
+
+  If Cert is NULL, then return FALSE.
+  If CertIssuerSize is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]      Cert         Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize     Size of the X509 certificate in bytes.
+  @param[in]      From         notBefore Pointer to DateTime object.
+  @param[in,out]  FromSize     notBefore DateTime object size.
+  @param[in]      To           notAfter Pointer to DateTime object.
+  @param[in,out]  ToSize       notAfter DateTime object size.
+
+  Note: X509CompareDateTime to compare DateTime oject
+        x509SetDateTime to get a DateTime object from a DateTimeStr
+
+  @retval  TRUE   The certificate Validity retrieved successfully.
+  @retval  FALSE  Invalid certificate, or Validity retrieve failed.
+  @retval  FALSE  This interface is not supported.
+**/
+BOOLEAN
+EFIAPI
+X509GetValidity (
+  IN     CONST UINT8  *Cert,
+  IN     UINTN        CertSize,
+  IN     UINT8        *From,
+  IN OUT UINTN        *FromSize,
+  IN     UINT8        *To,
+  IN OUT UINTN        *ToSize
+  );
+
+/**
+  Format a DateTimeStr to DataTime object in DataTime Buffer
+
+  If DateTimeStr is NULL, then return FALSE.
+  If DateTimeSize is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]      DateTimeStr      DateTime string like YYYYMMDDhhmmssZ
+                                   Ref: https://www.w3.org/TR/NOTE-datetime
+                                   Z stand for UTC time
+  @param[out]     DateTime         Pointer to a DateTime object.
+  @param[in,out]  DateTimeSize     DateTime object buffer size.
+
+  @retval TRUE                     The DateTime object create successfully.
+  @retval FALSE                    If DateTimeStr is NULL.
+                                   If DateTimeSize is NULL.
+                                   If DateTime is not NULL and *DateTimeSize is 0.
+                                   If Year Month Day Hour Minute Second combination is invalid datetime.
+  @retval FALSE                    If the DateTime is NULL. The required buffer size
+                                   (including the final null) is returned in the
+                                   DateTimeSize parameter.
+  @retval FALSE                    The operation is not supported.
+**/
+BOOLEAN
+EFIAPI
+X509FormatDateTime (
+  IN   CONST CHAR8  *DateTimeStr,
+  OUT  VOID         *DateTime,
+  IN OUT UINTN      *DateTimeSize
+  );
+
+/**
+  Compare DateTime1 object and DateTime2 object.
+
+  If DateTime1 is NULL, then return -2.
+  If DateTime2 is NULL, then return -2.
+  If DateTime1 == DateTime2, then return 0
+  If DateTime1 > DateTime2, then return 1
+  If DateTime1 < DateTime2, then return -1
+
+  @param[in]      DateTime1         Pointer to a DateTime Ojbect
+  @param[in]      DateTime2         Pointer to a DateTime Object
+
+  @retval  0      If DateTime1 == DateTime2
+  @retval  1      If DateTime1 > DateTime2
+  @retval  -1     If DateTime1 < DateTime2
+**/
+INT32
+EFIAPI
+X509CompareDateTime (
+  IN  CONST  VOID  *DateTime1,
+  IN  CONST  VOID  *DateTime2
+  );
+
+/**
+  Retrieve the Key Usage from one X.509 certificate.
+
+  @param[in]      Cert             Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize         Size of the X509 certificate in bytes.
+  @param[out]     Usage            Key Usage (CRYPTO_X509_KU_*)
+
+  @retval  TRUE   The certificate Key Usage retrieved successfully.
+  @retval  FALSE  Invalid certificate, or Usage is NULL
+  @retval  FALSE  This interface is not supported.
+**/
+BOOLEAN
+EFIAPI
+X509GetKeyUsage (
+  IN    CONST UINT8  *Cert,
+  IN    UINTN        CertSize,
+  OUT   UINTN        *Usage
+  );
+
+/**
+  Retrieve the Extended Key Usage from one X.509 certificate.
+
+  @param[in]      Cert             Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize         Size of the X509 certificate in bytes.
+  @param[out]     Usage            Key Usage bytes.
+  @param[in, out] UsageSize        Key Usage buffer size in bytes.
+
+  @retval TRUE                     The Usage bytes retrieve successfully.
+  @retval FALSE                    If Cert is NULL.
+                                   If CertSize is NULL.
+                                   If Usage is not NULL and *UsageSize is 0.
+                                   If Cert is invalid.
+  @retval FALSE                    If the Usage is NULL. The required buffer size
+                                   is returned in the UsageSize parameter.
+  @retval FALSE                    The operation is not supported.
+**/
+BOOLEAN
+EFIAPI
+X509GetExtendedKeyUsage (
+  IN     CONST UINT8  *Cert,
+  IN     UINTN        CertSize,
+  OUT UINT8           *Usage,
+  IN OUT UINTN        *UsageSize
+  );
+
+/**
+  Verify one X509 certificate was issued by the trusted CA.
+  @param[in]      RootCert          Trusted Root Certificate buffer
+
+  @param[in]      RootCertLength    Trusted Root Certificate buffer length
+  @param[in]      CertChain         One or more ASN.1 DER-encoded X.509 certificates
+                                    where the first certificate is signed by the Root
+                                    Certificate or is the Root Certificate itself. and
+                                    subsequent certificate is signed by the preceding
+                                    certificate.
+  @param[in]      CertChainLength   Total length of the certificate chain, in bytes.
+
+  @retval  TRUE   All certificates was issued by the first certificate in X509Certchain.
+  @retval  FALSE  Invalid certificate or the certificate was not issued by the given
+                  trusted CA.
+**/
+BOOLEAN
+EFIAPI
+X509VerifyCertChain (
+  IN CONST UINT8  *RootCert,
+  IN UINTN        RootCertLength,
+  IN CONST UINT8  *CertChain,
+  IN UINTN        CertChainLength
+  );
+
+/**
+  Get one X509 certificate from CertChain.
+
+  @param[in]      CertChain         One or more ASN.1 DER-encoded X.509 certificates
+                                    where the first certificate is signed by the Root
+                                    Certificate or is the Root Certificate itself. and
+                                    subsequent certificate is signed by the preceding
+                                    certificate.
+  @param[in]      CertChainLength   Total length of the certificate chain, in bytes.
+
+  @param[in]      CertIndex         Index of certificate. If index is -1 indecate the
+                                    last certificate in CertChain.
+
+  @param[out]     Cert              The certificate at the index of CertChain.
+  @param[out]     CertLength        The length certificate at the index of CertChain.
+
+  @retval  TRUE   Success.
+  @retval  FALSE  Failed to get certificate from certificate chain.
+**/
+BOOLEAN
+EFIAPI
+X509GetCertFromCertChain (
+  IN CONST UINT8   *CertChain,
+  IN UINTN         CertChainLength,
+  IN CONST INT32   CertIndex,
+  OUT CONST UINT8  **Cert,
+  OUT UINTN        *CertLength
+  );
+
+/**
+  Retrieve the tag and length of the tag.
+
+  @param Ptr      The position in the ASN.1 data
+  @param End      End of data
+  @param Length   The variable that will receive the length
+  @param Tag      The expected tag
+
+  @retval      TRUE   Get tag successful
+  @retval      FALSe  Failed to get tag or tag not match
+**/
+BOOLEAN
+EFIAPI
+Asn1GetTag (
+  IN OUT UINT8    **Ptr,
+  IN CONST UINT8  *End,
+  OUT UINTN       *Length,
+  IN     UINT32   Tag
+  );
+
+/**
+  Retrieve the basic constraints from one X.509 certificate.
+
+  @param[in]      Cert                     Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize                 size of the X509 certificate in bytes.
+  @param[out]     BasicConstraints         basic constraints bytes.
+  @param[in, out] BasicConstraintsSize     basic constraints buffer size in bytes.
+
+  @retval TRUE                     The basic constraints retrieve successfully.
+  @retval FALSE                    If cert is NULL.
+                                   If cert_size is NULL.
+                                   If basic_constraints is not NULL and *basic_constraints_size is 0.
+                                   If cert is invalid.
+  @retval FALSE                    The required buffer size is small.
+                                   The return buffer size is basic_constraints_size parameter.
+  @retval FALSE                    If no Extension entry match oid.
+  @retval FALSE                    The operation is not supported.
+ **/
+BOOLEAN
+EFIAPI
+X509GetExtendedBasicConstraints             (
+  CONST UINT8  *Cert,
+  UINTN        CertSize,
+  UINT8        *BasicConstraints,
+  UINTN        *BasicConstraintsSize
   );
 
 // =====================================================================================
@@ -2332,6 +3487,8 @@ DhComputeKey (
   If Seed is NULL, then default seed is used.
   If this interface is not supported, then return FALSE.
 
+  RandomSeed has not been implemented in BaseCryptoLibMbedTls.
+
   @param[in]  Seed      Pointer to seed value.
                         If NULL, default seed is used.
   @param[in]  SeedSize  Size of seed value.
@@ -2403,4 +3560,2297 @@ HkdfSha256ExtractAndExpand (
   IN   UINTN        OutSize
   );
 
-#endif // __BASE_CRYPT_LIB_H__
+/**
+  Derive SHA256 HMAC-based Extract key Derivation Function (HKDF).
+
+  @param[in]   Key              Pointer to the user-supplied key.
+  @param[in]   KeySize          key size in bytes.
+  @param[in]   Salt             Pointer to the salt(non-secret) value.
+  @param[in]   SaltSize         salt size in bytes.
+  @param[out]  PrkOut           Pointer to buffer to receive hkdf value.
+  @param[in]   PrkOutSize       size of hkdf bytes to generate.
+
+  @retval true   Hkdf generated successfully.
+  @retval false  Hkdf generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+HkdfSha256Extract (
+  IN CONST UINT8  *Key,
+  IN UINTN        KeySize,
+  IN CONST UINT8  *Salt,
+  IN UINTN        SaltSize,
+  OUT UINT8       *PrkOut,
+  UINTN           PrkOutSize
+  );
+
+/**
+  Derive SHA256 HMAC-based Expand Key Derivation Function (HKDF).
+
+  @param[in]   Prk              Pointer to the user-supplied key.
+  @param[in]   PrkSize          Key size in bytes.
+  @param[in]   Info             Pointer to the application specific info.
+  @param[in]   InfoSize         Info size in bytes.
+  @param[out]  Out              Pointer to buffer to receive hkdf value.
+  @param[in]   OutSize          Size of hkdf bytes to generate.
+
+  @retval TRUE   Hkdf generated successfully.
+  @retval FALSE  Hkdf generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+HkdfSha256Expand (
+  IN   CONST UINT8  *Prk,
+  IN   UINTN        PrkSize,
+  IN   CONST UINT8  *Info,
+  IN   UINTN        InfoSize,
+  OUT  UINT8        *Out,
+  IN   UINTN        OutSize
+  );
+
+/**
+  Derive SHA384 HMAC-based Extract-and-Expand Key Derivation Function (HKDF).
+
+  @param[in]   Key              Pointer to the user-supplied key.
+  @param[in]   KeySize          Key size in bytes.
+  @param[in]   Salt             Pointer to the salt(non-secret) value.
+  @param[in]   SaltSize         Salt size in bytes.
+  @param[in]   Info             Pointer to the application specific info.
+  @param[in]   InfoSize         Info size in bytes.
+  @param[out]  Out              Pointer to buffer to receive hkdf value.
+  @param[in]   OutSize          Size of hkdf bytes to generate.
+
+  @retval TRUE   Hkdf generated successfully.
+  @retval FALSE  Hkdf generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+HkdfSha384ExtractAndExpand (
+  IN   CONST UINT8  *Key,
+  IN   UINTN        KeySize,
+  IN   CONST UINT8  *Salt,
+  IN   UINTN        SaltSize,
+  IN   CONST UINT8  *Info,
+  IN   UINTN        InfoSize,
+  OUT  UINT8        *Out,
+  IN   UINTN        OutSize
+  );
+
+/**
+  Derive SHA384 HMAC-based Extract key Derivation Function (HKDF).
+
+  @param[in]   Key              Pointer to the user-supplied key.
+  @param[in]   KeySize          key size in bytes.
+  @param[in]   Salt             Pointer to the salt(non-secret) value.
+  @param[in]   SaltSize         salt size in bytes.
+  @param[out]  PrkOut           Pointer to buffer to receive hkdf value.
+  @param[in]   PrkOutSize       size of hkdf bytes to generate.
+
+  @retval true   Hkdf generated successfully.
+  @retval false  Hkdf generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+HkdfSha384Extract (
+  IN CONST UINT8  *Key,
+  IN UINTN        KeySize,
+  IN CONST UINT8  *Salt,
+  IN UINTN        SaltSize,
+  OUT UINT8       *PrkOut,
+  UINTN           PrkOutSize
+  );
+
+/**
+  Derive SHA384 HMAC-based Expand Key Derivation Function (HKDF).
+
+  @param[in]   Prk              Pointer to the user-supplied key.
+  @param[in]   PrkSize          Key size in bytes.
+  @param[in]   Info             Pointer to the application specific info.
+  @param[in]   InfoSize         Info size in bytes.
+  @param[out]  Out              Pointer to buffer to receive hkdf value.
+  @param[in]   OutSize          Size of hkdf bytes to generate.
+
+  @retval TRUE   Hkdf generated successfully.
+  @retval FALSE  Hkdf generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+HkdfSha384Expand (
+  IN   CONST UINT8  *Prk,
+  IN   UINTN        PrkSize,
+  IN   CONST UINT8  *Info,
+  IN   UINTN        InfoSize,
+  OUT  UINT8        *Out,
+  IN   UINTN        OutSize
+  );
+
+/**
+  Derive SHA512 HMAC-based Extract-and-Expand Key Derivation Function (HKDF).
+
+  @param[in]   Key              Pointer to the user-supplied key.
+  @param[in]   KeySize          Key size in bytes.
+  @param[in]   Salt             Pointer to the salt (non-secret) value.
+  @param[in]   SaltSize         Salt size in bytes.
+  @param[in]   Info             Pointer to the application specific info.
+  @param[in]   InfoSize         Info size in bytes.
+  @param[out]  Out              Pointer to buffer to receive hkdf value.
+  @param[in]   OutSize          Size of hkdf bytes to generate.
+
+  @retval TRUE   Hkdf generated successfully.
+  @retval FALSE  Hkdf generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+HkdfSha512ExtractAndExpand (
+  IN   CONST UINT8  *Key,
+  IN   UINTN        KeySize,
+  IN   CONST UINT8  *Salt,
+  IN   UINTN        SaltSize,
+  IN   CONST UINT8  *Info,
+  IN   UINTN        InfoSize,
+  OUT  UINT8        *Out,
+  IN   UINTN        OutSize
+  );
+
+/**
+  Derive SHA512 HMAC-based Extract key Derivation Function (HKDF).
+
+  @param[in]   Key              Pointer to the user-supplied key.
+  @param[in]   KeySize          key size in bytes.
+  @param[in]   Salt             Pointer to the salt (non-secret) value.
+  @param[in]   SaltSize         salt size in bytes.
+  @param[out]  PrkOut           Pointer to buffer to receive hkdf value.
+  @param[in]   PrkOutSize       size of hkdf bytes to generate.
+
+  @retval TRUE   Hkdf generated successfully.
+  @retval FALSE  Hkdf generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+HkdfSha512Extract (
+  IN CONST UINT8  *Key,
+  IN UINTN        KeySize,
+  IN CONST UINT8  *Salt,
+  IN UINTN        SaltSize,
+  OUT UINT8       *PrkOut,
+  UINTN           PrkOutSize
+  );
+
+/**
+  Derive SHA512 HMAC-based Expand Key Derivation Function (HKDF).
+
+  @param[in]   Prk              Pointer to the user-supplied key.
+  @param[in]   PrkSize          Key size in bytes.
+  @param[in]   Info             Pointer to the application specific info.
+  @param[in]   InfoSize         Info size in bytes.
+  @param[out]  Out              Pointer to buffer to receive hkdf value.
+  @param[in]   OutSize          Size of hkdf bytes to generate.
+
+  @retval TRUE   Hkdf generated successfully.
+  @retval FALSE  Hkdf generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+HkdfSha512Expand (
+  IN   CONST UINT8  *Prk,
+  IN   UINTN        PrkSize,
+  IN   CONST UINT8  *Info,
+  IN   UINTN        InfoSize,
+  OUT  UINT8        *Out,
+  IN   UINTN        OutSize
+  );
+
+// =====================================================================================
+//    Big number primitives
+// =====================================================================================
+
+/**
+  Allocate new Big Number.
+
+  @retval New BigNum opaque structure or NULL on failure.
+**/
+VOID *
+EFIAPI
+BigNumInit (
+  VOID
+  );
+
+/**
+  Allocate new Big Number and assign the provided value to it.
+
+  @param[in]   Buf    Big endian encoded buffer.
+  @param[in]   Len    Buffer length.
+
+  @retval New BigNum opaque structure or NULL on failure.
+**/
+VOID *
+EFIAPI
+BigNumFromBin (
+  IN CONST UINT8  *Buf,
+  IN UINTN        Len
+  );
+
+/**
+  Convert the absolute value of Bn into big-endian form and store it at Buf.
+  The Buf array should have at least BigNumBytes() in it.
+
+  @param[in]   Bn     Big number to convert.
+  @param[out]  Buf    Output buffer.
+
+  @retval The length of the big-endian number placed at Buf or -1 on error.
+**/
+INTN
+EFIAPI
+BigNumToBin (
+  IN CONST VOID  *Bn,
+  OUT UINT8      *Buf
+  );
+
+/**
+  Free the Big Number.
+
+  @param[in]   Bn      Big number to free.
+  @param[in]   Clear   TRUE if the buffer should be cleared.
+**/
+VOID
+EFIAPI
+BigNumFree (
+  IN VOID     *Bn,
+  IN BOOLEAN  Clear
+  );
+
+/**
+  Calculate the sum of two Big Numbers.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnB     Big number.
+  @param[out]  BnRes   The result of BnA + BnB.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+BigNumAdd (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB,
+  OUT VOID       *BnRes
+  );
+
+/**
+  Subtract two Big Numbers.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnB     Big number.
+  @param[out]  BnRes   The result of BnA - BnB.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+BigNumSub (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB,
+  OUT VOID       *BnRes
+  );
+
+/**
+  Calculate BnRes = BnA * BnB.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnB     Big number.
+  @param[out]  BnRes   The result of BnA * BnB.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+BigNumMul (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB,
+  OUT VOID       *BnRes
+  );
+
+/**
+  Calculate remainder: BnRes = BnA % BnB.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnB     Big number.
+  @param[out]  BnRes   The result of BnA % BnB.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+BigNumMod (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB,
+  OUT VOID       *BnRes
+  );
+
+/**
+  Compute BnA to the BnP-th power modulo BnM.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnP     Big number (power).
+  @param[in]   BnM     Big number (modulo).
+  @param[out]  BnRes   The result of (BnA ^ BnP) % BnM.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+BigNumExpMod (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnP,
+  IN CONST VOID  *BnM,
+  OUT VOID       *BnRes
+  );
+
+/**
+  Compute BnA inverse modulo BnM.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnM     Big number (modulo).
+  @param[out]  BnRes   The result, such that (BnA * BnRes) % BnM == 1.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+BigNumInverseMod (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnM,
+  OUT VOID       *BnRes
+  );
+
+/**
+  Divide two Big Numbers.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnB     Big number.
+  @param[out]  BnRes   The result, such that BnA / BnB.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+BigNumDiv (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB,
+  OUT VOID       *BnRes
+  );
+
+/**
+  Divide two Big Numbers and obtain the quotient and the remainder.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnB     Big number.
+  @param[out]  BnResQ  The result, such that BnA / BnB.
+  @param[out]  BnResR  The result, such that BnA % BnB.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+BigNumDiv2 (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB,
+  OUT VOID       *BnResQ,
+  OUT VOID       *BnResR
+  );
+
+/**
+  Multiply two Big Numbers modulo BnM.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnB     Big number.
+  @param[in]   BnM     Big number (modulo).
+  @param[out]  BnRes   The result, such that (BnA * BnB) % BnM.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+BigNumMulMod (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB,
+  IN CONST VOID  *BnM,
+  OUT VOID       *BnRes
+  );
+
+/**
+  Computes the greatest common divisor (GCD) of two BIGNUM values.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnB     Big number.
+  @param[out]  BnRes   The result, such that GCD(BnA, BnB).
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+BigNumGcd (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB,
+  OUT VOID       *BnRes
+  );
+
+/**
+  Compare two Big Numbers.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnB     Big number.
+
+  @retval 0          BnA == BnB.
+  @retval 1          BnA > BnB.
+  @retval -1         BnA < BnB.
+**/
+INTN
+EFIAPI
+BigNumCmp (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB
+  );
+
+/**
+  Get number of bits in Bn.
+
+  @param[in]   Bn     Big number.
+
+  @retval Number of bits.
+**/
+
+UINTN
+EFIAPI
+BigNumBits (
+  IN CONST VOID  *Bn
+  );
+
+/**
+  Get number of bytes in Bn.
+
+  @param[in]   Bn     Big number.
+
+  @retval Number of bytes.
+**/
+UINTN
+EFIAPI
+BigNumBytes (
+  IN CONST VOID  *Bn
+  );
+
+/**
+  Checks if Big Number equals to the given Num.
+
+  @param[in]   Bn     Big number.
+  @param[in]   Num    Number.
+
+  @retval TRUE   iff Bn == Num.
+  @retval FALSE  otherwise.
+**/
+BOOLEAN
+EFIAPI
+BigNumIsWord (
+  IN CONST VOID  *Bn,
+  IN UINTN       Num
+  );
+
+/**
+  Checks if Big Number is odd.
+
+  @param[in]   Bn     Big number.
+
+  @retval TRUE   Bn is odd (Bn % 2 == 1).
+  @retval FALSE  otherwise.
+**/
+BOOLEAN
+EFIAPI
+BigNumIsOdd (
+  IN CONST VOID  *Bn
+  );
+
+/**
+  Copy Big number.
+
+  @param[out]  BnDst     Destination.
+  @param[in]   BnSrc     Source.
+
+  @retval BnDst on success.
+  @retval NULL otherwise.
+**/
+VOID *
+EFIAPI
+BigNumCopy (
+  OUT VOID       *BnDst,
+  IN CONST VOID  *BnSrc
+  );
+
+/**
+  Get constant Big number with value of "1".
+  This may be used to save expensive allocations.
+
+  @retval Big Number with value of 1.
+**/
+CONST VOID *
+EFIAPI
+BigNumValueOne (
+  VOID
+  );
+
+/**
+  Shift right Big Number.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   Bn      Big number.
+  @param[in]   N       Number of bits to shift.
+  @param[out]  BnRes   The result.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+BigNumRShift (
+  IN CONST VOID  *Bn,
+  IN UINTN       N,
+  OUT VOID       *BnRes
+  );
+
+/**
+  Mark Big Number for constant time computations.
+  This function should be called before any constant time computations are
+  performed on the given Big number.
+
+  @param[in]   Bn     Big number.
+**/
+VOID
+EFIAPI
+BigNumConstTime (
+  IN VOID  *Bn
+  );
+
+/**
+  Calculate square modulo.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnM     Big number (modulo).
+  @param[out]  BnRes   The result, such that (BnA ^ 2) % BnM.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+BigNumSqrMod (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnM,
+  OUT VOID       *BnRes
+  );
+
+/**
+  Create new Big Number computation context. This is an opaque structure
+  which should be passed to any function that requires it. The BN context is
+  needed to optimize calculations and expensive allocations.
+
+  @retval Big Number context struct or NULL on failure.
+**/
+VOID *
+EFIAPI
+BigNumNewContext (
+  VOID
+  );
+
+/**
+  Free Big Number context that was allocated with BigNumNewContext().
+
+  @param[in]   BnCtx     Big number context to free.
+**/
+VOID
+EFIAPI
+BigNumContextFree (
+  IN VOID  *BnCtx
+  );
+
+/**
+  Marks the start of a temporary BIGNUM allocation frame.
+  Must be paired with BigNumContextEnd().
+
+  @param[in]   BnCtx     Big number context.
+**/
+VOID
+EFIAPI
+BigNumContextStart (
+  IN VOID  *BnCtx
+  );
+
+/**
+  Ends the current BN_CTX allocation frame and releases all temporary BIGNUMs.
+
+  @param[in]   BnCtx     Big number context.
+**/
+VOID
+EFIAPI
+BigNumContextEnd (
+  IN VOID  *BnCtx
+  );
+
+/**
+  Returns a temporary BIGNUM from the given BN_CTX.
+  The returned BIGNUM is managed by the context and must not be freed manually.
+  Must be called between BigNumContextStart() and BigNumContextEnd().
+
+  @param[in]   BnCtx     Big number context.
+**/
+VOID *
+EFIAPI
+BigNumContextGet (
+  IN VOID  *BnCtx
+  );
+
+/**
+  Set Big Number to a given value.
+
+  @param[in]   Bn     Big number to set.
+  @param[in]   Val    Value to set.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+BigNumSetUint (
+  IN VOID   *Bn,
+  IN UINTN  Val
+  );
+
+/**
+  Add two Big Numbers modulo BnM.
+
+  @param[in]   BnA       Big number.
+  @param[in]   BnB       Big number.
+  @param[in]   BnM       Big number (modulo).
+  @param[out]  BnRes     The result, such that (BnA + BnB) % BnM.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+BigNumAddMod (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB,
+  IN CONST VOID  *BnM,
+  OUT VOID       *BnRes
+  );
+
+// =====================================================================================
+//    Basic Elliptic Curve Primitives
+// =====================================================================================
+
+/**
+  Initialize new opaque EcGroup object. This object represents an EC curve and
+  and is used for calculation within this group. This object should be freed
+  using EcGroupFree() function.
+
+  @param[in]  CryptoNid   Identifying number for the ECC curve (Defined in
+                          BaseCryptLib.h).
+
+  @retval EcGroup object  On success.
+  @retval NULL            On failure.
+**/
+VOID *
+EFIAPI
+EcGroupInit (
+  IN UINTN  CryptoNid
+  );
+
+/**
+  Create a new EC_GROUP over a prime field GF(p).
+
+  @param[in] BnPrime    Group prime number.
+  @param[in] BnA        A coefficient.
+  @param[in] BnB        B coefficient.
+  @param[in] BnCtx      BN context.
+
+  @retval EcGroup object  On success.
+  @retval NULL            On failure.
+**/
+VOID *
+EFIAPI
+EcGroupInitGFp (
+  IN VOID  *BnPrime,
+  IN VOID  *BnA,
+  IN VOID  *BnB,
+  IN VOID  *BnCtx        OPTIONAL
+  );
+
+/**
+  Get EC curve parameters. While elliptic curve equation is Y^2 mod P = (X^3 + AX + B) Mod P.
+  This function will set the provided Big Number objects  to the corresponding
+  values. The caller needs to make sure all the "out" BigNumber parameters
+  are properly initialized.
+
+  @param[in]  EcGroup    EC group object.
+  @param[out] BnPrime    Group prime number.
+  @param[out] BnA        A coefficient.
+  @param[out] BnB        B coefficient.
+  @param[in]  BnCtx      BN context.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+EcGroupGetCurve (
+  IN CONST VOID  *EcGroup,
+  OUT VOID       *BnPrime,
+  OUT VOID       *BnA,
+  OUT VOID       *BnB,
+  IN VOID        *BnCtx
+  );
+
+/**
+  Get EC group order.
+  This function will set the provided Big Number object to the corresponding
+  value. The caller needs to make sure that the "out" BigNumber parameter
+  is properly initialized.
+
+  @param[in]  EcGroup   EC group object.
+  @param[out] BnOrder   Group prime number.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+EcGroupGetOrder (
+  IN VOID   *EcGroup,
+  OUT VOID  *BnOrder
+  );
+
+/**
+  Free previously allocated EC group object using EcGroupInit().
+
+  @param[in]  EcGroup   EC group object to free.
+**/
+VOID
+EFIAPI
+EcGroupFree (
+  IN VOID  *EcGroup
+  );
+
+/**
+  Set the generator for an EC_GROUP.
+
+  @param[in]  EcGroup           The EC_GROUP object.
+  @param[in]  EcPointGenerator  The generator point G.
+  @param[in]  BnOrder           The order of the generator.
+  @param[in]  BnCoFactor        The cofactor of the group.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+EcGroupSetGenerator (
+  IN VOID        *EcGroup,
+  IN CONST VOID  *EcPointGenerator,
+  IN CONST VOID  *BnOrder,
+  IN CONST VOID  *BnCoFactor            OPTIONAL
+  );
+
+/**
+  Initialize new opaque EC Point object. This object represents an EC point
+  within the given EC group (curve).
+
+  @param[in]  EC Group, properly initialized using EcGroupInit().
+
+  @retval EC Point object  On success.
+  @retval NULL             On failure.
+**/
+VOID *
+EFIAPI
+EcPointInit (
+  IN CONST VOID  *EcGroup
+  );
+
+/**
+  Free previously allocated EC Point object using EcPointInit().
+
+  @param[in]  EcPoint   EC Point to free.
+  @param[in]  Clear     TRUE iff the memory should be cleared.
+**/
+VOID
+EFIAPI
+EcPointDeInit (
+  IN VOID     *EcPoint,
+  IN BOOLEAN  Clear
+  );
+
+/**
+  Get EC point affine (x,y) coordinates.
+  This function will set the provided Big Number objects to the corresponding
+  values. The caller needs to make sure all the "out" BigNumber parameters
+  are properly initialized.
+
+  @param[in]  EcGroup    EC group object.
+  @param[in]  EcPoint    EC point object.
+  @param[out] BnX        X coordinate.
+  @param[out] BnY        Y coordinate.
+  @param[in]  BnCtx      BN context, created with BigNumNewContext().
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+EcPointGetAffineCoordinates (
+  IN CONST VOID  *EcGroup,
+  IN CONST VOID  *EcPoint,
+  OUT VOID       *BnX,
+  OUT VOID       *BnY,
+  IN VOID        *BnCtx
+  );
+
+/**
+  Set EC point affine (x,y) coordinates.
+
+  @param[in]  EcGroup    EC group object.
+  @param[in]  EcPoint    EC point object.
+  @param[in]  BnX        X coordinate.
+  @param[in]  BnY        Y coordinate.
+  @param[in]  BnCtx      BN context, created with BigNumNewContext().
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+EcPointSetAffineCoordinates (
+  IN CONST VOID  *EcGroup,
+  IN VOID        *EcPoint,
+  IN CONST VOID  *BnX,
+  IN CONST VOID  *BnY,
+  IN VOID        *BnCtx
+  );
+
+/**
+  EC Point addition. EcPointResult = EcPointA + EcPointB.
+
+  @param[in]  EcGroup          EC group object.
+  @param[out] EcPointResult    EC point to hold the result. The point should
+                               be properly initialized.
+  @param[in]  EcPointA         EC Point.
+  @param[in]  EcPointB         EC Point.
+  @param[in]  BnCtx            BN context, created with BigNumNewContext().
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+EcPointAdd (
+  IN CONST VOID  *EcGroup,
+  OUT VOID       *EcPointResult,
+  IN CONST VOID  *EcPointA,
+  IN CONST VOID  *EcPointB,
+  IN VOID        *BnCtx
+  );
+
+/**
+  Variable EC point multiplication. EcPointResult = EcPoint * BnPScalar.
+
+  @param[in]  EcGroup          EC group object.
+  @param[out] EcPointResult    EC point to hold the result. The point should
+                               be properly initialized.
+  @param[in]  EcPoint          EC Point.
+  @param[in]  BnPScalar        P Scalar.
+  @param[in]  BnCtx            BN context, created with BigNumNewContext().
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+EcPointMul (
+  IN CONST VOID  *EcGroup,
+  OUT VOID       *EcPointResult,
+  IN CONST VOID  *EcPoint,
+  IN CONST VOID  *BnPScalar,
+  IN VOID        *BnCtx
+  );
+
+/**
+  Variable EC point multiplication. EcPointResult = BnGScalar * G + EcPoint * BnPScalar.
+
+  @param[in]  EcGroup          EC group object.
+  @param[out] EcPointResult    EC point to hold the result. The point should
+                               be properly initialized.
+  @param[in]  BnGScalar        G Scalar.
+  @param[in]  EcPoint          EC Point.
+  @param[in]  BnPScalar        P Scalar.
+  @param[in]  BnCtx            BN context, created with BigNumNewContext().
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+EcPointMul2 (
+  IN CONST VOID  *EcGroup,
+  OUT VOID       *EcPointResult,
+  IN CONST VOID  *BnGScalar,
+  IN CONST VOID  *EcPoint,
+  IN CONST VOID  *BnPScalar,
+  IN VOID        *BnCtx
+  );
+
+/**
+  Compute a linear combination of multiple EC points.
+
+  This function calculates:
+    EcPointResult = BnGScalar * G + Σ (EcPoints[i] * BnPScalars[i])
+
+  where G is the generator of the EC_GROUP, and Q[i] are arbitrary points.
+
+  @param[in]  EcGroup          EC group object.
+  @param[out] EcPointResult    EC point to hold the result. The point should
+                               be properly initialized.
+  @param[in]  BnGScalar        G Scalar.
+                               May be NULL if not used.
+  @param[in]  Count            The number of EcPoints and P scalars.
+  @param[in]  EcPoints         EC Points.
+  @param[in]  BnPScalars       P Scalars.
+  @param[in]  BnCtx            BN context, created with BigNumNewContext().
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+EcPointsMul (
+  IN CONST VOID  *EcGroup,
+  OUT VOID       *EcPointResult,
+  IN CONST VOID  *BnGScalar,
+  UINTN          Count,
+  IN CONST VOID  *EcPoints[],
+  IN CONST VOID  *BnPScalars[],
+  IN VOID        *BnCtx
+  );
+
+/**
+  Retrieve the EC Public Key from PEM key data.
+
+  @param[in]  PemData      Pointer to the PEM-encoded key data to be retrieved.
+  @param[in]  PemSize      Size of the PEM key data in bytes.
+  @param[in]  Password     NULL-terminated passphrase used for encrypted
+                           PEM key data.
+  @param[out] EcContext    Pointer to new-generated EC DSA context which
+                           contain the retrieved EC public key component.
+                           Use EcFree() function to free the resource.
+
+  If PemData is NULL, then return FALSE.
+  If EcContext is NULL, then return FALSE.
+
+  @retval  TRUE   EC Public Key was retrieved successfully.
+  @retval  FALSE  Invalid PEM key data or incorrect password.
+
+**/
+BOOLEAN
+EFIAPI
+EcGetPublicKeyFromPem (
+  IN   CONST UINT8  *PemData,
+  IN   UINTN        PemSize,
+  IN   CONST CHAR8  *Password,
+  OUT  VOID         **EcContext
+  );
+
+/**
+  Convert the EC Public Key to PEM key data.
+
+  @param[in]      EcContext   Pointer to EC DSA context.
+  @param[out]     PemData     Pointer to the PEM-encoded key data to be
+                              retrieved.
+  @param[in, out] PemSize     On input, size of PemData in bytes.
+                              On output, size of data returned or required size.
+
+  If EcContext is NULL, then return FALSE.
+  If PemSize is NULL, then return FALSE.
+  If PemData is NULL and *PemSize is zero, then return FALSE and set
+  *PemSize to the required size of the PemData buffer.
+  If PemData is NULL and *PemSize is not zero, then return FALSE.
+  If PemData is not NULL and *PemSize is too small, then return FALSE and
+  set *PemSize to the required size of the PemData buffer.
+
+  @retval  TRUE   EC Public Key was converted to the PEM data successfully.
+  @retval  FALSE  Invalid EC Context.
+
+**/
+BOOLEAN
+EFIAPI
+EcPublicKeyToPEM (
+  IN  VOID      *EcContext,
+  OUT UINT8     *PemData,
+  IN OUT UINTN  *PemSize
+  );
+
+/**
+  Calculate the inverse of the supplied EC point.
+
+  @param[in]     EcGroup   EC group object.
+  @param[in,out] EcPoint   EC point to invert.
+  @param[in]     BnCtx     BN context, created with BigNumNewContext().
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+EcPointInvert (
+  IN CONST VOID  *EcGroup,
+  IN OUT VOID    *EcPoint,
+  IN VOID        *BnCtx
+  );
+
+/**
+  Check if the supplied point is on EC curve.
+
+  @param[in]  EcGroup   EC group object.
+  @param[in]  EcPoint   EC point to check.
+  @param[in]  BnCtx     BN context, created with BigNumNewContext().
+
+  @retval TRUE          On curve.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+EcPointIsOnCurve (
+  IN CONST VOID  *EcGroup,
+  IN CONST VOID  *EcPoint,
+  IN VOID        *BnCtx
+  );
+
+/**
+  Check if the supplied point is at infinity.
+
+  @param[in]  EcGroup   EC group object.
+  @param[in]  EcPoint   EC point to check.
+
+  @retval TRUE          At infinity.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+EcPointIsAtInfinity (
+  IN CONST VOID  *EcGroup,
+  IN CONST VOID  *EcPoint
+  );
+
+/**
+  Check if EC points are equal.
+
+  @param[in]  EcGroup   EC group object.
+  @param[in]  EcPointA  EC point A.
+  @param[in]  EcPointB  EC point B.
+  @param[in]  BnCtx     BN context, created with BigNumNewContext().
+
+  @retval TRUE          A == B.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+EcPointEqual (
+  IN CONST VOID  *EcGroup,
+  IN CONST VOID  *EcPointA,
+  IN CONST VOID  *EcPointB,
+  IN VOID        *BnCtx
+  );
+
+/**
+  Set EC point compressed coordinates. Points can be described in terms of
+  their compressed coordinates. For a point (x, y), for any given value for x
+  such that the point is on the curve there will only ever be two possible
+  values for y. Therefore, a point can be set using this function where BnX is
+  the x coordinate and YBit is a value 0 or 1 to identify which of the two
+  possible values for y should be used.
+
+  @param[in]  EcGroup    EC group object.
+  @param[in]  EcPoint    EC Point.
+  @param[in]  BnX        X coordinate.
+  @param[in]  YBit       0 or 1 to identify which Y value is used.
+  @param[in]  BnCtx      BN context, created with BigNumNewContext().
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+EcPointSetCompressedCoordinates (
+  IN CONST VOID  *EcGroup,
+  IN VOID        *EcPoint,
+  IN CONST VOID  *BnX,
+  IN UINT8       YBit,
+  IN VOID        *BnCtx
+  );
+
+// =====================================================================================
+//    Elliptic Curve Diffie Hellman Primitives
+// =====================================================================================
+
+/**
+  Allocates and Initializes one Elliptic Curve Context for subsequent use
+  with the NID.
+
+  @param[in]  Nid cipher NID
+  @return     Pointer to the Elliptic Curve Context that has been initialized.
+              If the allocations fails, EcNewByNid() returns NULL.
+**/
+VOID *
+EFIAPI
+EcNewByNid (
+  IN UINTN  Nid
+  );
+
+/**
+  Release the specified EC context.
+
+  @param[in]  EcContext  Pointer to the EC context to be released.
+**/
+VOID
+EFIAPI
+EcFree (
+  IN  VOID  *EcContext
+  );
+
+/**
+  Return the NID for the Elliptic Curve Context.
+
+  @param[in]  EcContext  Pointer to the EC context.
+  @param[out] Nid        Identifying number for the ECC curve (Defined in
+                         BaseCryptLib.h).
+
+  @retval  TRUE   The NID for the EC key component was retrieved successfully.
+  @retval  FALSE  Invalid EC key component.
+**/
+BOOLEAN
+EFIAPI
+EcGetCurveNid (
+  IN      VOID   *EcContext,
+  OUT     UINTN  *Nid
+  );
+
+/**
+  Generates EC key and returns EC public key (X, Y), Please note, this function uses
+  pseudo random number generator. The caller must make sure RandomSeed()
+  function was properly called before.
+  The Ec context should be correctly initialized by EcNewByNid.
+  This function generates random secret, and computes the public key (X, Y), which is
+  returned via parameter Public, PublicSize.
+  X is the first half of Public with size being PublicSize / 2,
+  Y is the second half of Public with size being PublicSize / 2.
+  EC context is updated accordingly.
+  If the Public buffer is too small to hold the public X, Y, FALSE is returned and
+  PublicSize is set to the required buffer size to obtain the public X, Y.
+  For P-256, the PublicSize is 64. First 32-byte is X, Second 32-byte is Y.
+  For P-384, the PublicSize is 96. First 48-byte is X, Second 48-byte is Y.
+  For P-521, the PublicSize is 132. First 66-byte is X, Second 66-byte is Y.
+  If EcContext is NULL, then return FALSE.
+  If PublicSize is NULL, then return FALSE.
+  If PublicSize is large enough but Public is NULL, then return FALSE.
+  @param[in, out]  EcContext      Pointer to the EC context.
+  @param[out]      PublicKey      Pointer to t buffer to receive generated public X,Y.
+  @param[in, out]  PublicKeySize  On input, the size of Public buffer in bytes.
+                                  On output, the size of data returned in Public buffer in bytes.
+  @retval TRUE   EC public X,Y generation succeeded.
+  @retval FALSE  EC public X,Y generation failed.
+  @retval FALSE  PublicKeySize is not large enough.
+**/
+BOOLEAN
+EFIAPI
+EcGenerateKey (
+  IN OUT  VOID   *EcContext,
+  OUT     UINT8  *PublicKey,
+  IN OUT  UINTN  *PublicKeySize
+  );
+
+/**
+  Gets the public key component from the established EC context.
+  The Ec context should be correctly initialized by EcNewByNid, and successfully
+  generate key pair from EcGenerateKey().
+  For P-256, the PublicSize is 64. First 32-byte is X, Second 32-byte is Y.
+  For P-384, the PublicSize is 96. First 48-byte is X, Second 48-byte is Y.
+  For P-521, the PublicSize is 132. First 66-byte is X, Second 66-byte is Y.
+  @param[in, out]  EcContext      Pointer to EC context being set.
+  @param[out]      PublicKey      Pointer to t buffer to receive generated public X,Y.
+  @param[in, out]  PublicKeySize  On input, the size of Public buffer in bytes.
+                                  On output, the size of data returned in Public buffer in bytes.
+  @retval  TRUE   EC key component was retrieved successfully.
+  @retval  FALSE  Invalid EC key component.
+**/
+BOOLEAN
+EFIAPI
+EcGetPubKey (
+  IN OUT  VOID   *EcContext,
+  OUT     UINT8  *PublicKey,
+  IN OUT  UINTN  *PublicKeySize
+  );
+
+/**
+  Computes exchanged common key.
+  Given peer's public key (X, Y), this function computes the exchanged common key,
+  based on its own context including value of curve parameter and random secret.
+  X is the first half of PeerPublic with size being PeerPublicSize / 2,
+  Y is the second half of PeerPublic with size being PeerPublicSize / 2.
+  If EcContext is NULL, then return FALSE.
+  If PeerPublic is NULL, then return FALSE.
+  If PeerPublicSize is 0, then return FALSE.
+  If Key is NULL, then return FALSE.
+  If KeySize is not large enough, then return FALSE.
+  For P-256, the PeerPublicSize is 64. First 32-byte is X, Second 32-byte is Y.
+  For P-384, the PeerPublicSize is 96. First 48-byte is X, Second 48-byte is Y.
+  For P-521, the PeerPublicSize is 132. First 66-byte is X, Second 66-byte is Y.
+  @param[in, out]  EcContext          Pointer to the EC context.
+  @param[in]       PeerPublic         Pointer to the peer's public X,Y.
+  @param[in]       PeerPublicSize     Size of peer's public X,Y in bytes.
+  @param[in]       CompressFlag       Flag of PeerPublic is compressed or not.
+  @param[out]      Key                Pointer to the buffer to receive generated key.
+  @param[in, out]  KeySize            On input, the size of Key buffer in bytes.
+                                      On output, the size of data returned in Key buffer in bytes.
+  @retval TRUE   EC exchanged key generation succeeded.
+  @retval FALSE  EC exchanged key generation failed.
+  @retval FALSE  KeySize is not large enough.
+**/
+BOOLEAN
+EFIAPI
+EcDhComputeKey (
+  IN OUT  VOID         *EcContext,
+  IN      CONST UINT8  *PeerPublic,
+  IN      UINTN        PeerPublicSize,
+  IN      CONST INT32  *CompressFlag,
+  OUT     UINT8        *Key,
+  IN OUT  UINTN        *KeySize
+  );
+
+/**
+  Retrieve the EC Private Key from the password-protected PEM key data.
+
+  @param[in]  PemData      Pointer to the PEM-encoded key data to be retrieved.
+  @param[in]  PemSize      Size of the PEM key data in bytes.
+  @param[in]  Password     NULL-terminated passphrase used for encrypted PEM key data.
+  @param[out] EcContext    Pointer to new-generated EC DSA context which contain the retrieved
+                           EC private key component. Use EcFree() function to free the
+                           resource.
+
+  If PemData is NULL, then return FALSE.
+  If EcContext is NULL, then return FALSE.
+
+  @retval  TRUE   EC Private Key was retrieved successfully.
+  @retval  FALSE  Invalid PEM key data or incorrect password.
+
+**/
+BOOLEAN
+EFIAPI
+EcGetPrivateKeyFromPem (
+  IN   CONST UINT8  *PemData,
+  IN   UINTN        PemSize,
+  IN   CONST CHAR8  *Password,
+  OUT  VOID         **EcContext
+  );
+
+/**
+  Retrieve the EC Public Key from one DER-encoded X509 certificate.
+
+  @param[in]  Cert         Pointer to the DER-encoded X509 certificate.
+  @param[in]  CertSize     Size of the X509 certificate in bytes.
+  @param[out] EcContext    Pointer to new-generated EC DSA context which contain the retrieved
+                           EC public key component. Use EcFree() function to free the
+                           resource.
+
+  If Cert is NULL, then return FALSE.
+  If EcContext is NULL, then return FALSE.
+
+  @retval  TRUE   EC Public Key was retrieved successfully.
+  @retval  FALSE  Fail to retrieve EC public key from X509 certificate.
+
+**/
+BOOLEAN
+EFIAPI
+EcGetPublicKeyFromX509 (
+  IN   CONST UINT8  *Cert,
+  IN   UINTN        CertSize,
+  OUT  VOID         **EcContext
+  );
+
+/**
+  Carries out the EC-DSA signature.
+
+  This function carries out the EC-DSA signature.
+  If the Signature buffer is too small to hold the contents of signature, FALSE
+  is returned and SigSize is set to the required buffer size to obtain the signature.
+
+  If EcContext is NULL, then return FALSE.
+  If MessageHash is NULL, then return FALSE.
+  If HashSize need match the HashNid. HashNid could be SHA256, SHA384, SHA512, SHA3_256, SHA3_384, SHA3_512.
+  If SigSize is large enough but Signature is NULL, then return FALSE.
+
+  For P-256, the SigSize is 64. First 32-byte is R, Second 32-byte is S.
+  For P-384, the SigSize is 96. First 48-byte is R, Second 48-byte is S.
+  For P-521, the SigSize is 132. First 66-byte is R, Second 66-byte is S.
+
+  @param[in]       EcContext    Pointer to EC context for signature generation.
+  @param[in]       HashNid      hash NID
+  @param[in]       MessageHash  Pointer to octet message hash to be signed.
+  @param[in]       HashSize     Size of the message hash in bytes.
+  @param[out]      Signature    Pointer to buffer to receive EC-DSA signature.
+  @param[in, out]  SigSize      On input, the size of Signature buffer in bytes.
+                                On output, the size of data returned in Signature buffer in bytes.
+
+  @retval  TRUE   Signature successfully generated in EC-DSA.
+  @retval  FALSE  Signature generation failed.
+  @retval  FALSE  SigSize is too small.
+
+**/
+BOOLEAN
+EFIAPI
+EcDsaSign (
+  IN      VOID         *EcContext,
+  IN      UINTN        HashNid,
+  IN      CONST UINT8  *MessageHash,
+  IN      UINTN        HashSize,
+  OUT     UINT8        *Signature,
+  IN OUT  UINTN        *SigSize
+  );
+
+/**
+  Verifies the EC-DSA signature.
+
+  If EcContext is NULL, then return FALSE.
+  If MessageHash is NULL, then return FALSE.
+  If Signature is NULL, then return FALSE.
+  If HashSize need match the HashNid. HashNid could be SHA256, SHA384, SHA512, SHA3_256, SHA3_384, SHA3_512.
+
+  For P-256, the SigSize is 64. First 32-byte is R, Second 32-byte is S.
+  For P-384, the SigSize is 96. First 48-byte is R, Second 48-byte is S.
+  For P-521, the SigSize is 132. First 66-byte is R, Second 66-byte is S.
+
+  @param[in]  EcContext    Pointer to EC context for signature verification.
+  @param[in]  HashNid      hash NID
+  @param[in]  MessageHash  Pointer to octet message hash to be checked.
+  @param[in]  HashSize     Size of the message hash in bytes.
+  @param[in]  Signature    Pointer to EC-DSA signature to be verified.
+  @param[in]  SigSize      Size of signature in bytes.
+
+  @retval  TRUE   Valid signature encoded in EC-DSA.
+  @retval  FALSE  Invalid signature or invalid EC context.
+
+**/
+BOOLEAN
+EFIAPI
+EcDsaVerify (
+  IN  VOID         *EcContext,
+  IN  UINTN        HashNid,
+  IN  CONST UINT8  *MessageHash,
+  IN  UINTN        HashSize,
+  IN  CONST UINT8  *Signature,
+  IN  UINTN        SigSize
+  );
+
+/**
+  Creates a new EdDSA context by Crypto NID.
+
+  This function allocates and initializes a new EdDSA context for the specified
+  curve. The context stores the curve NID and will hold an EVP_PKEY structure
+  after a key is set. The caller must call EdDsaFree() to release the context
+  when done.
+
+  Before keys can be used for signing or verification, they must be set using
+  EdDsaSetPrivKey() or EdDsaSetPubKey().
+
+  If Nid is not a supported EdDSA curve, then return NULL.
+  If memory allocation fails, then return NULL.
+
+  @param[in]  Nid   Crypto NID of the EdDSA curve (e.g., CRYPTO_NID_ED448).
+
+  @retval Pointer to new EdDSA context if successful.
+  @retval NULL if Nid is unsupported or allocation failed.
+
+**/
+VOID *
+EFIAPI
+EdDsaNewByNid (
+  IN UINTN  Nid
+  );
+
+/**
+  Frees an EdDSA context and all associated resources.
+
+  This function releases all memory associated with the EdDSA context, including
+  the EVP_PKEY structure. After calling this function, the EdDsaContext pointer
+  should not be used.
+
+  If EdDsaContext is NULL, then this function returns immediately without action.
+
+  @param[in]  EdDsaContext  Pointer to the EdDSA context to be released.
+
+**/
+VOID
+EFIAPI
+EdDsaFree (
+  IN VOID  *EdDsaContext
+  );
+
+/**
+  Sets the EdDSA private key in the EdDSA context.
+
+  This function imports a raw private key into the EdDSA context. The private key
+  must be in raw binary format (not PEM or DER encoded). The key size must match
+  the expected size for the curve type (57 bytes for Ed448).
+
+  OpenSSL automatically derives the public key from the private key, so after
+  calling this function, both signing and verification operations are possible.
+
+  If EdDsaContext is NULL, then return FALSE.
+  If PrivateKey is NULL, then return FALSE.
+  If PrivateKeySize is 0, then return FALSE.
+  If PrivateKeySize does not match the expected size for the curve, then return FALSE.
+
+  @param[in]  EdDsaContext    Pointer to EdDSA context created by EdDsaNewByNid().
+  @param[in]  PrivateKey      Pointer to raw private key bytes.
+  @param[in]  PrivateKeySize  Size of the private key in bytes.
+
+  @retval TRUE   EdDSA private key was set successfully.
+  @retval FALSE  Invalid parameters or key size mismatch.
+
+**/
+BOOLEAN
+EFIAPI
+EdDsaSetPrivKey (
+  IN    VOID   *EdDsaContext,
+  IN    UINT8  *PrivateKey,
+  IN    UINTN  PrivateKeySize
+  );
+
+/**
+  Generates the EdDSA public key from the private key.
+
+  This function is a placeholder and always returns TRUE. In practice, OpenSSL
+  automatically derives the public key when a private key is set using
+  EdDsaSetPrivKey(), so explicit public key generation is not needed.
+
+  Use EdDsaGetPubKey() to retrieve the public key after setting the private key.
+
+  @param[in]   EdDsaContext    Pointer to EdDSA context.
+  @param[out]  PublicKey       Pointer to buffer for public key (unused).
+  @param[in]   PublicKeySize   Size of public key buffer (unused).
+
+  @retval TRUE   Always returns TRUE.
+
+**/
+BOOLEAN
+EFIAPI
+EdDsaGeneratePubKey (
+  IN   VOID   *EdDsaContext,
+  OUT  UINT8  *PublicKey,
+  IN   UINTN  PublicKeySize
+  );
+
+/**
+  Sets the EdDSA public key in the EdDSA context.
+
+  This function imports a raw public key into the EdDSA context. The public key
+  must be in raw binary format (not PEM or DER encoded). The key size must match
+  the expected size for the curve type (57 bytes for Ed448).
+
+  After setting the public key, the context can be used for signature verification
+  but not for signing (which requires the private key).
+
+  If EdDsaContext is NULL, then return FALSE.
+  If PublicKey is NULL, then return FALSE.
+  If PublicKeySize is 0, then return FALSE.
+  If PublicKeySize does not match the expected size for the curve, then return FALSE.
+
+  @param[in]  EdDsaContext    Pointer to EdDSA context created by EdDsaNewByNid().
+  @param[in]  PublicKey       Pointer to raw public key bytes.
+  @param[in]  PublicKeySize   Size of the public key in bytes.
+
+  @retval TRUE   EdDSA public key was set successfully.
+  @retval FALSE  Invalid parameters or key size mismatch.
+
+**/
+BOOLEAN
+EFIAPI
+EdDsaSetPubKey (
+  IN  VOID         *EdDsaContext,
+  IN  CONST UINT8  *PublicKey,
+  IN  UINTN        PublicKeySize
+  );
+
+/**
+  Retrieves the EdDSA public key from the EdDSA context.
+
+  This function extracts the public key from the EdDSA context and copies it to
+  the provided buffer. The public key is returned in raw binary format.
+
+  The context must have a key set (either via EdDsaSetPrivKey() or EdDsaSetPubKey())
+  before calling this function.
+
+  If EdDsaContext is NULL, then return FALSE.
+  If PublicKey is NULL, then return FALSE.
+  If PublicKeySize is NULL, then return FALSE.
+  If the context does not contain a valid key, then return FALSE.
+  If PublicKey buffer is too small, PublicKeySize is updated with required size and return FALSE.
+
+  @param[in]      EdDsaContext    Pointer to EdDSA context containing the key.
+  @param[out]     PublicKey       Pointer to buffer to receive the public key.
+  @param[in,out]  PublicKeySize   On input, size of PublicKey buffer in bytes.
+                                  On output, actual size of public key written.
+
+  @retval TRUE   EdDSA public key retrieved successfully.
+  @retval FALSE  Invalid parameters or buffer too small.
+
+**/
+BOOLEAN
+EFIAPI
+EdDsaGetPubKey (
+  IN      VOID   *EdDsaContext,
+  OUT     UINT8  *PublicKey,
+  IN OUT  UINTN  *PublicKeySize
+  );
+
+/**
+  Generates an EdDSA signature for a given message.
+
+  This function creates an EdDSA signature using the private key stored in the
+  EdDSA context. EdDSA uses a 'pure' signature scheme where the entire message
+  is processed directly without pre-computing a hash digest.
+
+  For Ed448, an optional context string can be provided for domain separation.
+  This allows the same key to be used in different contexts without creating
+  security vulnerabilities.
+
+  The context must contain a private key (set via EdDsaSetPrivKey() or loaded
+  from PEM) before calling this function.
+
+  If EdDsaContext is NULL, then return FALSE.
+  If HashNid is invalid for the curve type, then return FALSE.
+  If Message is NULL, then return FALSE.
+  If MessageSize is 0 or exceeds INT_MAX, then return FALSE.
+  If Signature is NULL, then return FALSE.
+  If SigSize is NULL, then return FALSE.
+  For Ed448: Context may be NULL if no context string is used (ContextSize must be 0).
+
+  @param[in]      EdDsaContext    Pointer to EdDSA context containing the private key.
+  @param[in]      HashNid         Hash algorithm NID (must match curve requirements).
+  @param[in]      Context         Optional context string for Ed448 domain separation.
+                                  May be NULL for default context.
+  @param[in]      ContextSize     Size of context string in bytes. Set to 0 if Context is NULL.
+  @param[in]      Message         Pointer to message data to be signed.
+  @param[in]      MessageSize     Size of message in bytes.
+  @param[out]     Signature       Pointer to buffer to receive the signature.
+  @param[in,out]  SigSize         On input, size of Signature buffer.
+                                  On output, actual size of signature (114 bytes for Ed448).
+
+  @retval TRUE   EdDSA signature generated successfully.
+  @retval FALSE  Invalid parameters or signature generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+EdDsaSign (
+  IN     VOID         *EdDsaContext,
+  IN     CONST UINT8  *Context,
+  IN     UINTN        ContextSize,
+  IN     CONST UINT8  *Message,
+  IN     UINTN        MessageSize,
+  OUT    UINT8        *Signature,
+  OUT    UINTN        *SigSize
+  );
+
+/**
+  Verifies the EdDSA signature for a given message.
+
+  This function verifies an EdDSA signature against a message using the public key
+  contained in the EdDSA context. EdDSA signatures use a 'pure' implementation,
+  meaning the message digest cannot be computed ahead of time - the raw message
+  data is passed directly to the verification function.
+
+  For Ed448, an optional context string can be provided as additional domain
+  separation.
+
+  If EdDsaContext is NULL, then return FALSE.
+  If HashNid is invalid, then return FALSE.
+  If Message is NULL, then return FALSE.
+  If MessageSize is 0, then return FALSE.
+  If Signature is NULL, then return FALSE.
+  If SigSize is 0 or exceeds INT_MAX, then return FALSE.
+  If SigSize does not match expected signature size for the key type, then return FALSE.
+  For Ed448: Context may be NULL if no context string is used.
+
+  @param[in]      EdDsaContext    Pointer to EdDSA context containing the public key.
+  @param[in]      HashNid         Hash algorithm NID (must match key type requirements).
+  @param[in]      Context         Optional context string for Ed448 (domain separation).
+                                  May be NULL for default context.
+  @param[in]      ContextSize     Size of context string in bytes. Set to 0 if Context is NULL.
+  @param[in]      Message         Pointer to the message data to verify.
+  @param[in]      MessageSize     Size of the message in bytes.
+  @param[in]      Signature       Pointer to the EdDSA signature to verify.
+  @param[in]      SigSize         Size of the signature in bytes.
+                                  Must be 2 * key_size (114 bytes for Ed448).
+
+  @retval TRUE   EdDSA signature verification succeeded.
+  @retval FALSE  EdDSA signature verification failed or invalid parameters.
+
+**/
+BOOLEAN
+EFIAPI
+EdDsaVerify (
+  IN     VOID         *EdDsaContext,
+  IN     CONST UINT8  *Context,
+  IN     UINTN        ContextSize,
+  IN     CONST UINT8  *Message,
+  IN     UINTN        MessageSize,
+  IN     UINT8        *Signature,
+  IN     UINTN        SigSize
+  );
+
+/**
+  Retrieve the EdDSA Private Key from the password-protected PEM key data.
+
+  If PemData is NULL, then return FALSE.
+  If EdDsaContext is NULL, then return FALSE.
+
+  @param[in]  PemData       Pointer to the PEM-encoded key data to be retrieved.
+  @param[in]  PemSize       Size of the PEM key data in bytes.
+  @param[in]  Password      NULL-terminated passphrase used for encrypted PEM key data.
+  @param[out] EdDsaContext  Pointer to new-generated EdDSA context which contains
+                            the retrieved EdDSA private key. Use EdDsaFree() to free.
+
+  @retval  TRUE   EdDSA Private Key was retrieved successfully.
+  @retval  FALSE  Invalid PEM key data or incorrect password.
+
+**/
+BOOLEAN
+EFIAPI
+EdDsaGetPrivateKeyFromPem (
+  IN   CONST UINT8  *PemData,
+  IN   UINTN        PemSize,
+  IN   CONST CHAR8  *Password,
+  OUT  VOID         **EdDsaContext
+  );
+
+/**
+  Retrieve the EdDSA Public Key from one DER-encoded X509 certificate.
+
+  @param[in]  Cert         Pointer to the DER-encoded X509 certificate.
+  @param[in]  CertSize     Size of the X509 certificate in bytes.
+  @param[out] EdDsaContext Pointer to new-generated EdDSA context which contain the retrieved
+                           EdDsa public key component. Use EdDsaFree() function to free the
+                           resource.
+
+  If Cert is NULL, then return FALSE.
+  If EdDsaContext is NULL, then return FALSE.
+
+  @retval  TRUE   EdDsa Public Key was retrieved successfully.
+  @retval  FALSE  Fail to retrieve EdDsa public key from X509 certificate.
+
+**/
+BOOLEAN
+EFIAPI
+EdDsaGetPublicKeyFromX509 (
+  IN   CONST UINT8  *Cert,
+  IN   UINTN        CertSize,
+  OUT  VOID         **EdDsaContext
+  );
+
+/**
+  Creates a new ML-DSA context by Crypto NID.
+
+  This function allocates and initializes a new ML-DSA context for the specified
+  ML-DSA variant. The context is created with no key material; the EVP_PKEY
+  structure is set to NULL. The caller must call MlDsaFree() to release the
+  context when done.
+
+  Before keys can be used for signing or verification, they must be set using
+  MlDsaSetPrivKey() or MlDsaSetPubKey().
+
+  If Nid is not a supported ML-DSA variant, then return NULL.
+  If memory allocation fails, then return NULL.
+
+  @param[in]  Nid   Crypto NID of the ML-DSA variant (e.g., CRYPTO_NID_ML_DSA_87).
+
+  @retval Pointer to new ML-DSA context if successful.
+  @retval NULL if Nid is unsupported or allocation failed.
+
+**/
+VOID *
+EFIAPI
+MlDsaNewByNid (
+  IN UINTN  Nid
+  );
+
+/**
+  Frees an ML-DSA context and all associated resources.
+
+  This function releases all memory associated with the ML-DSA context, including
+  the EVP_PKEY structure. After calling this function, the MlDsaContext pointer
+  should not be used.
+
+  If MlDsaContext is NULL, then this function returns immediately without action.
+
+  @param[in]  MlDsaContext  Pointer to the ML-DSA context to be released.
+
+**/
+VOID
+EFIAPI
+MlDsaFree (
+  IN VOID  *MlDsaContext
+  );
+
+/**
+  Retrieves the ML-DSA public key from the ML-DSA context.
+
+  This function extracts the public key from the ML-DSA context and copies it to
+  the provided buffer. The public key is returned in raw binary format.
+
+  The context must have a key set (either via MlDsaSetPrivKey() or MlDsaSetPubKey())
+  before calling this function.
+
+  If MlDsaContext is NULL, then return FALSE.
+  If PublicKeySize is NULL, then return FALSE.
+  If the context does not contain a valid key, then return FALSE.
+  If PublicKey buffer is too small, PublicKeySize is updated with required size and return FALSE.
+
+  @param[in]      MlDsaContext    Pointer to ML-DSA context containing the key.
+  @param[out]     PublicKey       Pointer to buffer to receive the public key.
+  @param[in,out]  PublicKeySize   On input, size of PublicKey buffer in bytes.
+                                  On output, actual size of public key written.
+
+  @retval TRUE   ML-DSA public key retrieved successfully.
+  @retval FALSE  Invalid parameters or buffer too small.
+
+**/
+BOOLEAN
+EFIAPI
+MlDsaGetPubKey (
+  IN      VOID   *MlDsaContext,
+  OUT     UINT8  *PublicKey,
+  IN OUT  UINTN  *PublicKeySize
+  );
+
+/**
+  Sets the ML-DSA public key in the ML-DSA context.
+
+  This function imports a raw public key into the ML-DSA context. The public key
+  must be in raw binary format (not PEM or DER encoded). The key size must match
+  the expected size for the ML-DSA variant (2592 bytes for ML-DSA-87).
+
+  After setting the public key, the context can be used for signature verification
+  but not for signing (which requires the private key).
+
+  If MlDsaContext is NULL, then return FALSE.
+  If PublicKey is NULL, then return FALSE.
+  If PublicKeySize does not match the expected size for the variant, then return FALSE.
+
+  @param[in]  MlDsaContext    Pointer to ML-DSA context created by MlDsaNewByNid().
+  @param[in]  PublicKey       Pointer to raw public key bytes.
+  @param[in]  PublicKeySize   Size of the public key in bytes.
+
+  @retval TRUE   ML-DSA public key was set successfully.
+  @retval FALSE  Invalid parameters or key size mismatch.
+
+**/
+BOOLEAN
+EFIAPI
+MlDsaSetPubKey (
+  IN  VOID   *MlDsaContext,
+  IN  UINT8  *PublicKey,
+  IN  UINTN  PublicKeySize
+  );
+
+/**
+  Sets the ML-DSA private key in the ML-DSA context.
+
+  This function imports a raw private key into the ML-DSA context. The private key
+  must be in raw binary format (not PEM or DER encoded). The key size must match
+  the expected size for the ML-DSA variant (4896 bytes for ML-DSA-87).
+
+  OpenSSL automatically derives the public key from the private key, so after
+  calling this function, both signing and verification operations are possible.
+
+  If MlDsaContext is NULL, then return FALSE.
+  If PrivateKey is NULL, then return FALSE.
+  If PrivateKeySize does not match the expected size for the variant, then return FALSE.
+
+  @param[in]  MlDsaContext     Pointer to ML-DSA context created by MlDsaNewByNid().
+  @param[in]  PrivateKey       Pointer to raw private key bytes.
+  @param[in]  PrivateKeySize   Size of the private key in bytes.
+
+  @retval TRUE   ML-DSA private key was set successfully.
+  @retval FALSE  Invalid parameters or key size mismatch.
+
+**/
+BOOLEAN
+EFIAPI
+MlDsaSetPrivKey (
+  IN  VOID   *MlDsaContext,
+  IN  UINT8  *PrivateKey,
+  IN  UINTN  PrivateKeySize
+  );
+
+/**
+  Generates and retrieves the public key from a private key context.
+
+  This function extracts the public key from an ML-DSA context that contains
+  a private key. It is equivalent to calling MlDsaGetPubKey() but is provided
+  for API consistency with other cryptographic implementations.
+
+  The context must contain a private key (set via MlDsaSetPrivKey()) before
+  calling this function.
+
+  If MlDsaContext is NULL, then return FALSE.
+  If PublicKey is NULL, then return FALSE.
+  If PublicKeySize does not match the expected size for the variant, then return FALSE.
+
+  @param[in]   MlDsaContext    Pointer to ML-DSA context containing the private key.
+  @param[out]  PublicKey       Pointer to buffer to receive the public key.
+  @param[in]   PublicKeySize   Size of the PublicKey buffer in bytes.
+
+  @retval TRUE   Public key generated and retrieved successfully.
+  @retval FALSE  Invalid parameters or public key extraction failed.
+
+**/
+BOOLEAN
+EFIAPI
+MlDsaGeneratePubKey (
+  IN  VOID   *MlDsaContext,
+  OUT UINT8  *PublicKey,
+  IN  UINTN  PublicKeySize
+  );
+
+/**
+  Generates an ML-DSA signature for a given message.
+
+  This function creates an ML-DSA signature using the private key stored in the
+  ML-DSA context. ML-DSA signatures can include an optional context string for
+  domain separation, allowing the same key to be used in different contexts
+  without creating security vulnerabilities.
+
+  The context must contain a private key (set via MlDsaSetPrivKey()) before
+  calling this function.
+
+  If MlDsaContext is NULL, then return FALSE.
+  If Message is NULL, then return FALSE.
+  If Signature is NULL, then return FALSE.
+  If SigSize is NULL, then return FALSE.
+  If SigSize buffer is too small, SigSize is updated with required size and return FALSE.
+  Context may be NULL if no context string is used (ContextSize must be 0).
+
+  @param[in]      MlDsaContext   Pointer to ML-DSA context containing the private key.
+  @param[in]      Context        Optional context string for domain separation.
+                                 May be NULL for default context.
+  @param[in]      ContextSize    Size of context string in bytes. Set to 0 if Context is NULL.
+  @param[in]      Message        Pointer to message data to be signed.
+  @param[in]      MessageSize    Size of message in bytes.
+  @param[out]     Signature      Pointer to buffer to receive the signature.
+  @param[in,out]  SigSize        On input, size of Signature buffer.
+                                 On output, actual size of signature (4627 bytes for ML-DSA-87).
+
+  @retval TRUE   ML-DSA signature generated successfully.
+  @retval FALSE  Invalid parameters or signature generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+MlDsaSign (
+  IN      VOID         *MlDsaContext,
+  IN      UINT8        *Context,
+  IN      UINTN        ContextSize,
+  IN      CONST UINT8  *Message,
+  IN      UINTN        MessageSize,
+  OUT     UINT8        *Signature,
+  IN OUT  UINTN        *SigSize
+  );
+
+/**
+  Verifies the ML-DSA signature for a given message.
+
+  This function verifies an ML-DSA signature against a message using the public key
+  contained in the ML-DSA context. An optional context string can be provided which
+  must match the context used during signing.
+
+  The context must contain a key (either public or private) set via MlDsaSetPrivKey()
+  or MlDsaSetPubKey() before calling this function.
+
+  If MlDsaContext is NULL, then return FALSE.
+  If Message is NULL, then return FALSE.
+  If Signature is NULL, then return FALSE.
+  If SigSize is 0 or exceeds INT_MAX, then return FALSE.
+  Context may be NULL if no context string is used.
+
+  @param[in]  MlDsaContext   Pointer to ML-DSA context containing the public key.
+  @param[in]  Context        Optional context string for domain separation.
+                             May be NULL for default context.
+  @param[in]  ContextSize    Size of context string in bytes. Set to 0 if Context is NULL.
+  @param[in]  Message        Pointer to the message data to verify.
+  @param[in]  MessageSize    Size of the message in bytes.
+  @param[in]  Signature      Pointer to the ML-DSA signature to verify.
+  @param[in]  SigSize        Size of the signature in bytes.
+
+  @retval TRUE   ML-DSA signature verification succeeded.
+  @retval FALSE  ML-DSA signature verification failed or invalid parameters.
+
+**/
+BOOLEAN
+EFIAPI
+MlDsaVerify (
+  IN  VOID         *MlDsaContext,
+  IN  UINT8        *Context,
+  IN  UINTN        ContextSize,
+  IN  CONST UINT8  *Message,
+  IN  UINTN        MessageSize,
+  IN  UINT8        *Signature,
+  IN  UINTN        SigSize
+  );
+
+/**
+  Retrieve the ML-DSA Private Key from the password-protected PEM key data.
+
+  If PemData is NULL, then return FALSE.
+  If MlDsaContext is NULL, then return FALSE.
+
+  @param[in]  PemData       Pointer to the PEM-encoded key data to be retrieved.
+  @param[in]  PemSize       Size of the PEM key data in bytes.
+  @param[in]  Password      NULL-terminated passphrase used for encrypted PEM key data.
+  @param[out] MlDsaContext  Pointer to new-generated ML-DSA context which contains
+                            the retrieved ML-DSA private key. Use MlDsaFree() to free.
+
+  @retval  TRUE   ML-DSA Private Key was retrieved successfully.
+  @retval  FALSE  Invalid PEM key data or incorrect password.
+
+**/
+BOOLEAN
+EFIAPI
+MlDsaGetPrivateKeyFromPem (
+  IN   CONST UINT8  *PemData,
+  IN   UINTN        PemSize,
+  IN   CONST CHAR8  *Password,
+  OUT  VOID         **MlDsaContext
+  );
+
+/**
+  Retrieve the ML-DSA Public Key from one DER-encoded X509 certificate.
+
+  @param[in]  Cert          Pointer to the DER-encoded X509 certificate.
+  @param[in]  CertSize      Size of the X509 certificate in bytes.
+  @param[out] MlDsaContext  Pointer to new-generated ML-DSA context which contain the retrieved
+                            ML-DSA public key component. Use MlDsaFree() function to free the
+                            resource.
+
+  If Cert is NULL, then return FALSE.
+  If MlDsaContext is NULL, then return FALSE.
+
+  @retval  TRUE   ML-DSA Public Key was retrieved successfully.
+  @retval  FALSE  Fail to retrieve ML-DSA public key from X509 certificate.
+
+**/
+BOOLEAN
+EFIAPI
+MlDsaGetPublicKeyFromX509 (
+  IN   CONST UINT8  *Cert,
+  IN   UINTN        CertSize,
+  OUT  VOID         **MlDsaContext
+  );
+
+/**
+  Creates a new SLH-DSA context by Crypto NID.
+
+  This function allocates and initializes a new SLH-DSA context for the specified
+  SLH-DSA variant. The context is created with no key material; the EVP_PKEY
+  structure is set to NULL. The caller must call SlhDsaFree() to release the
+  context when done.
+
+  Before keys can be used for signing or verification, they must be set using
+  SlhDsaSetPrivKey() or SlhDsaSetPubKey().
+
+  If Nid is not a supported SLH-DSA variant, then return NULL.
+  If memory allocation fails, then return NULL.
+
+  @param[in]  Nid   Crypto NID of the SLH-DSA variant (e.g., CRYPTO_NID_SLH_DSA_SHAKE_256S).
+
+  @retval Pointer to new SLH-DSA context if successful.
+  @retval NULL if Nid is unsupported or allocation failed.
+
+**/
+VOID *
+EFIAPI
+SlhDsaNewByNid (
+  IN UINTN  Nid
+  );
+
+/**
+  Frees an SLH-DSA context and all associated resources.
+
+  This function releases all memory associated with the SLH-DSA context, including
+  the EVP_PKEY structure. After calling this function, the SlhDsaContext pointer
+  should not be used.
+
+  If SlhDsaContext is NULL, then this function returns immediately without action.
+
+  @param[in]  SlhDsaContext  Pointer to the SLH-DSA context to be released.
+
+**/
+VOID
+EFIAPI
+SlhDsaFree (
+  IN VOID  *SlhDsaContext
+  );
+
+/**
+  Retrieves the SLH-DSA public key from the SLH-DSA context.
+
+  This function extracts the public key from the SLH-DSA context and copies it to
+  the provided buffer. The public key is returned in raw binary format.
+
+  The context must have a key set (either via SlhDsaSetPrivKey() or SlhDsaSetPubKey())
+  before calling this function.
+
+  If SlhDsaContext is NULL, then return FALSE.
+  If PublicKeySize is NULL, then return FALSE.
+  If the context does not contain a valid key, then return FALSE.
+  If PublicKey buffer is too small, PublicKeySize is updated with required size and return FALSE.
+
+  @param[in]      SlhDsaContext   Pointer to SLH-DSA context containing the key.
+  @param[out]     PublicKey       Pointer to buffer to receive the public key.
+  @param[in,out]  PublicKeySize   On input, size of PublicKey buffer in bytes.
+                                  On output, actual size of public key written.
+
+  @retval TRUE   SLH-DSA public key retrieved successfully.
+  @retval FALSE  Invalid parameters or buffer too small.
+
+**/
+BOOLEAN
+EFIAPI
+SlhDsaGetPubKey (
+  IN      VOID   *SlhDsaContext,
+  OUT     UINT8  *PublicKey,
+  IN OUT  UINTN  *PublicKeySize
+  );
+
+/**
+  Sets the SLH-DSA public key in the SLH-DSA context.
+
+  This function imports a raw public key into the SLH-DSA context. The public key
+  must be in raw binary format (not PEM or DER encoded). The key size must match
+  the expected size for the SLH-DSA variant (64 bytes for SLH-DSA-SHAKE-256s).
+
+  After setting the public key, the context can be used for signature verification
+  but not for signing (which requires the private key).
+
+  If SlhDsaContext is NULL, then return FALSE.
+  If PublicKey is NULL, then return FALSE.
+  If PublicKeySize does not match the expected size for the variant, then return FALSE.
+
+  @param[in]  SlhDsaContext   Pointer to SLH-DSA context created by SlhDsaNewByNid().
+  @param[in]  PublicKey       Pointer to raw public key bytes.
+  @param[in]  PublicKeySize   Size of the public key in bytes.
+
+  @retval TRUE   SLH-DSA public key was set successfully.
+  @retval FALSE  Invalid parameters or key size mismatch.
+
+**/
+BOOLEAN
+EFIAPI
+SlhDsaSetPubKey (
+  IN  VOID   *SlhDsaContext,
+  IN  UINT8  *PublicKey,
+  IN  UINTN  PublicKeySize
+  );
+
+/**
+  Sets the SLH-DSA private key in the SLH-DSA context.
+
+  This function imports a raw private key into the SLH-DSA context. The private key
+  must be in raw binary format (not PEM or DER encoded). The key size must match
+  the expected size for the SLH-DSA variant (128 bytes for SLH-DSA-SHAKE-256s).
+
+  OpenSSL automatically derives the public key from the private key, so after
+  calling this function, both signing and verification operations are possible.
+
+  If SlhDsaContext is NULL, then return FALSE.
+  If PrivateKey is NULL, then return FALSE.
+  If PrivateKeySize does not match the expected size for the variant, then return FALSE.
+
+  @param[in]  SlhDsaContext    Pointer to SLH-DSA context created by SlhDsaNewByNid().
+  @param[in]  PrivateKey       Pointer to raw private key bytes.
+  @param[in]  PrivateKeySize   Size of the private key in bytes.
+
+  @retval TRUE   SLH-DSA private key was set successfully.
+  @retval FALSE  Invalid parameters or key size mismatch.
+
+**/
+BOOLEAN
+EFIAPI
+SlhDsaSetPrivKey (
+  IN  VOID   *SlhDsaContext,
+  IN  UINT8  *PrivateKey,
+  IN  UINTN  PrivateKeySize
+  );
+
+/**
+  Generates and retrieves the public key from a private key context.
+
+  This function extracts the public key from an SLH-DSA context that contains
+  a private key. It is equivalent to calling SlhDsaGetPubKey() but is provided
+  for API consistency with other cryptographic implementations.
+
+  The context must contain a private key (set via SlhDsaSetPrivKey()) before
+  calling this function.
+
+  If SlhDsaContext is NULL, then return FALSE.
+  If PublicKey is NULL, then return FALSE.
+  If PublicKeySize does not match the expected size for the variant, then return FALSE.
+
+  @param[in]   SlhDsaContext   Pointer to SLH-DSA context containing the private key.
+  @param[out]  PublicKey       Pointer to buffer to receive the public key.
+  @param[in]   PublicKeySize   Size of the PublicKey buffer in bytes.
+
+  @retval TRUE   Public key generated and retrieved successfully.
+  @retval FALSE  Invalid parameters or public key extraction failed.
+
+**/
+BOOLEAN
+EFIAPI
+SlhDsaGeneratePubKey (
+  IN  VOID   *SlhDsaContext,
+  OUT UINT8  *PublicKey,
+  IN  UINTN  PublicKeySize
+  );
+
+/**
+  Verifies the SLH-DSA signature for a given message.
+
+  This function verifies an SLH-DSA signature against a message using the public key
+  contained in the SLH-DSA context. An optional context string can be provided which
+  must match the context used during signing.
+
+  The context must contain a key (either public or private) set via SlhDsaSetPrivKey()
+  or SlhDsaSetPubKey() before calling this function.
+
+  If SlhDsaContext is NULL, then return FALSE.
+  If Message is NULL, then return FALSE.
+  If Signature is NULL, then return FALSE.
+  If SigSize is 0 or exceeds INT_MAX, then return FALSE.
+  Context may be NULL if no context string is used.
+
+  @param[in]  SlhDsaContext  Pointer to SLH-DSA context containing the public key.
+  @param[in]  Context        Optional context string for domain separation.
+                             May be NULL for default context.
+  @param[in]  ContextSize    Size of context string in bytes. Set to 0 if Context is NULL.
+  @param[in]  Message        Pointer to the message data to verify.
+  @param[in]  MessageSize    Size of the message in bytes.
+  @param[in]  Signature      Pointer to the SLH-DSA signature to verify.
+  @param[in]  SigSize        Size of the signature in bytes.
+
+  @retval TRUE   SLH-DSA signature verification succeeded.
+  @retval FALSE  SLH-DSA signature verification failed or invalid parameters.
+
+**/
+BOOLEAN
+EFIAPI
+SlhDsaVerify (
+  IN  VOID         *SlhDsaContext,
+  IN  UINT8        *Context,
+  IN  UINTN        ContextSize,
+  IN  CONST UINT8  *Message,
+  IN  UINTN        MessageSize,
+  IN  UINT8        *Signature,
+  IN  UINTN        SigSize
+  );
+
+/**
+  Retrieve the SLH-DSA Private Key from the password-protected PEM key data.
+
+  If PemData is NULL, then return FALSE.
+  If SlhDsaContext is NULL, then return FALSE.
+
+  @param[in]  PemData        Pointer to the PEM-encoded key data to be retrieved.
+  @param[in]  PemSize        Size of the PEM key data in bytes.
+  @param[in]  Password       NULL-terminated passphrase used for encrypted PEM key data.
+  @param[out] SlhDsaContext  Pointer to new-generated SLH-DSA context which contains
+                             the retrieved SLH-DSA private key. Use SlhDsaFree() to free.
+
+  @retval  TRUE   SLH-DSA Private Key was retrieved successfully.
+  @retval  FALSE  Invalid PEM key data or incorrect password.
+
+**/
+BOOLEAN
+EFIAPI
+SlhDsaGetPrivateKeyFromPem (
+  IN   CONST UINT8  *PemData,
+  IN   UINTN        PemSize,
+  IN   CONST CHAR8  *Password,
+  OUT  VOID         **SlhDsaContext
+  );
+
+/**
+  Retrieve the SLH-DSA Public Key from one DER-encoded X509 certificate.
+
+  @param[in]  Cert           Pointer to the DER-encoded X509 certificate.
+  @param[in]  CertSize       Size of the X509 certificate in bytes.
+  @param[out] SlhDsaContext  Pointer to new-generated SLH-DSA context which contain the retrieved
+                             SLH-DSA public key component. Use SlhDsaFree() function to free the
+                             resource.
+
+  If Cert is NULL, then return FALSE.
+  If SlhDsaContext is NULL, then return FALSE.
+
+  @retval  TRUE   SLH-DSA Public Key was retrieved successfully.
+  @retval  FALSE  Fail to retrieve SLH-DSA public key from X509 certificate.
+
+**/
+BOOLEAN
+EFIAPI
+SlhDsaGetPublicKeyFromX509 (
+  IN   CONST UINT8  *Cert,
+  IN   UINTN        CertSize,
+  OUT  VOID         **SlhDsaContext
+  );

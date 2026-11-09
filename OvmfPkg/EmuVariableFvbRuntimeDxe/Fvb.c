@@ -8,6 +8,9 @@
 **/
 
 #include "PiDxe.h"
+
+#include <ConfidentialComputingGuestAttr.h>
+
 #include <Guid/EventGroup.h>
 #include <Guid/SystemNvDataGuid.h>
 #include <Guid/VariableFormat.h>
@@ -26,6 +29,7 @@
 #include <Library/DevicePathLib.h>
 #include <Library/PcdLib.h>
 #include <Library/PlatformFvbLib.h>
+#include <Library/IoLib.h>
 #include "Fvb.h"
 
 #define EFI_AUTHENTICATED_VARIABLE_GUID \
@@ -566,16 +570,46 @@ ValidateFvHeader (
   )
 {
   UINT16  Checksum;
+  UINT8   Revision;
+  UINT32  Signature;
+  UINT64  FvLength;
+  UINT16  HeaderLength;
+
+  if (CC_GUEST_IS_TDX (PcdGet64 (PcdConfidentialComputingGuestAttr))) {
+    /*
+     * When in tdx mode the varstore must be in ram not pflash, so there are no
+     * mmio reads/writes needed.  Also in tdx mode BaseIoLibIntrinsic will
+     * translate the mmio access into TDVMCALL_MMIO calls instead of mov
+     * instructions, so memory access with MmioRead* functions does not work.
+     */
+    Revision     = FwVolHeader->Revision;
+    Signature    = FwVolHeader->Signature;
+    FvLength     = FwVolHeader->FvLength;
+    HeaderLength = FwVolHeader->HeaderLength;
+  } else {
+    /*
+     * In sev mode with varstore in pflash we must use MmioRead* functions so to
+     * make sure the mov instruction used to access pflash/memory is supported
+     * by the #VC handler instruction emulator.
+     *
+     * Note: Only sev + sev-es need proper pflash handling, sev-snp is like tdx
+     * incompatible with pflash emulation.
+     */
+    Revision     = MmioRead8 ((UINTN)(&FwVolHeader->Revision));
+    Signature    = MmioRead32 ((UINTN)(&FwVolHeader->Signature));
+    FvLength     = MmioRead64 ((UINTN)(&FwVolHeader->FvLength));
+    HeaderLength = MmioRead16 ((UINTN)(&FwVolHeader->HeaderLength));
+  }
 
   //
   // Verify the header revision, header signature, length
   // Length of FvBlock cannot be 2**64-1
   // HeaderLength cannot be an odd number
   //
-  if ((FwVolHeader->Revision != EFI_FVH_REVISION) ||
-      (FwVolHeader->Signature != EFI_FVH_SIGNATURE) ||
-      (FwVolHeader->FvLength != EMU_FVB_SIZE) ||
-      (FwVolHeader->HeaderLength != EMU_FV_HEADER_LENGTH)
+  if ((Revision != EFI_FVH_REVISION) ||
+      (Signature != EFI_FVH_SIGNATURE) ||
+      (FvLength != EMU_FVB_SIZE) ||
+      (HeaderLength != EMU_FV_HEADER_LENGTH)
       )
   {
     DEBUG ((DEBUG_INFO, "EMU Variable FVB: Basic FV headers were invalid\n"));
@@ -658,8 +692,8 @@ InitializeFvAndVariableStoreHeaders (
 
       // UINT32  Size;
       (
-       FixedPcdGet32 (PcdFlashNvStorageVariableSize) -
-       OFFSET_OF (FVB_FV_HDR_AND_VARS_TEMPLATE, VarHdr)
+        FixedPcdGet32 (PcdFlashNvStorageVariableSize) -
+        OFFSET_OF (FVB_FV_HDR_AND_VARS_TEMPLATE, VarHdr)
       ),
 
       // UINT8   Format;
@@ -692,6 +726,8 @@ InitializeFvAndVariableStoreHeaders (
   //
   Fv           = (EFI_FIRMWARE_VOLUME_HEADER *)Ptr;
   Fv->Checksum = CalculateCheckSum16 (Ptr, Fv->HeaderLength);
+
+  DEBUG ((DEBUG_INFO, "EMU Variable FVB: Initialized FV using template structure\n"));
 }
 
 /**
@@ -717,6 +753,7 @@ FvbInitialize (
   EFI_HANDLE            Handle;
   EFI_PHYSICAL_ADDRESS  Address;
   RETURN_STATUS         PcdStatus;
+  VOID                  *Template;
 
   DEBUG ((DEBUG_INFO, "EMU Variable FVB Started\n"));
 
@@ -778,8 +815,15 @@ FvbInitialize (
   // Initialize the main FV header and variable store header
   //
   if (Initialize) {
-    SetMem (Ptr, EMU_FVB_SIZE, ERASED_UINT8);
-    InitializeFvAndVariableStoreHeaders (Ptr);
+    Template = (VOID *)(UINTN)PcdGet32 (PcdOvmfFlashNvStorageVariableBase);
+    Status   = ValidateFvHeader (Template);
+    if (!EFI_ERROR (Status)) {
+      DEBUG ((DEBUG_INFO, "EMU Variable FVB: Initialized FV from ROM template.\n"));
+      CopyMem (Ptr, Template, EMU_FVB_SIZE);
+    } else {
+      SetMem (Ptr, EMU_FVB_SIZE, ERASED_UINT8);
+      InitializeFvAndVariableStoreHeaders (Ptr);
+    }
   }
 
   PcdStatus = PcdSet64S (PcdFlashNvStorageVariableBase64, (UINTN)Ptr);

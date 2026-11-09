@@ -10,24 +10,12 @@
   Tcg2PhysicalPresenceLibSubmitRequestToPreOSFunction() and Tcg2PhysicalPresenceLibGetUserConfirmationStatusFunction()
   will receive untrusted input and do validation.
 
-Copyright (c) 2015 - 2020, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2015 - 2024, Intel Corporation. All rights reserved.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#include <PiMm.h>
-
-#include <Guid/Tcg2PhysicalPresenceData.h>
-
-#include <Protocol/SmmVariable.h>
-
-#include <Library/BaseLib.h>
-#include <Library/DebugLib.h>
-#include <Library/BaseMemoryLib.h>
-#include <Library/Tcg2PpVendorLib.h>
-#include <Library/MmServicesTableLib.h>
-
-#define     PP_INF_VERSION_1_2  "1.2"
+#include "MmTcg2PhysicalPresenceLibCommon.h"
 
 EFI_SMM_VARIABLE_PROTOCOL  *mTcg2PpSmmVariable;
 BOOLEAN                    mIsTcg2PPVerLowerThan_1_3 = FALSE;
@@ -176,7 +164,7 @@ EXIT:
   // Sync PPRQ/PPRM from PP Variable if PP submission fails
   //
   if (ReturnCode != TCG_PP_SUBMIT_REQUEST_TO_PREOS_SUCCESS) {
-    DEBUG ((DEBUG_ERROR, "[TPM2] Submit PP Request failure! Sync PPRQ/PPRM with PP variable.\n", Status));
+    DEBUG ((DEBUG_ERROR, "[TPM2] Submit PP Request failure! Sync PPRQ/PPRM with PP variable. Status = %r\n", Status));
     DataSize = sizeof (EFI_TCG2_PHYSICAL_PRESENCE);
     ZeroMem (&PpData, DataSize);
     Status = mTcg2PpSmmVariable->SmmGetVariable (
@@ -392,9 +380,7 @@ Tcg2PhysicalPresenceLibCommonConstructor (
 {
   EFI_STATUS  Status;
 
-  if (AsciiStrnCmp (PP_INF_VERSION_1_2, (CHAR8 *)PcdGetPtr (PcdTcgPhysicalPresenceInterfaceVer), sizeof (PP_INF_VERSION_1_2) - 1) >= 0) {
-    mIsTcg2PPVerLowerThan_1_3 = TRUE;
-  }
+  mIsTcg2PPVerLowerThan_1_3 = IsTcg2PPVerLowerThan_1_3 ();
 
   //
   // Locate SmmVariableProtocol.

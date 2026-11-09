@@ -1,13 +1,14 @@
 /** @file
   Implement TPM2 NVStorage related command.
 
-Copyright (c) 2013 - 2018, Intel Corporation. All rights reserved. <BR>
+Copyright (c) 2013 - 2024, Intel Corporation. All rights reserved. <BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
 #include <IndustryStandard/UefiTcgPlatform.h>
 #include <Library/Tpm2CommandLib.h>
+#include <Library/Tpm2HelpLib.h>
 #include <Library/Tpm2DeviceLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/BaseLib.h>
@@ -148,6 +149,22 @@ typedef struct {
   TPMS_AUTH_RESPONSE      AuthSession;
 } TPM2_NV_GLOBALWRITELOCK_RESPONSE;
 
+typedef struct {
+  TPM2_COMMAND_HEADER    Header;
+  TPMI_RH_NV_AUTH        AuthHandle;
+  TPMI_RH_NV_INDEX       NvIndex;
+  UINT32                 AuthSessionSize;
+  TPMS_AUTH_COMMAND      AuthSession;
+  TPM2B_MAX_BUFFER       Data;
+  UINT16                 Offset;
+} TPM2_NV_EXTEND_COMMAND;
+
+typedef struct {
+  TPM2_RESPONSE_HEADER    Header;
+  UINT32                  AuthSessionSize;
+  TPMS_AUTH_RESPONSE      AuthSession;
+} TPM2_NV_EXTEND_RESPONSE;
+
 #pragma pack()
 
 /**
@@ -213,6 +230,7 @@ Tpm2NvReadPublic (
     case TPM_RC_SUCCESS:
       // return data
       break;
+    case TPM_RC_HANDLE:
     case TPM_RC_HANDLE + RC_NV_ReadPublic_nvIndex: // TPM_RC_NV_DEFINED:
       return EFI_NOT_FOUND;
     case TPM_RC_VALUE + RC_NV_ReadPublic_nvIndex:
@@ -311,7 +329,7 @@ Tpm2NvDefineSpace (
   Buffer = (UINT8 *)&SendBuffer.AuthSession;
 
   // sessionInfoSize
-  SessionInfoSize            = CopyAuthSessionCommand (AuthSession, Buffer);
+  SessionInfoSize            = Tpm2CopyAuthSessionCommand (AuthSession, Buffer);
   Buffer                    += SessionInfoSize;
   SendBuffer.AuthSessionSize = SwapBytes32 (SessionInfoSize);
 
@@ -448,7 +466,7 @@ Tpm2NvUndefineSpace (
   Buffer = (UINT8 *)&SendBuffer.AuthSession;
 
   // sessionInfoSize
-  SessionInfoSize            = CopyAuthSessionCommand (AuthSession, Buffer);
+  SessionInfoSize            = Tpm2CopyAuthSessionCommand (AuthSession, Buffer);
   Buffer                    += SessionInfoSize;
   SendBuffer.AuthSessionSize = SwapBytes32 (SessionInfoSize);
 
@@ -559,7 +577,7 @@ Tpm2NvRead (
   Buffer = (UINT8 *)&SendBuffer.AuthSession;
 
   // sessionInfoSize
-  SessionInfoSize            = CopyAuthSessionCommand (AuthSession, Buffer);
+  SessionInfoSize            = Tpm2CopyAuthSessionCommand (AuthSession, Buffer);
   Buffer                    += SessionInfoSize;
   SendBuffer.AuthSessionSize = SwapBytes32 (SessionInfoSize);
 
@@ -706,7 +724,7 @@ Tpm2NvWrite (
   Buffer = (UINT8 *)&SendBuffer.AuthSession;
 
   // sessionInfoSize
-  SessionInfoSize            = CopyAuthSessionCommand (AuthSession, Buffer);
+  SessionInfoSize            = Tpm2CopyAuthSessionCommand (AuthSession, Buffer);
   Buffer                    += SessionInfoSize;
   SendBuffer.AuthSessionSize = SwapBytes32 (SessionInfoSize);
 
@@ -835,7 +853,7 @@ Tpm2NvReadLock (
   Buffer = (UINT8 *)&SendBuffer.AuthSession;
 
   // sessionInfoSize
-  SessionInfoSize            = CopyAuthSessionCommand (AuthSession, Buffer);
+  SessionInfoSize            = Tpm2CopyAuthSessionCommand (AuthSession, Buffer);
   Buffer                    += SessionInfoSize;
   SendBuffer.AuthSessionSize = SwapBytes32 (SessionInfoSize);
 
@@ -923,7 +941,7 @@ Tpm2NvWriteLock (
   Buffer = (UINT8 *)&SendBuffer.AuthSession;
 
   // sessionInfoSize
-  SessionInfoSize            = CopyAuthSessionCommand (AuthSession, Buffer);
+  SessionInfoSize            = Tpm2CopyAuthSessionCommand (AuthSession, Buffer);
   Buffer                    += SessionInfoSize;
   SendBuffer.AuthSessionSize = SwapBytes32 (SessionInfoSize);
 
@@ -1008,7 +1026,7 @@ Tpm2NvGlobalWriteLock (
   Buffer = (UINT8 *)&SendBuffer.AuthSession;
 
   // sessionInfoSize
-  SessionInfoSize            = CopyAuthSessionCommand (AuthSession, Buffer);
+  SessionInfoSize            = Tpm2CopyAuthSessionCommand (AuthSession, Buffer);
   Buffer                    += SessionInfoSize;
   SendBuffer.AuthSessionSize = SwapBytes32 (SessionInfoSize);
 
@@ -1038,6 +1056,110 @@ Tpm2NvGlobalWriteLock (
   switch (ResponseCode) {
     case TPM_RC_SUCCESS:
       // return data
+      break;
+    default:
+      Status = EFI_DEVICE_ERROR;
+      break;
+  }
+
+Done:
+  //
+  // Clear AuthSession Content
+  //
+  ZeroMem (&SendBuffer, sizeof (SendBuffer));
+  ZeroMem (&RecvBuffer, sizeof (RecvBuffer));
+  return Status;
+}
+
+/**
+  This command extends a value to an area in NV memory that was previously defined by TPM2_NV_DefineSpace().
+
+  @param[in]  AuthHandle         the handle indicating the source of the authorization value.
+  @param[in]  NvIndex            The NV Index of the area to extend.
+  @param[in]  AuthSession        Auth Session context
+  @param[in]  InData             The data to extend.
+
+  @retval EFI_SUCCESS            Operation completed successfully.
+  @retval EFI_DEVICE_ERROR       The command was unsuccessful.
+  @retval EFI_NOT_FOUND          The command was returned successfully, but NvIndex is not found.
+**/
+EFI_STATUS
+EFIAPI
+Tpm2NvExtend (
+  IN      TPMI_RH_NV_AUTH    AuthHandle,
+  IN      TPMI_RH_NV_INDEX   NvIndex,
+  IN      TPMS_AUTH_COMMAND  *AuthSession  OPTIONAL,
+  IN      TPM2B_MAX_BUFFER   *InData
+  )
+{
+  EFI_STATUS               Status;
+  TPM2_NV_EXTEND_COMMAND   SendBuffer;
+  TPM2_NV_EXTEND_RESPONSE  RecvBuffer;
+  UINT32                   SendBufferSize;
+  UINT32                   RecvBufferSize;
+  UINT8                    *Buffer;
+  UINT32                   SessionInfoSize;
+  TPM_RC                   ResponseCode;
+
+  //
+  // Construct command
+  //
+  SendBuffer.Header.tag         = SwapBytes16 (TPM_ST_SESSIONS);
+  SendBuffer.Header.commandCode = SwapBytes32 (TPM_CC_NV_Extend);
+
+  SendBuffer.AuthHandle = SwapBytes32 (AuthHandle);
+  SendBuffer.NvIndex    = SwapBytes32 (NvIndex);
+
+  //
+  // Add in Auth session
+  //
+  Buffer = (UINT8 *)&SendBuffer.AuthSession;
+
+  // sessionInfoSize
+  SessionInfoSize            = Tpm2CopyAuthSessionCommand (AuthSession, Buffer);
+  Buffer                    += SessionInfoSize;
+  SendBuffer.AuthSessionSize = SwapBytes32 (SessionInfoSize);
+
+  WriteUnaligned16 ((UINT16 *)Buffer, SwapBytes16 (InData->size));
+  Buffer += sizeof (UINT16);
+  CopyMem (Buffer, InData->buffer, InData->size);
+  Buffer += InData->size;
+
+  SendBufferSize              = (UINT32)(Buffer - (UINT8 *)&SendBuffer);
+  SendBuffer.Header.paramSize = SwapBytes32 (SendBufferSize);
+
+  //
+  // send Tpm command
+  //
+  RecvBufferSize = sizeof (RecvBuffer);
+  Status         = Tpm2SubmitCommand (SendBufferSize, (UINT8 *)&SendBuffer, &RecvBufferSize, (UINT8 *)&RecvBuffer);
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  if (RecvBufferSize < sizeof (TPM2_RESPONSE_HEADER)) {
+    DEBUG ((DEBUG_ERROR, "Tpm2NvExtend - RecvBufferSize Error - %x\n", RecvBufferSize));
+    Status = EFI_DEVICE_ERROR;
+    goto Done;
+  }
+
+  ResponseCode = SwapBytes32 (RecvBuffer.Header.responseCode);
+  if (ResponseCode != TPM_RC_SUCCESS) {
+    DEBUG ((DEBUG_ERROR, "Tpm2NvExtend - responseCode - %x\n", ResponseCode));
+  }
+
+  switch (ResponseCode) {
+    case TPM_RC_SUCCESS:
+      // return data
+      break;
+    case TPM_RC_ATTRIBUTES:
+      Status = EFI_UNSUPPORTED;
+      break;
+    case TPM_RC_NV_AUTHORIZATION:
+      Status = EFI_SECURITY_VIOLATION;
+      break;
+    case TPM_RC_NV_LOCKED:
+      Status = EFI_ACCESS_DENIED;
       break;
     default:
       Status = EFI_DEVICE_ERROR;

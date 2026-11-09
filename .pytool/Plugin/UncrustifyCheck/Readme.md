@@ -13,7 +13,7 @@ By default, an Uncrustify configuration file named "uncrustify.cfg" located in t
 used. The value can be overridden to a package-specific path with the `ConfigFilePath` configuration file option.
 
 * Uncrustify source code and documentation: https://github.com/uncrustify/uncrustify
-* Project Mu Uncrustify fork source code and documentation: https://dev.azure.com/projectmu/Uncrustify
+* TianoCore Uncrustify fork source code and documentation: https://github.com/tianocore/uncrustify
 
 ## Files Checked in a Package
 
@@ -41,8 +41,9 @@ The plugin can be configured with a few optional configuration options.
       "AdditionalIncludePaths": [], # Additional paths to check formatting (wildcards supported).
       "AuditOnly": False,           # Don't fail the build if there are errors.  Just log them.
       "ConfigFilePath": "",         # Custom path to an Uncrustify config file.
+      "IgnoreFiles": [],            # A list of file patterns to ignore.
       "IgnoreStandardPaths": [],    # Standard Plugin defined paths that should be ignored.
-      "OutputFileDiffs": False,     # Output chunks of formatting diffs in the test case log.
+      "OutputFileDiffs": True,      # Output chunks of formatting diffs in the test case log.
                                     # This can significantly slow down the plugin on very large packages.
       "SkipGitExclusions": False    # Don't exclude git ignored files and files in git submodules.
   }
@@ -67,6 +68,12 @@ the test as skipped. This allows visibility into the failures without breaking t
 
 When specified in the config file, this is a package relative path to the Uncrustify configuration file.
 
+### `IgnoreFiles`
+
+This option supports .gitignore file and folder matching strings including wildcards.
+
+The files specified by this configuration option will not be processed by Uncrustify.
+
 ### `IgnoreStandardPaths`
 
 This plugin by default will check the below standard paths. A package configuration file can specify any of these paths
@@ -82,7 +89,7 @@ to be ignored.
 
 ### `OutputFileDiffs`
 
-`Boolean` - Default is `False`.
+`Boolean` - Default is `True`.
 
 If `True`, output diffs of formatting changes into the test case log. This is helpful to exactly understand what changes
 need to be made to the source code in order to fix a coding standard compliance issue.
@@ -96,6 +103,23 @@ plugin execution.
 
 By default, files in paths matched in a .gitignore file or a recognized git submodule are excluded. If this option
 is `True`, the plugin will not attempt to recognize these files and exclude them.
+
+### `UNCRUSTIFY_IN_PLACE=TRUE`
+
+This command supports any uncrustify changes to be made in-place to the files in the workspace. This is useful for
+formatting any failing code before submitting a PR. Since this is an option for a local developer to use that would
+modify their files, it must be explicitly specified as a CLI argument or set as an environment variable.
+
+_NOTE:_ This is _not_ an option in the config `yaml`. It is an option passed directly into the tool based on local
+        developer need.
+
+#### Example Usage
+
+In this example, Uncrustify would format files in `UefiCpuPkg` without running any other plugins or building any code.
+
+```bash
+stuart_ci_build -c .pytool/CISettings.py -p UefiCpuPkg -t NO-TARGET UNCRUSTIFY_IN_PLACE=TRUE --disable-all UncrustifyCheck=run
+```
 
 ## High-Level Plugin Operation
 
@@ -118,3 +142,19 @@ indicates a formatting issue was found and the test is marked failed (unless `Au
 The test case log will contain a report of which files failed to format properly, allowing the user to run Uncrustify
 against the file locally to fix the issue. If the `OutputFileDiffs` configuration option is set to `True`, the plugin
 will output diff chunks for all code formatting issues in the test case log.
+
+## Disabling Uncrustify for Code Sections
+
+Due to the number of scenarios presented to Uncrustify, there may be cases when it simply does not format the code as
+expected. While the Uncrustify plugin allows the file to be ignored, in the case where only a small section of code
+needs to be ignored, the following comments can be used to disable Uncrustify processing for a section of code.
+
+```c
+// BEGIN_UNCRUSTIFY_DISABLE
+// Core ignored by Uncrustify...
+// END_UNCRUSTIFY_DISABLE
+```
+
+These marker values are defined in the Uncrustify configuration file used by this plugin.
+
+See: [.pytool/Plugin/UncrustifyCheck/uncrustify.cfg](https://github.com/tianocore/edk2/blob/master/.pytool/Plugin/UncrustifyCheck/uncrustify.cfg).

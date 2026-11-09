@@ -1,6 +1,6 @@
 /** @file
 
-  Copyright (c) 2014 - 2021, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2014 - 2022, Intel Corporation. All rights reserved.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
@@ -16,19 +16,20 @@
   @return                     FSP specific IDT gate descriptor.
 
 **/
-UINT64
+IA32_IDT_GATE_DESCRIPTOR
 FspGetExceptionHandler (
   IN  UINT64  IdtEntryTemplate
   )
 {
   UINT32                    Entry;
-  UINT64                    ExceptionHandler;
+  IA32_IDT_GATE_DESCRIPTOR  ExceptionHandler;
   IA32_IDT_GATE_DESCRIPTOR  *IdtGateDescriptor;
   FSP_INFO_HEADER           *FspInfoHeader;
 
-  FspInfoHeader                      = (FSP_INFO_HEADER *)AsmGetFspInfoHeader ();
-  ExceptionHandler                   = IdtEntryTemplate;
-  IdtGateDescriptor                  = (IA32_IDT_GATE_DESCRIPTOR *)&ExceptionHandler;
+  ZeroMem ((VOID *)&ExceptionHandler, sizeof (IA32_IDT_GATE_DESCRIPTOR));
+  FspInfoHeader                      = (FSP_INFO_HEADER *)(UINTN)AsmGetFspInfoHeader ();
+  *(UINT64 *) &ExceptionHandler      = IdtEntryTemplate;
+  IdtGateDescriptor                  = &ExceptionHandler;
   Entry                              = (IdtGateDescriptor->Bits.OffsetHigh << 16) | IdtGateDescriptor->Bits.OffsetLow;
   Entry                              = FspInfoHeader->ImageBase + FspInfoHeader->ImageSize - (~Entry + 1);
   IdtGateDescriptor->Bits.OffsetHigh = (UINT16)(Entry >> 16);
@@ -52,7 +53,8 @@ SecGetPlatformData (
   FSP_PLAT_DATA  *FspPlatformData;
   UINT32         TopOfCar;
   UINT32         *StackPtr;
-  UINT32         DwordSize;
+  UINT32         DataSize;
+  UINT32         TemporaryRamSize;
 
   FspPlatformData = &FspData->PlatformData;
 
@@ -66,12 +68,20 @@ SecGetPlatformData (
   FspPlatformData->MicrocodeRegionSize = 0;
   FspPlatformData->CodeRegionBase      = 0;
   FspPlatformData->CodeRegionSize      = 0;
+  TemporaryRamSize                     = 0;
 
   //
   // Pointer to the size field
   //
   TopOfCar = PcdGet32 (PcdTemporaryRamBase) + PcdGet32 (PcdTemporaryRamSize);
   StackPtr = (UINT32 *)(TopOfCar - sizeof (UINT32));
+  if ((*(StackPtr - 1) != FSP_MCUD_SIGNATURE) && (FspData->FspInfoHeader->ImageAttribute & BIT4)) {
+    ReadTemporaryRamSize (PcdGet32 (PcdTemporaryRamBase), &TemporaryRamSize);
+    if (TemporaryRamSize) {
+      TopOfCar = PcdGet32 (PcdTemporaryRamBase) + TemporaryRamSize;
+      StackPtr = (UINT32 *)(TopOfCar - sizeof (UINT32));
+    }
+  }
 
   if (*(StackPtr - 1) == FSP_MCUD_SIGNATURE) {
     while (*StackPtr != 0) {
@@ -79,22 +89,21 @@ SecGetPlatformData (
         //
         // This following data was pushed onto stack after TempRamInit API
         //
-        DwordSize = 4;
-        StackPtr  = StackPtr - 1 - DwordSize;
-        CopyMem (&(FspPlatformData->MicrocodeRegionBase), StackPtr, (DwordSize << 2));
-        StackPtr--;
+        DataSize  = *(StackPtr);
+        DataSize  = DataSize / sizeof (DataSize);
+        StackPtr -= DataSize;
+        CopyMem (&(FspPlatformData->MicrocodeRegionBase), StackPtr + 1, 4 * sizeof (UINTN));
       } else if (*(StackPtr - 1) == FSP_PER0_SIGNATURE) {
         //
         // This is the performance data for InitTempMemory API entry/exit
         //
-        DwordSize = 4;
-        StackPtr  = StackPtr - 1 - DwordSize;
-        CopyMem (FspData->PerfData, StackPtr, (DwordSize << 2));
+        DataSize  = *(StackPtr);
+        DataSize  = DataSize / sizeof (DataSize);
+        StackPtr -= DataSize;
+        CopyMem (FspData->PerfData, StackPtr + 1, 2 * sizeof (UINT64)); // Copy from the end of the PER0 data
 
         ((UINT8 *)(&FspData->PerfData[0]))[7] = FSP_PERF_ID_API_TEMP_RAM_INIT_ENTRY;
         ((UINT8 *)(&FspData->PerfData[1]))[7] = FSP_PERF_ID_API_TEMP_RAM_INIT_EXIT;
-
-        StackPtr--;
       } else {
         StackPtr -= (*StackPtr);
       }
@@ -115,7 +124,7 @@ SecGetPlatformData (
 VOID
 FspGlobalDataInit (
   IN OUT  FSP_GLOBAL_DATA  *PeiFspData,
-  IN UINT32                BootLoaderStack,
+  IN UINTN                 BootLoaderStack,
   IN UINT8                 ApiIdx
   )
 {
@@ -124,16 +133,21 @@ FspGlobalDataInit (
   UINTN  Idx;
 
   //
-  // Set FSP Global Data pointer
+  // Set FSP Global Data pointer when FSP runs in API mode
   //
   SetFspGlobalDataPointer (PeiFspData);
   ZeroMem ((VOID *)PeiFspData, sizeof (FSP_GLOBAL_DATA));
 
   PeiFspData->Signature = FSP_GLOBAL_DATA_SIGNATURE;
-  PeiFspData->Version   = 0;
+  PeiFspData->Version   = FSP_GLOBAL_DATA_VERSION;
   PeiFspData->CoreStack = BootLoaderStack;
+  PeiFspData->FspMode   = FSP_IN_API_MODE;
   PeiFspData->PerfIdx   = 2;
   PeiFspData->PerfSig   = FSP_PERFORMANCE_DATA_SIGNATURE;
+  //
+  // Cache FspHobList pointer passed by bootloader via ApiParameter2
+  //
+  PeiFspData->FspHobListPtr = (VOID **)GetFspApiParameter2 ();
 
   SetFspMeasurePoint (FSP_PERF_ID_API_FSP_MEMORY_INIT_ENTRY);
 
@@ -141,7 +155,7 @@ FspGlobalDataInit (
   // Get FSP Header offset
   // It may have multiple FVs, so look into the last one for FSP header
   //
-  PeiFspData->FspInfoHeader = (FSP_INFO_HEADER *)AsmGetFspInfoHeader ();
+  PeiFspData->FspInfoHeader = (FSP_INFO_HEADER *)(UINTN)AsmGetFspInfoHeader ();
   SecGetPlatformData (PeiFspData);
 
   //
@@ -154,12 +168,13 @@ FspGlobalDataInit (
   //
   FspmUpdDataPtr = (VOID *)GetFspApiParameter ();
   if (FspmUpdDataPtr == NULL) {
-    FspmUpdDataPtr = (VOID *)(PeiFspData->FspInfoHeader->ImageBase + PeiFspData->FspInfoHeader->CfgRegionOffset);
+    FspmUpdDataPtr = (VOID *)(UINTN)(PeiFspData->FspInfoHeader->ImageBase + PeiFspData->FspInfoHeader->CfgRegionOffset);
   }
 
   SetFspUpdDataPointer (FspmUpdDataPtr);
   SetFspMemoryInitUpdDataPointer (FspmUpdDataPtr);
   SetFspSiliconInitUpdDataPointer (NULL);
+  SetFspSmmInitUpdDataPointer (NULL);
 
   //
   // Initialize OnSeparateStack value.
@@ -200,11 +215,11 @@ FspGlobalDataInit (
     (PeiFspData->FspInfoHeader->ImageRevision >> 24) & 0xFF, \
     (PeiFspData->FspInfoHeader->ImageRevision >> 16) & 0xFF, \
     (PeiFspData->FspInfoHeader->HeaderRevision >= 6) ? \
-      (((PeiFspData->FspInfoHeader->ImageRevision >> 8) & 0xFF) | (PeiFspData->FspInfoHeader->ExtendedImageRevision & 0xFF00)) :\
-        ((PeiFspData->FspInfoHeader->ImageRevision >> 8) & 0xFF), \
+    (((PeiFspData->FspInfoHeader->ImageRevision >> 8) & 0xFF) | (PeiFspData->FspInfoHeader->ExtendedImageRevision & 0xFF00)) : \
+    ((PeiFspData->FspInfoHeader->ImageRevision >> 8) & 0xFF), \
     (PeiFspData->FspInfoHeader->HeaderRevision >= 6) ? \
-      ((PeiFspData->FspInfoHeader->ImageRevision & 0xFF) | ((PeiFspData->FspInfoHeader->ExtendedImageRevision & 0xFF) << 8)): \
-        (PeiFspData->FspInfoHeader->ImageRevision & 0xFF)
+    ((PeiFspData->FspInfoHeader->ImageRevision & 0xFF) | ((PeiFspData->FspInfoHeader->ExtendedImageRevision & 0xFF) << 8)) : \
+    (PeiFspData->FspInfoHeader->ImageRevision & 0xFF)
     ));
 }
 
@@ -217,7 +232,7 @@ FspGlobalDataInit (
 **/
 VOID
 FspDataPointerFixUp (
-  IN UINT32  OffsetGap
+  IN UINTN  OffsetGap
   )
 {
   FSP_GLOBAL_DATA  *NewFspData;

@@ -49,7 +49,9 @@ EFI_GUID  mOpalDeviceLockBoxGuid = OPAL_DEVICE_LOCKBOX_GUID;
   function shall return EFI_DEVICE_ERROR.
 
   @param  This                         Indicates a pointer to the calling context.
-  @param  MediaId                      ID of the medium to receive data from.
+  @param  MediaId                      ID of the medium to receive data from. If there is no
+                                       block IO protocol supported by the physical device, the
+                                       value of MediaId is undefined.
   @param  Timeout                      The timeout, in 100ns units, to use for the execution
                                        of the security protocol command. A Timeout value of 0
                                        means that this function will wait indefinitely for the
@@ -148,7 +150,9 @@ SecurityReceiveData (
   shall return EFI_DEVICE_ERROR.
 
   @param  This                         Indicates a pointer to the calling context.
-  @param  MediaId                      ID of the medium to receive data from.
+  @param  MediaId                      ID of the medium to receive data from. If there is no
+                                       block IO protocol supported by the physical device, the
+                                       value of MediaId is undefined.
   @param  Timeout                      The timeout, in 100ns units, to use for the execution
                                        of the security protocol command. A Timeout value of 0
                                        means that this function will wait indefinitely for the
@@ -280,7 +284,7 @@ UnlockOpalPassword (
     DEBUG ((
       DEBUG_INFO,
       "%a() OpalUtilUpdateGlobalLockingRange() Result = 0x%x\n",
-      __FUNCTION__,
+      __func__,
       Result
       ));
   }
@@ -302,7 +306,7 @@ UnlockOpalPassword (
     DEBUG ((
       DEBUG_INFO,
       "%a() OpalBlockSid() Result = 0x%x\n",
-      __FUNCTION__,
+      __func__,
       Result
       ));
   }
@@ -427,11 +431,11 @@ OpalPasswordStorageSecurityPpiNotify (
   IN VOID                       *Ppi
   )
 {
-  DEBUG ((DEBUG_INFO, "%a entered at S3 resume!\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a entered at S3 resume!\n", __func__));
 
   UnlockOpalPasswordDevices ((EDKII_PEI_STORAGE_SECURITY_CMD_PPI *)Ppi);
 
-  DEBUG ((DEBUG_INFO, "%a exit at S3 resume!\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a exit at S3 resume!\n", __func__));
 
   return EFI_SUCCESS;
 }
@@ -466,7 +470,7 @@ OpalPasswordPeiInit (
     return EFI_UNSUPPORTED;
   }
 
-  DEBUG ((DEBUG_INFO, "%a: Enters in S3 path.\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a: Enters in S3 path.\n", __func__));
 
   Status = PeiServicesNotifyPpi (&mOpalPasswordStorageSecurityPpiNotifyDesc);
   ASSERT_EFI_ERROR (Status);

@@ -344,7 +344,7 @@ Thunk32To64 (
     DEBUG ((
       DEBUG_INFO,
       "%a() Stack Base: 0x%lx, Stack Size: 0x%lx\n",
-      __FUNCTION__,
+      __func__,
       Context->StackBufferBase,
       Context->StackBufferLength
       ));
@@ -732,25 +732,23 @@ BuildMemoryResourceDescriptor (
   VOID
   )
 {
-  EFI_PEI_HOB_POINTERS         Hob;
-  UINTN                        Index;
-  EFI_HOB_RESOURCE_DESCRIPTOR  *ResourceDescriptor;
-  MEMORY_RESOURCE_DESCRIPTOR   *MemoryResource;
-  EFI_STATUS                   Status;
+  EFI_PEI_HOB_POINTERS        Hob;
+  UINTN                       Index;
+  MEMORY_RESOURCE_DESCRIPTOR  *MemoryResource;
+  EFI_STATUS                  Status;
 
   //
   // Get the count of memory resource descriptor.
   //
   Index   = 0;
-  Hob.Raw = GetFirstHob (EFI_HOB_TYPE_RESOURCE_DESCRIPTOR);
+  Hob.Raw = GetNextResourceHob (GetHobList ());
   while (Hob.Raw != NULL) {
-    ResourceDescriptor = (EFI_HOB_RESOURCE_DESCRIPTOR *)Hob.Raw;
-    if (ResourceDescriptor->ResourceType == EFI_RESOURCE_SYSTEM_MEMORY) {
+    if (Hob.ResourceDescriptor2->ResourceType == EFI_RESOURCE_SYSTEM_MEMORY) {
       Index++;
     }
 
     Hob.Raw = GET_NEXT_HOB (Hob);
-    Hob.Raw = GetNextHob (EFI_HOB_TYPE_RESOURCE_DESCRIPTOR, Hob.Raw);
+    Hob.Raw = GetNextResourceHob (Hob.Raw);
   }
 
   if (Index == 0) {
@@ -790,24 +788,23 @@ BuildMemoryResourceDescriptor (
   // Get the content of memory resource descriptor.
   //
   Index   = 0;
-  Hob.Raw = GetFirstHob (EFI_HOB_TYPE_RESOURCE_DESCRIPTOR);
+  Hob.Raw = GetNextResourceHob (GetHobList ());
   while (Hob.Raw != NULL) {
-    ResourceDescriptor = (EFI_HOB_RESOURCE_DESCRIPTOR *)Hob.Raw;
-    if (ResourceDescriptor->ResourceType == EFI_RESOURCE_SYSTEM_MEMORY) {
+    if (Hob.ResourceDescriptor2->ResourceType == EFI_RESOURCE_SYSTEM_MEMORY) {
       DEBUG ((
         DEBUG_INFO,
         "MemoryResource[0x%x] - Start(0x%0lx) Length(0x%0lx)\n",
         Index,
-        ResourceDescriptor->PhysicalStart,
-        ResourceDescriptor->ResourceLength
+        Hob.ResourceDescriptor2->PhysicalStart,
+        Hob.ResourceDescriptor2->ResourceLength
         ));
-      MemoryResource[Index].PhysicalStart  = ResourceDescriptor->PhysicalStart;
-      MemoryResource[Index].ResourceLength = ResourceDescriptor->ResourceLength;
+      MemoryResource[Index].PhysicalStart  = Hob.ResourceDescriptor2->PhysicalStart;
+      MemoryResource[Index].ResourceLength = Hob.ResourceDescriptor2->ResourceLength;
       Index++;
     }
 
     Hob.Raw = GET_NEXT_HOB (Hob);
-    Hob.Raw = GetNextHob (EFI_HOB_TYPE_RESOURCE_DESCRIPTOR, Hob.Raw);
+    Hob.Raw = GetNextResourceHob (Hob.Raw);
   }
 
   SortMemoryResourceDescriptor (MemoryResource);
@@ -917,7 +914,7 @@ GetScatterGatherHeadEntries (
   CapsuleDataPtr64  = 0;
 
   if ((ListLength == NULL) || (HeadList == NULL)) {
-    DEBUG ((DEBUG_ERROR, "%a Invalid parameters.  Inputs can't be NULL\n", __FUNCTION__));
+    DEBUG ((DEBUG_ERROR, "%a Invalid parameters.  Inputs can't be NULL\n", __func__));
     ASSERT (ListLength != NULL);
     ASSERT (HeadList != NULL);
     return EFI_INVALID_PARAMETER;
@@ -976,7 +973,7 @@ GetScatterGatherHeadEntries (
 
     if (EFI_ERROR (Status)) {
       if (Status != EFI_NOT_FOUND) {
-        DEBUG ((DEBUG_ERROR, "Unexpected error getting Capsule Update variable.  Status = %r\n"));
+        DEBUG ((DEBUG_ERROR, "Unexpected error getting Capsule Update variable.  Status = %r\n", Status));
       }
 
       break;
@@ -1022,7 +1019,7 @@ GetScatterGatherHeadEntries (
   }
 
   if (ValidIndex == 0) {
-    DEBUG ((DEBUG_ERROR, "%a didn't find any SG lists in variables\n", __FUNCTION__));
+    DEBUG ((DEBUG_ERROR, "%a didn't find any SG lists in variables\n", __func__));
     return EFI_NOT_FOUND;
   }
 
@@ -1101,7 +1098,7 @@ CapsuleCoalesce (
   //
   Status = GetScatterGatherHeadEntries (&ListLength, &VariableArrayAddress);
   if (EFI_ERROR (Status) || (VariableArrayAddress == NULL)) {
-    DEBUG ((DEBUG_ERROR, "%a failed to get Scatter Gather List Head Entries.  Status = %r\n", __FUNCTION__, Status));
+    DEBUG ((DEBUG_ERROR, "%a failed to get Scatter Gather List Head Entries.  Status = %r\n", __func__, Status));
     goto Done;
   }
 
@@ -1277,7 +1274,7 @@ CreateState (
   UINTN                          Size;
   EFI_PHYSICAL_ADDRESS           NewBuffer;
   UINTN                          CapsuleNumber;
-  UINT32                         Index;
+  UINTN                          Index;
   EFI_PHYSICAL_ADDRESS           BaseAddress;
   UINT64                         Length;
 
@@ -1318,7 +1315,7 @@ CreateState (
   //
   // Copy to our new buffer for DXE
   //
-  DEBUG ((DEBUG_INFO, "Capsule copy from 0x%8X to 0x%8X with size 0x%8X\n", (UINTN)((UINT8 *)PrivateData + sizeof (EFI_CAPSULE_PEIM_PRIVATE_DATA) + (CapsuleNumber - 1) * sizeof (UINT64)), (UINTN)NewBuffer, Size));
+  DEBUG ((DEBUG_INFO, "Capsule copy from 0x%lX to 0x%lX with size 0x%lX\n", (UINT64)(UINTN)((UINT8 *)PrivateData + sizeof (EFI_CAPSULE_PEIM_PRIVATE_DATA) + (CapsuleNumber - 1) * sizeof (UINT64)), (UINT64)(UINTN)NewBuffer, (UINT64)Size));
   CopyMem ((VOID *)(UINTN)NewBuffer, (VOID *)(UINTN)((UINT8 *)PrivateData + sizeof (EFI_CAPSULE_PEIM_PRIVATE_DATA) + (CapsuleNumber - 1) * sizeof (UINT64)), Size);
   //
   // Check for test data pattern. If it is the test pattern, then we'll

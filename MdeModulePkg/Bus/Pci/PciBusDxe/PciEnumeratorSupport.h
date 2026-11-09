@@ -6,8 +6,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _EFI_PCI_ENUMERATOR_SUPPORT_H_
-#define _EFI_PCI_ENUMERATOR_SUPPORT_H_
+#pragma once
 
 /**
   This routine is used to check whether the pci device is present.
@@ -262,6 +261,7 @@ DetermineDeviceAttribute (
 
   @param PciIoDevice      Input Pci device instance. Output Pci device instance with updated
                           Bar information.
+  @param IgnoreOptionRom  Output If the option rom of incompatible device need to be ignored.
 
   @retval EFI_SUCCESS     Successfully updated bar information.
   @retval EFI_UNSUPPORTED Given PCI device doesn't belong to incompatible PCI device list.
@@ -269,7 +269,8 @@ DetermineDeviceAttribute (
 **/
 EFI_STATUS
 UpdatePciInfo (
-  IN OUT PCI_IO_DEVICE  *PciIoDevice
+  IN OUT PCI_IO_DEVICE  *PciIoDevice,
+  OUT BOOLEAN           *IgnoreOptionRom
   );
 
 /**
@@ -300,6 +301,21 @@ PciParseBar (
   IN PCI_IO_DEVICE  *PciIoDevice,
   IN UINTN          Offset,
   IN UINTN          BarIndex
+  );
+
+/**
+  Parse the Enhanced Allocation (EA) capability of a PCI function, if present,
+  and record the fixed BARs it describes in the PCI device instance.
+
+  This must be called after the BARs have been parsed with PciParseBar (), and
+  before resource allocation takes place.
+
+  @param PciIoDevice  Pci device instance.
+
+**/
+VOID
+PciParseEnhancedAllocation (
+  IN PCI_IO_DEVICE  *PciIoDevice
   );
 
 /**
@@ -407,7 +423,7 @@ PciEnumeratorLight (
 **/
 EFI_STATUS
 PciGetBusRange (
-  IN     EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR  **Descriptors,
+  IN OUT EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR  **Descriptors,
   OUT    UINT16                             *MinBus,
   OUT    UINT16                             *MaxBus,
   OUT    UINT16                             *BusRange
@@ -476,5 +492,3 @@ VOID
 DumpPciBars (
   IN PCI_IO_DEVICE  *PciIoDevice
   );
-
-#endif

@@ -19,14 +19,14 @@
 #include <Library/DebugLib.h>
 #include <Library/QemuFwCfgLib.h>
 #include <Library/UefiBootServicesTableLib.h>
+#include <Library/MemEncryptTdxLib.h>
 #include <Library/MemEncryptSevLib.h>
 
 #include "QemuFwCfgLibInternal.h"
 
-STATIC BOOLEAN  mQemuFwCfgSupported = FALSE;
-STATIC BOOLEAN  mQemuFwCfgDmaSupported;
-
 STATIC EDKII_IOMMU_PROTOCOL  *mIoMmuProtocol;
+
+STATIC QEMU_FW_CFG_WORK_AREA  mQemuFwCfgWorkArea = { 0 };
 
 /**
   Returns a boolean indicating if the firmware configuration interface
@@ -55,13 +55,14 @@ QemuFwCfgInitialize (
 {
   UINT32  Signature;
   UINT32  Revision;
+  UINT64  CcGuestAttr;
 
   //
   // Enable the access routines while probing to see if it is supported.
   // For probing we always use the IO Port (IoReadFifo8()) access method.
   //
-  mQemuFwCfgSupported    = TRUE;
-  mQemuFwCfgDmaSupported = FALSE;
+  mQemuFwCfgWorkArea.QemuFwCfgSupported    = TRUE;
+  mQemuFwCfgWorkArea.QemuFwCfgDmaSupported = FALSE;
 
   QemuFwCfgSelectItem (QemuFwCfgItemSignature);
   Signature = QemuFwCfgRead32 ();
@@ -74,18 +75,21 @@ QemuFwCfgInitialize (
       )
   {
     DEBUG ((DEBUG_INFO, "QemuFwCfg interface not supported.\n"));
-    mQemuFwCfgSupported = FALSE;
+    mQemuFwCfgWorkArea.QemuFwCfgSupported = FALSE;
     return RETURN_SUCCESS;
   }
 
   if ((Revision & FW_CFG_F_DMA) == 0) {
     DEBUG ((DEBUG_INFO, "QemuFwCfg interface (IO Port) is supported.\n"));
   } else {
-    mQemuFwCfgDmaSupported = TRUE;
+    mQemuFwCfgWorkArea.QemuFwCfgDmaSupported = TRUE;
     DEBUG ((DEBUG_INFO, "QemuFwCfg interface (DMA) is supported.\n"));
   }
 
-  if (mQemuFwCfgDmaSupported && MemEncryptSevIsEnabled ()) {
+  CcGuestAttr = PcdGet64 (PcdConfidentialComputingGuestAttr);
+  if (mQemuFwCfgWorkArea.QemuFwCfgDmaSupported && (CC_GUEST_IS_SEV (CcGuestAttr) ||
+                                                   CC_GUEST_IS_TDX (CcGuestAttr)))
+  {
     EFI_STATUS  Status;
 
     //
@@ -100,9 +104,9 @@ QemuFwCfgInitialize (
     if (EFI_ERROR (Status)) {
       DEBUG ((
         DEBUG_ERROR,
-        "QemuFwCfgSevDma %a:%a Failed to locate IOMMU protocol.\n",
+        "QemuFwCfgDma %a:%a Failed to locate IOMMU protocol.\n",
         gEfiCallerBaseName,
-        __FUNCTION__
+        __func__
         ));
       ASSERT (FALSE);
       CpuDeadLoop ();
@@ -126,7 +130,7 @@ InternalQemuFwCfgIsAvailable (
   VOID
   )
 {
-  return mQemuFwCfgSupported;
+  return mQemuFwCfgWorkArea.QemuFwCfgSupported;
 }
 
 /**
@@ -141,7 +145,7 @@ InternalQemuFwCfgDmaIsAvailable (
   VOID
   )
 {
-  return mQemuFwCfgDmaSupported;
+  return mQemuFwCfgWorkArea.QemuFwCfgDmaSupported;
 }
 
 /**
@@ -185,7 +189,7 @@ AllocFwCfgDmaAccessBuffer (
       DEBUG_ERROR,
       "%a:%a failed to allocate FW_CFG_DMA_ACCESS\n",
       gEfiCallerBaseName,
-      __FUNCTION__
+      __func__
       ));
     ASSERT (FALSE);
     CpuDeadLoop ();
@@ -214,7 +218,7 @@ AllocFwCfgDmaAccessBuffer (
       DEBUG_ERROR,
       "%a:%a failed to Map() FW_CFG_DMA_ACCESS\n",
       gEfiCallerBaseName,
-      __FUNCTION__
+      __func__
       ));
     ASSERT (FALSE);
     CpuDeadLoop ();
@@ -227,7 +231,7 @@ AllocFwCfgDmaAccessBuffer (
       DEBUG_ERROR,
       "%a:%a failed to Map() - requested 0x%Lx got 0x%Lx\n",
       gEfiCallerBaseName,
-      __FUNCTION__,
+      __func__,
       (UINT64)sizeof (FW_CFG_DMA_ACCESS),
       (UINT64)Size
       ));
@@ -262,7 +266,7 @@ FreeFwCfgDmaAccessBuffer (
       DEBUG_ERROR,
       "%a:%a failed to UnMap() Mapping 0x%Lx\n",
       gEfiCallerBaseName,
-      __FUNCTION__,
+      __func__,
       (UINT64)(UINTN)Mapping
       ));
     ASSERT (FALSE);
@@ -275,7 +279,7 @@ FreeFwCfgDmaAccessBuffer (
       DEBUG_ERROR,
       "%a:%a failed to Free() 0x%Lx\n",
       gEfiCallerBaseName,
-      __FUNCTION__,
+      __func__,
       (UINT64)(UINTN)Access
       ));
     ASSERT (FALSE);
@@ -319,7 +323,7 @@ MapFwCfgDmaDataBuffer (
       DEBUG_ERROR,
       "%a:%a failed to Map() Address 0x%Lx Size 0x%Lx\n",
       gEfiCallerBaseName,
-      __FUNCTION__,
+      __func__,
       (UINT64)(UINTN)HostAddress,
       (UINT64)Size
       ));
@@ -333,7 +337,7 @@ MapFwCfgDmaDataBuffer (
       DEBUG_ERROR,
       "%a:%a failed to Map() - requested 0x%x got 0x%Lx\n",
       gEfiCallerBaseName,
-      __FUNCTION__,
+      __func__,
       Size,
       (UINT64)NumberOfBytes
       ));
@@ -359,7 +363,7 @@ UnmapFwCfgDmaDataBuffer (
       DEBUG_ERROR,
       "%a:%a failed to UnMap() Mapping 0x%Lx\n",
       gEfiCallerBaseName,
-      __FUNCTION__,
+      __func__,
       (UINT64)(UINTN)Mapping
       ));
     ASSERT (FALSE);
@@ -411,10 +415,10 @@ InternalQemuFwCfgDmaBytes (
   DataBuffer    = Buffer;
 
   //
-  // When SEV is enabled, map Buffer to DMA address before issuing the DMA
+  // When SEV or TDX is enabled, map Buffer to DMA address before issuing the DMA
   // request
   //
-  if (MemEncryptSevIsEnabled ()) {
+  if (mIoMmuProtocol != NULL) {
     VOID                  *AccessBuffer;
     EFI_PHYSICAL_ADDRESS  DataBufferAddress;
 
@@ -490,4 +494,41 @@ InternalQemuFwCfgDmaBytes (
   if (DataMapping != NULL) {
     UnmapFwCfgDmaDataBuffer (DataMapping);
   }
+}
+
+/**
+  Check if the Ovmf work area is built as HobList before invoking Hob services.
+
+  @retval    TRUE   Ovmf work area is not NULL and it is built as HobList.
+  @retval    FALSE   Ovmf work area is NULL or it is not built as HobList.
+**/
+BOOLEAN
+InternalQemuFwCfgCheckOvmfWorkArea (
+  VOID
+  )
+{
+  return TRUE;
+}
+
+/**
+  Get the pointer to the QEMU_FW_CFG_WORK_AREA. This data is used as the
+  workarea to record the ongoing fw_cfg item and offset.
+  @retval   QEMU_FW_CFG_WORK_AREA  Pointer to the QEMU_FW_CFG_WORK_AREA
+  @retval   NULL                QEMU_FW_CFG_WORK_AREA doesn't exist
+**/
+QEMU_FW_CFG_WORK_AREA *
+InternalQemuFwCfgCacheGetWorkArea (
+  VOID
+  )
+{
+  return &mQemuFwCfgWorkArea;
+}
+
+RETURN_STATUS
+EFIAPI
+QemuFwCfgInitCache (
+  IN OUT EFI_HOB_PLATFORM_INFO  *PlatformInfoHob
+  )
+{
+  return RETURN_UNSUPPORTED;
 }

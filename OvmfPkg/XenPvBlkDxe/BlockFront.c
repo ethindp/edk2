@@ -88,7 +88,7 @@ XenPvBlockFree (
 }
 
 /**
-  Wait until until the backend has reached the ExpectedState.
+  Wait until the backend has reached the ExpectedState.
 
   @param Dev            A XEN_BLOCK_FRONT_DEVICE instance.
   @param ExpectedState  The backend state expected.
@@ -187,13 +187,13 @@ XenPvBlockFrontInitialization (
   if (Dev->MediaInfo.CdRom) {
     Status = XenBusIo->XsBackendRead (XenBusIo, XST_NIL, "params", (VOID **)&Params);
     if (Status != XENSTORE_STATUS_SUCCESS) {
-      DEBUG ((DEBUG_ERROR, "%a: Failed to read params (%d)\n", __FUNCTION__, Status));
+      DEBUG ((DEBUG_ERROR, "%a: Failed to read params (%d)\n", __func__, Status));
       goto Error;
     }
 
     if ((AsciiStrLen (Params) == 0) || (AsciiStrCmp (Params, "aio:") == 0)) {
       FreePool (Params);
-      DEBUG ((DEBUG_INFO, "%a: Empty cdrom\n", __FUNCTION__));
+      DEBUG ((DEBUG_INFO, "%a: Empty cdrom\n", __func__));
       goto Error;
     }
 
@@ -356,7 +356,7 @@ Again:
 
   DEBUG ((
     DEBUG_INFO,
-    "XenPvBlk: New disk with %ld sectors of %d bytes\n",
+    "XenPvBlk: New disk with %ld 512B-sectors and logical sector size of %d bytes\n",
     Dev->MediaInfo.Sectors,
     Dev->MediaInfo.SectorSize
     ));

@@ -21,7 +21,7 @@
 
 
 #
-#  VALID_ARCHITECTURES           = IA32 X64 EBC ARM AARCH64
+#  VALID_ARCHITECTURES           = IA32 X64 EBC AARCH64
 #
 
 [Sources]
@@ -32,6 +32,7 @@
   ScanMem8Wrapper.c
   ZeroMemWrapper.c
   CompareMemWrapper.c
+  SetMemNWrapper.c
   SetMem64Wrapper.c
   SetMem32Wrapper.c
   SetMem16Wrapper.c

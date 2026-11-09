@@ -2,15 +2,17 @@
 # CI configuration for CryptoPkg
 #
 # Copyright (c) Microsoft Corporation
-# Copyright (c) 2020, Intel Corporation. All rights reserved.<BR>
+# Copyright (c) 2020 - 2022, Intel Corporation. All rights reserved.<BR>
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 ##
 {
+    "PrEval": {
+        "DscPath": "CryptoPkg.dsc",
+    },
     "LicenseCheck": {
         "IgnoreFiles": [
             # These directories contain auto-generated OpenSSL content
-            "Library/OpensslLib/X64",
-            "Library/OpensslLib/X64Gcc"
+            "Library/OpensslLib/OpensslGen"
         ]
     },
     "EccCheck": {
@@ -21,23 +23,39 @@
         "ExceptionList": [
             "8001", "IsLeap",
             "8001", "OBJ_get0_data",
-            "8001", "OBJ_length"
+            "8001", "OBJ_length",
+            "5005", "X509PopCertificate"
         ],
         ## Both file path and directory path are accepted.
         "IgnoreFiles": [
             "Library/OpensslLib/openssl",
+            "Library/OpensslLib/OpensslGen",
             # The unit testing folder is not to be checked
             "Test/UnitTest",
             # This has OpenSSL interfaces that aren't UEFI spec compliant
             "Library/BaseCryptLib/SysCall",
             # This has OpenSSL interfaces that aren't UEFI spec compliant
-            "Library/OpensslLib/rand_pool.c",
+            "Library/OpensslLib/OpensslStub",
             # This has OpenSSL interfaces that aren't UEFI spec compliant
             "Library/Include/CrtLibSupport.h",
+            # This has OpenSSL interfaces that aren't UEFI spec compliant
+            "Library/BaseCryptLib/Hash/CryptParallelHash.h",
+            "Library/Include/fcntl.h",
+            # This has Mbedtls interfaces that aren't UEFI spec compliant
+            "Library/Include/stdint.h",
+            "Library/Include/stubs-32.h",
+            "Library/Include/inttypes.h",
             # These directories contain auto-generated OpenSSL content
             "Library/OpensslLib",
             "Library/IntrinsicLib",
-            "Library/BaseCryptLib/Pk/CryptPkcs7VerifyBase.c"
+            "Library/BaseCryptLib/Pk/CryptPkcs7VerifyBase.c",
+            # mbedtls
+            "Library/MbedTlsLib/mbedtls",
+            # This has mbedtls interfaces that aren't UEFI spec compliant
+            "Library/MbedTlsLib/EcSm2Null.c",
+            "Library/MbedTlsLib/CrtWrapper.c",
+            "Library/MbedTlsLib/Include/mbedtls/mbedtls_config.h",
+            "Library/BaseCryptLibMbedTls/SysCall"
         ]
     },
     "CompilerPlugin": {
@@ -55,6 +73,7 @@
             "MdePkg/MdePkg.dec",
             "MdeModulePkg/MdeModulePkg.dec",
             "CryptoPkg/CryptoPkg.dec",
+            "UnitTestFrameworkPkg/UnitTestFrameworkPkg.dec",
         ],
         # For host based unit tests
         "AcceptableDependencies-HOST_APPLICATION":[],
@@ -64,11 +83,7 @@
     },
     "DscCompleteCheck": {
         "DscPath": "CryptoPkg.dsc",
-        "IgnoreInf": [
-            # These are alternatives to OpensslLib.inf
-            "CryptoPkg/Library/OpensslLib/OpensslLibX64.inf",
-            "CryptoPkg/Library/OpensslLib/OpensslLibX64Gcc.inf"
-        ]
+        "IgnoreInf": []
     },
     "GuidCheck": {
         "IgnoreGuidName": [],
@@ -86,5 +101,67 @@
         "ExtendWords": [],           # words to extend to the dictionary for this package
         "IgnoreStandardPaths": [],   # Standard Plugin defined paths that should be ignore
         "AdditionalIncludePaths": [] # Additional paths to spell check (wildcards supported)
+    },
+
+    # options defined in .pytool/Plugin/UncrustifyCheck
+    "UncrustifyCheck": {
+        "IgnoreFiles": [
+            "Library/OpensslLib/OpensslGen/crypto/params_idx.c",
+            "Library/OpensslLib/OpensslGen/include/crypto/bn_conf.h",
+            "Library/OpensslLib/OpensslGen/include/crypto/dso_conf.h",
+            "Library/OpensslLib/OpensslGen/include/internal/param_names.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/asn1.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/asn1t.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/bio.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/cmp.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/cms.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/comp.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/conf.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/configuration-ec-lite.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/configuration-ec.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/configuration-noec.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/configuration.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/core_names.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/crmf.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/crypto.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/ct.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/err.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/ess.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/fipskey.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/lhash.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/ocsp.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/opensslv.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/pkcs12.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/pkcs7.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/safestack.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/srp.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/ssl.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/ui.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/x509.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/x509v3.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/x509_acert.h",
+            "Library/OpensslLib/OpensslGen/include/openssl/x509_vfy.h",
+            "Library/OpensslLib/OpensslGen/providers/common/der/der_digests_gen.c",
+            "Library/OpensslLib/OpensslGen/providers/common/der/der_ecx_gen.c",
+            "Library/OpensslLib/OpensslGen/providers/common/der/der_ec_gen.c",
+            "Library/OpensslLib/OpensslGen/providers/common/der/der_ml_dsa_gen.c",
+            "Library/OpensslLib/OpensslGen/providers/common/der/der_rsa_gen.c",
+            "Library/OpensslLib/OpensslGen/providers/common/der/der_slh_dsa_gen.c",
+            "Library/OpensslLib/OpensslGen/providers/common/der/der_wrap_gen.c",
+            "Library/OpensslLib/OpensslGen/providers/common/include/prov/der_digests.h",
+            "Library/OpensslLib/OpensslGen/providers/common/include/prov/der_ec.h",
+            "Library/OpensslLib/OpensslGen/providers/common/include/prov/der_ecx.h",
+            "Library/OpensslLib/OpensslGen/providers/common/include/prov/der_ml_dsa.h",
+            "Library/OpensslLib/OpensslGen/providers/common/include/prov/der_rsa.h",
+            "Library/OpensslLib/OpensslGen/providers/common/include/prov/der_slh_dsa.h",
+            "Library/OpensslLib/OpensslGen/providers/common/include/prov/der_wrap.h",
+            "Library/OpensslLib/OpensslStub/uefiprov.c"
+        ]
+    },
+
+    ## options defined .pytool/Plugin/MarkdownLintCheck
+    "MarkdownLintCheck": {
+        "AuditOnly": True,           # If True, log all errors and then mark as skipped
+        "IgnoreFiles": []            # package root relative file, folder, or glob pattern to ignore
     }
 }

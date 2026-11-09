@@ -1,34 +1,35 @@
 /**@file
 
-Copyright (c) 2006 - 2018, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2006 - 2023, Intel Corporation. All rights reserved.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 Module Name:
 
-  WinNtThunk.c
+  WinThunk.c
 
 Abstract:
 
   Since the SEC is the only windows program in our emulation we
-  must use a Tiano mechanism to export Win32 APIs to other modules.
-  This is the role of the EFI_WIN_NT_THUNK_PROTOCOL.
+  must use a Tiano mechanism to export operating system services
+  to other modules. This is the role of the EMU_THUNK_PROTOCOL.
 
-  The mWinNtThunkTable exists so that a change to EFI_WIN_NT_THUNK_PROTOCOL
+  The gEmuThunkProtocol exists so that a change to EMU_THUNK_PROTOCOL
   will cause an error in initializing the array if all the member functions
   are not added. It looks like adding a element to end and not initializing
-  it may cause the table to be initaliized with the members at the end being
-  set to zero. This is bad as jumping to zero will case the NT32 to crash.
-
-  All the member functions in mWinNtThunkTable are Win32
-  API calls, so please reference Microsoft documentation.
-
-
-  gWinNt is a a public exported global that contains the initialized
-  data.
+  it may cause the table to be initalized with the members at the end being
+  set to zero. This is bad as jumping to zero will case EmulatorPkg to crash.
 
 **/
 
 #include "WinHost.h"
+
+STATIC BOOLEAN  mEmulatorStdInConfigured = FALSE;
+STATIC DWORD    mOldStdInMode;
+#if defined (NTDDI_VERSION) && defined (NTDDI_WIN10_TH2) && (NTDDI_VERSION > NTDDI_WIN10_TH2)
+STATIC DWORD  mOldStdOutMode;
+#endif
+
+STATIC UINT64  mPerformanceFrequency = 0;
 
 UINTN
 SecWriteStdErr (
@@ -61,6 +62,13 @@ SecConfigStdIn (
 
   Success = GetConsoleMode (GetStdHandle (STD_INPUT_HANDLE), &Mode);
   if (Success) {
+    if (!mEmulatorStdInConfigured) {
+      //
+      // Save the original state of the console so it can be restored on exit
+      //
+      mOldStdInMode = Mode;
+    }
+
     //
     // Disable buffer (line input), echo, mouse, window
     //
@@ -82,6 +90,13 @@ SecConfigStdIn (
   //
   if (Success) {
     Success = GetConsoleMode (GetStdHandle (STD_OUTPUT_HANDLE), &Mode);
+    if (!mEmulatorStdInConfigured) {
+      //
+      // Save the original state of the console so it can be restored on exit
+      //
+      mOldStdOutMode = Mode;
+    }
+
     if (Success) {
       Success = SetConsoleMode (
                   GetStdHandle (STD_OUTPUT_HANDLE),
@@ -91,6 +106,10 @@ SecConfigStdIn (
   }
 
  #endif
+  if (Success) {
+    mEmulatorStdInConfigured = TRUE;
+  }
+
   return Success ? EFI_SUCCESS : EFI_DEVICE_ERROR;
 }
 
@@ -247,11 +266,11 @@ volatile BOOLEAN  mInterruptEnabled = FALSE;
 VOID
 CALLBACK
 MMTimerThread (
-  UINT   wTimerID,
-  UINT   msg,
-  DWORD  dwUser,
-  DWORD  dw1,
-  DWORD  dw2
+  UINT       wTimerID,
+  UINT       msg,
+  DWORD_PTR  dwUser,
+  DWORD_PTR  dw1,
+  DWORD_PTR  dw2
   )
 {
   UINT32  CurrentTick;
@@ -434,8 +453,13 @@ SecQueryPerformanceFrequency (
   VOID
   )
 {
-  // Hard code to nanoseconds
-  return 1000000000ULL;
+  if (mPerformanceFrequency) {
+    return mPerformanceFrequency;
+  }
+
+  QueryPerformanceFrequency ((LARGE_INTEGER *)&mPerformanceFrequency);
+
+  return mPerformanceFrequency;
 }
 
 UINT64
@@ -443,7 +467,11 @@ SecQueryPerformanceCounter (
   VOID
   )
 {
-  return 0;
+  UINT64  PerformanceCount;
+
+  QueryPerformanceCounter ((LARGE_INTEGER *)&PerformanceCount);
+
+  return PerformanceCount;
 }
 
 VOID
@@ -467,6 +495,21 @@ SecExit (
   UINTN  Status
   )
 {
+  if (mEmulatorStdInConfigured) {
+    //
+    // Reset the console back to its original state
+    //
+ #if defined (NTDDI_VERSION) && defined (NTDDI_WIN10_TH2) && (NTDDI_VERSION > NTDDI_WIN10_TH2)
+    BOOL  Success = SetConsoleMode (GetStdHandle (STD_INPUT_HANDLE), mOldStdInMode);
+    if (Success) {
+      SetConsoleMode (GetStdHandle (STD_OUTPUT_HANDLE), mOldStdOutMode);
+    }
+
+ #else
+    SetConsoleMode (GetStdHandle (STD_INPUT_HANDLE), mOldStdInMode);
+ #endif
+  }
+
   exit ((int)Status);
 }
 
@@ -564,6 +607,3 @@ EMU_THUNK_PROTOCOL  gEmuThunkProtocol = {
   SecSetTimer,
   GetNextThunkProtocol
 };
-
-#pragma warning(default : 4996)
-#pragma warning(default : 4232)

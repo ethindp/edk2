@@ -596,7 +596,7 @@ UsbHubInit (
     }
   }
 
-  if (Index == NumEndpoints) {
+  if ((Index == NumEndpoints) || (EpDesc == NULL)) {
     DEBUG ((DEBUG_ERROR, "UsbHubInit: no interrupt endpoint found for hub %d\n", HubDev->Address));
     return EFI_DEVICE_ERROR;
   }
@@ -609,7 +609,7 @@ UsbHubInit (
   Status  = UsbHubReadDesc (HubDev, HubDesc);
 
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "UsbHubInit: failed to read HUB descriptor %r\n", Status));
+    DEBUG ((DEBUG_ERROR, "UsbHubInit: failed to read HUB descriptor - %r\n", Status));
     return Status;
   }
 
@@ -1165,6 +1165,29 @@ UsbRootHubResetPort (
   // section 7.1.7.5 for timing requirements.
   //
   gBS->Stall (USB_SET_ROOT_PORT_RESET_STALL);
+
+  for (Index = 0; Index < Bus->MaxDevices; Index++) {
+    if (  (Bus->Devices[Index] != NULL)
+       && (Bus->Devices[Index]->ParentPort == Port)
+       && (Bus->Devices[Index]->ParentIf == RootIf))
+    {
+      //
+      // DevDesc is freed and set to NULL by UsbEnumerateNewDev() before
+      // it retries the port reset, so check it before dereferencing.
+      //
+      if (  (Bus->Usb2Hc != NULL)
+         && (Bus->Usb2Hc->MajorRevision >= 0x3)
+         && (Bus->Devices[Index]->IsSSDev)
+         && (Bus->Devices[Index]->Speed < EFI_USB_SPEED_SUPER)
+         && (Bus->Devices[Index]->DevDesc != NULL)
+         && (Bus->Devices[Index]->DevDesc->Desc.DeviceClass != USB_HUB_CLASS_CODE))
+      {
+        DEBUG ((DEBUG_INFO, "Found the device matched, Index = %d, Port = %X, ParentIf = %X\n", Index, Port, RootIf));
+        DEBUG ((DEBUG_INFO, "This is a USB 3 device and it need a longer waiting time for super speed.\n"));
+        gBS->Stall (USB_WAIT_PORT_STABLE_STALL);
+      }
+    }
+  }
 
   Status = UsbHcClearRootHubPortFeature (Bus, Port, EfiUsbPortReset);
 

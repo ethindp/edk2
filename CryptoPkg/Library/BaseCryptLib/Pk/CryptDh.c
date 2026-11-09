@@ -7,6 +7,9 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
 #include "InternalCryptLib.h"
+#include <openssl/opensslconf.h>
+#undef OPENSSL_NO_DH
+
 #include <openssl/bn.h>
 #include <openssl/dh.h>
 
@@ -163,8 +166,13 @@ DhSetParameter (
   return TRUE;
 
 Error:
-  BN_free (BnP);
-  BN_free (BnG);
+  if (BnP != NULL) {
+    BN_free (BnP);
+  }
+
+  if (BnG != NULL) {
+    BN_free (BnG);
+  }
 
   return FALSE;
 }

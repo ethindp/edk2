@@ -191,6 +191,11 @@ UiSupportLibCallbackHandler (
 
   if (Action == EFI_BROWSER_ACTION_RETRIEVE) {
     if (QuestionId == FRONT_PAGE_KEY_LANGUAGE) {
+      if (Value == NULL) {
+        *Status = EFI_INVALID_PARAMETER;
+        return FALSE;
+      }
+
       Value->u8 = gCurrentLanguageIndex;
       *Status   = EFI_SUCCESS;
     } else {
@@ -346,7 +351,10 @@ UiCreateLanguageMenu (
   OptionCount = 0;
   if (Lang == NULL) {
     Lang = AllocatePool (AsciiStrSize (gLanguageString));
-    ASSERT (Lang != NULL);
+    if (Lang == NULL) {
+      ASSERT (Lang != NULL);
+      goto Exit;
+    }
   }
 
   while (*LangCode != 0) {
@@ -392,6 +400,9 @@ UiCreateLanguageMenu (
     OptionsOpCodeHandle,
     NULL
     );
+
+Exit:
+  HiiFreeOpCodeHandle (OptionsOpCodeHandle);
 }
 
 /**
@@ -450,7 +461,7 @@ UiCreateResetMenu (
     StartOpCodeHandle,
     FRONT_PAGE_KEY_RESET,
     STRING_TOKEN (STR_RESET_STRING),
-    STRING_TOKEN (STR_RESET_STRING),
+    STRING_TOKEN (STR_RESET_STRING_HELP),
     EFI_IFR_FLAG_CALLBACK,
     0
     );
@@ -590,10 +601,20 @@ UiListThirdPartyDrivers (
   }
 
   HiiHandles = HiiGetHiiHandles (NULL);
-  ASSERT (HiiHandles != NULL);
+  if ( HiiHandles == NULL) {
+    ASSERT (HiiHandles != NULL);
+    DEBUG ((DEBUG_ERROR, "%a No HII handles found in the HII database\n", __func__));
+    return EFI_NOT_FOUND;
+  }
 
   gHiiDriverList = AllocateZeroPool (UI_HII_DRIVER_LIST_SIZE * sizeof (UI_HII_DRIVER_INSTANCE));
-  ASSERT (gHiiDriverList != NULL);
+  if (gHiiDriverList == NULL) {
+    ASSERT (gHiiDriverList != NULL);
+    DEBUG ((DEBUG_VERBOSE, "%a No memory for gHiiDriverList\n", __func__));
+    FreePool (HiiHandles);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
   DriverListPtr = gHiiDriverList;
   CurrentSize   = UI_HII_DRIVER_LIST_SIZE;
 

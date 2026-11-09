@@ -13,6 +13,8 @@
 #include <Library/DebugLib.h>
 #include <Library/DevicePathLib.h>
 #include <Library/HiiLib.h>
+#include <Library/HobLib.h>
+#include <Library/MemDebugLogLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PrintLib.h>
 #include <Library/UefiBootServicesTableLib.h>
@@ -107,6 +109,11 @@ STATIC EFI_EVENT  mGopEvent;
 // the GOP instances one by one.
 //
 STATIC VOID  *mGopTracker;
+
+//
+// The driver image handle, used to obtain the device path for <ConfigHdr>.
+//
+STATIC EFI_HANDLE  mImageHandle;
 
 //
 // Cache the resolutions we get from the GOP.
@@ -229,13 +236,76 @@ ExtractConfig (
 {
   MAIN_FORM_STATE  MainFormState;
   EFI_STATUS       Status;
+  EFI_STRING       ConfigRequestHdr;
+  EFI_STRING       ConfigRequest;
+  UINTN            Size;
+  BOOLEAN          AllocatedRequest;
 
-  DEBUG ((DEBUG_VERBOSE, "%a: Request=\"%s\"\n", __FUNCTION__, Request));
+  DEBUG ((DEBUG_VERBOSE, "%a: Request=\"%s\"\n", __func__, Request));
+
+  if ((Progress == NULL) || (Results == NULL)) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  ConfigRequestHdr = NULL;
+  ConfigRequest    = NULL;
+  Size             = 0;
+  AllocatedRequest = FALSE;
+
+  //
+  // Check if <ConfigHdr> matches the GUID and name
+  //
+  *Progress = Request;
+  if ((Request != NULL) &&
+      !HiiIsConfigHdrMatch (
+         Request,
+         &gOvmfPlatformConfigGuid,
+         mHiiFormName
+         )
+      )
+  {
+    return EFI_NOT_FOUND;
+  }
 
   Status = PlatformConfigToFormState (&MainFormState);
   if (EFI_ERROR (Status)) {
-    *Progress = Request;
     return Status;
+  }
+
+  if ((Request == NULL) || (StrStr (Request, L"OFFSET") == NULL)) {
+    //
+    // Request has no <RequestElement>, so construct full request string.
+    // Allocate and fill a buffer large enough to hold <ConfigHdr>
+    // followed by "&OFFSET=0&WIDTH=WWWWWWWWWWWWWWWW" followed by a
+    // null terminator.
+    //
+    ConfigRequestHdr = HiiConstructConfigHdr (
+                         &gOvmfPlatformConfigGuid,
+                         mHiiFormName,
+                         mImageHandle
+                         );
+    if (ConfigRequestHdr == NULL) {
+      return EFI_OUT_OF_RESOURCES;
+    }
+
+    Size             = (StrLen (ConfigRequestHdr) + 32 + 1) * sizeof (CHAR16);
+    ConfigRequest    = AllocateZeroPool (Size);
+    AllocatedRequest = TRUE;
+    if (ConfigRequest == NULL) {
+      FreePool (ConfigRequestHdr);
+      return EFI_OUT_OF_RESOURCES;
+    }
+
+    UnicodeSPrint (
+      ConfigRequest,
+      Size,
+      L"%s&OFFSET=0&WIDTH=%016LX",
+      ConfigRequestHdr,
+      sizeof MainFormState
+      );
+    FreePool (ConfigRequestHdr);
+  } else {
+    ConfigRequest = Request;
   }
 
   //
@@ -243,7 +313,7 @@ ExtractConfig (
   //
   Status = gHiiConfigRouting->BlockToConfig (
                                 gHiiConfigRouting,
-                                Request,
+                                ConfigRequest,
                                 (VOID *)&MainFormState,
                                 sizeof MainFormState,
                                 Results,
@@ -253,12 +323,39 @@ ExtractConfig (
     DEBUG ((
       DEBUG_ERROR,
       "%a: BlockToConfig(): %r, Progress=\"%s\"\n",
-      __FUNCTION__,
+      __func__,
       Status,
       (Status == EFI_DEVICE_ERROR) ? NULL : *Progress
       ));
   } else {
-    DEBUG ((DEBUG_VERBOSE, "%a: Results=\"%s\"\n", __FUNCTION__, *Results));
+    DEBUG ((DEBUG_VERBOSE, "%a: Results=\"%s\"\n", __func__, *Results));
+  }
+
+  //
+  // If we used a newly allocated ConfigRequest, update Progress to point to
+  // original Request instead of ConfigRequest.
+  //
+  if (Request == NULL) {
+    *Progress = NULL;
+  } else if (StrStr (Request, L"OFFSET") == NULL) {
+    if (EFI_ERROR (Status)) {
+      //
+      // Since we constructed ConfigRequest, failure can only occur if there
+      // is not enough memory. In this case, we point Progress to the first
+      // character of Request.
+      //
+      *Progress = Request;
+    } else {
+      //
+      // In case of success, we point Progress to the null terminator of
+      // Request.
+      //
+      *Progress = Request + StrLen (Request);
+    }
+  }
+
+  if (AllocatedRequest) {
+    FreePool (ConfigRequest);
   }
 
   return Status;
@@ -336,9 +433,28 @@ RouteConfig (
   DEBUG ((
     DEBUG_VERBOSE,
     "%a: Configuration=\"%s\"\n",
-    __FUNCTION__,
+    __func__,
     Configuration
     ));
+
+  if ((Progress == NULL) || (Configuration == NULL)) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  //
+  // Check if <ConfigHdr> matches the GUID and name
+  //
+  *Progress = Configuration;
+  if ((Configuration != NULL) &&
+      !HiiIsConfigHdrMatch (
+         Configuration,
+         &gOvmfPlatformConfigGuid,
+         mHiiFormName
+         )
+      )
+  {
+    return EFI_NOT_FOUND;
+  }
 
   //
   // the "read" step in RMW
@@ -367,7 +483,7 @@ RouteConfig (
     DEBUG ((
       DEBUG_ERROR,
       "%a: ConfigToBlock(): %r, Progress=\"%s\"\n",
-      __FUNCTION__,
+      __func__,
       Status,
       (Status == EFI_BUFFER_TOO_SMALL) ? NULL : *Progress
       ));
@@ -400,7 +516,7 @@ Callback (
   DEBUG ((
     DEBUG_VERBOSE,
     "%a: Action=0x%Lx QuestionId=%d Type=%d\n",
-    __FUNCTION__,
+    __func__,
     (UINT64)Action,
     QuestionId,
     Type
@@ -506,7 +622,7 @@ FreeGopModes:
 
   @param[in]  GopModes      Array of resolutions retrieved from the GOP.
 
-  @retval EFI_SUCESS  Opcodes have been successfully produced.
+  @retval EFI_SUCCESS Opcodes have been successfully produced.
 
   @return             Status codes from underlying functions. PackageList may
                       have been extended with new strings. OpCodeBuffer is
@@ -583,7 +699,7 @@ FreeOutputBuffer:
   The drop down list of video resolutions is generated from (NumGopModes,
   GopModes).
 
-  @retval EFI_SUCESS  Form successfully updated.
+  @retval EFI_SUCCESS Form successfully updated.
   @return             Status codes from underlying functions.
 
 **/
@@ -721,7 +837,7 @@ ExecutePlatformConfig (
     DEBUG ((
       (Status == EFI_NOT_FOUND) ? DEBUG_VERBOSE : DEBUG_ERROR,
       "%a: failed to load platform config: %r\n",
-      __FUNCTION__,
+      __func__,
       Status
       ));
     return Status;
@@ -738,7 +854,19 @@ ExecutePlatformConfig (
     ASSERT_RETURN_ERROR (PcdStatus);
 
     PcdStatus = PcdSet32S (
+                  PcdSetupVideoHorizontalResolution,
+                  PlatformConfig.HorizontalResolution
+                  );
+    ASSERT_RETURN_ERROR (PcdStatus);
+
+    PcdStatus = PcdSet32S (
                   PcdVideoVerticalResolution,
+                  PlatformConfig.VerticalResolution
+                  );
+    ASSERT_RETURN_ERROR (PcdStatus);
+
+    PcdStatus = PcdSet32S (
+                  PcdSetupVideoVerticalResolution,
                   PlatformConfig.VerticalResolution
                   );
     ASSERT_RETURN_ERROR (PcdStatus);
@@ -818,12 +946,34 @@ GopInstalled (
 }
 
 /**
+  If a memory debug log buffer is present, register the buffer location as
+  config table so the OS can find and show it.
+**/
+VOID
+EFIAPI
+MemDebugLogInstallTable (
+  VOID
+  )
+{
+  EFI_HOB_GUID_TYPE       *GuidHob;
+  MEM_DEBUG_LOG_HOB_DATA  *HobData;
+  VOID                    *LogBuffer;
+
+  GuidHob = GetFirstGuidHob (&gMemDebugLogHobGuid);
+  if (GuidHob != NULL) {
+    HobData   = (MEM_DEBUG_LOG_HOB_DATA *)GET_GUID_HOB_DATA (GuidHob);
+    LogBuffer = (VOID *)(UINTN)HobData->MemDebugLogBufAddr;
+    gBS->InstallConfigurationTable (&gMemDebugLogHobGuid, LogBuffer);
+  }
+}
+
+/**
   Entry point for this driver.
 
   @param[in] ImageHandle  Image handle of this driver.
   @param[in] SystemTable  Pointer to SystemTable.
 
-  @retval EFI_SUCESS            Driver has loaded successfully.
+  @retval EFI_SUCCESS           Driver has loaded successfully.
   @retval EFI_OUT_OF_RESOURCES  Failed to install HII packages.
   @return                       Error codes from lower level functions.
 
@@ -857,6 +1007,11 @@ PlatformInit (
   if (EFI_ERROR (Status)) {
     return Status;
   }
+
+  //
+  // Save the driver image handle.
+  //
+  mImageHandle = ImageHandle;
 
   //
   // Publish the HII package list to HII Database.
@@ -898,6 +1053,8 @@ PlatformInit (
   //
   Status = gBS->SignalEvent (mGopEvent);
   ASSERT_EFI_ERROR (Status);
+
+  MemDebugLogInstallTable ();
 
   return EFI_SUCCESS;
 

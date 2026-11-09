@@ -7,6 +7,9 @@
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 ##
 {
+    "PrEval": {
+        "DscPath": "MdeModulePkg.dsc",
+    },
     ## options defined .pytool/Plugin/LicenseCheck
     "LicenseCheck": {
         "IgnoreFiles": []
@@ -20,6 +23,8 @@
             "8005", "UNIVERSAL_PAYLOAD_PCI_ROOT_BRIDGE.UID",
             "8005", "UNIVERSAL_PAYLOAD_PCI_ROOT_BRIDGE.HID",
             "8001", "UefiSortLibUnitTestMain",
+            "8001", "MediaSanitizeUnitTestMain",
+            "8001", "GptLibUnitTestMain",
         ],
         ## Both file path and directory path are accepted.
         "IgnoreFiles": [
@@ -50,8 +55,7 @@
         "AcceptableDependencies": [
             "MdePkg/MdePkg.dec",
             "MdeModulePkg/MdeModulePkg.dec",
-            "StandaloneMmPkg/StandaloneMmPkg.dec",
-            "ArmPkg/ArmPkg.dec"  # this should be fixed by promoting an abstraction
+            "StandaloneMmPkg/StandaloneMmPkg.dec"
         ],
         # For host based unit tests
         "AcceptableDependencies-HOST_APPLICATION":[
@@ -82,6 +86,7 @@
             "gEfiPeiMmAccessPpiGuid=gPeiSmmAccessPpiGuid",
             "gPeiSmmControlPpiGuid=gEfiPeiMmControlPpiGuid",
             "gEfiPeiMmCommunicationPpiGuid=gEfiPeiSmmCommunicationPpiGuid",
+            "gUiAppFileGuid=UiApp",
         ]
     },
 
@@ -115,5 +120,13 @@
             "canthave"
         ],
         "AdditionalIncludePaths": [] # Additional paths to spell check relative to package root (wildcards supported)
+    },
+
+    ## options defined .pytool/Plugin/MarkdownLintCheck
+    "MarkdownLintCheck": {
+        "AuditOnly": True,          # If True, log all errors and then mark as skipped
+        "IgnoreFiles": [ "Universal/RegularExpressionDxe/oniguruma",  # submodule outside of control
+                         "Library/BrotliCustomDecompressLib/brotli"   # submodule outside of control
+        ]
     }
 }

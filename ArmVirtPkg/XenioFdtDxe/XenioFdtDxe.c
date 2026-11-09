@@ -49,14 +49,14 @@ InitializeXenioFdtDxe (
     DEBUG ((
       DEBUG_WARN,
       "%a: No 'xen,xen' compatible DT node found\n",
-      __FUNCTION__
+      __func__
       ));
     return EFI_UNSUPPORTED;
   }
 
   ASSERT (AddressCells == 2);
   ASSERT (SizeCells == 2);
-  ASSERT (RegSize == 2 * sizeof (UINT64));
+  ASSERT (RegSize >= 2 * sizeof (UINT64));
 
   //
   // Retrieve the reg base from this node and wire it up to the
@@ -70,7 +70,7 @@ InitializeXenioFdtDxe (
       DEBUG_ERROR,
       "%a: XenIoMmioInstall () failed on a new handle "
       "(Status == %r)\n",
-      __FUNCTION__,
+      __func__,
       Status
       ));
     return Status;

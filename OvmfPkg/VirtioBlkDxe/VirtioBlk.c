@@ -13,6 +13,7 @@
   Copyright (C) 2012, Red Hat, Inc.
   Copyright (c) 2012 - 2018, Intel Corporation. All rights reserved.<BR>
   Copyright (c) 2017, AMD Inc, All rights reserved.<BR>
+  Copyright (c) 2024, Arm Limited. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -240,7 +241,7 @@ SynchronousRequest (
   )
 {
   UINT32                   BlockSize;
-  volatile VIRTIO_BLK_REQ  Request;
+  volatile VIRTIO_BLK_REQ  *Request;
   volatile UINT8           *HostStatus;
   VOID                     *HostStatusBuffer;
   DESC_INDICES             Indices;
@@ -252,6 +253,7 @@ SynchronousRequest (
   EFI_PHYSICAL_ADDRESS     RequestDeviceAddress;
   EFI_STATUS               Status;
   EFI_STATUS               UnmapStatus;
+  EFI_TPL                  CurrentTpl;
 
   BlockSize = Dev->BlockIoMedia.BlockSize;
 
@@ -273,15 +275,20 @@ SynchronousRequest (
   //
   ASSERT (BufferSize % BlockSize == 0);
 
+  Request = AllocateZeroPool (sizeof (*Request));
+  if (Request == NULL) {
+    return EFI_DEVICE_ERROR;
+  }
+
   //
   // Prepare virtio-blk request header, setting zero size for flush.
   // IO Priority is homogeneously 0.
   //
-  Request.Type = RequestIsWrite ?
-                 (BufferSize == 0 ? VIRTIO_BLK_T_FLUSH : VIRTIO_BLK_T_OUT) :
-                 VIRTIO_BLK_T_IN;
-  Request.IoPrio = 0;
-  Request.Sector = MultU64x32 (Lba, BlockSize / 512);
+  Request->Type = RequestIsWrite ?
+                  (BufferSize == 0 ? VIRTIO_BLK_T_FLUSH : VIRTIO_BLK_T_OUT) :
+                  VIRTIO_BLK_T_IN;
+  Request->IoPrio = 0;
+  Request->Sector = MultU64x32 (Lba, BlockSize / 512);
 
   //
   // Host status is bi-directional (we preset with a value and expect the
@@ -294,7 +301,8 @@ SynchronousRequest (
                           &HostStatusBuffer
                           );
   if (EFI_ERROR (Status)) {
-    return EFI_DEVICE_ERROR;
+    Status = EFI_DEVICE_ERROR;
+    goto FreeBlkRequest;
   }
 
   HostStatus = HostStatusBuffer;
@@ -306,8 +314,8 @@ SynchronousRequest (
   Status = VirtioMapAllBytesInSharedBuffer (
              Dev->VirtIo,
              VirtioOperationBusMasterRead,
-             (VOID *)&Request,
-             sizeof Request,
+             (VOID *)Request,
+             sizeof (*Request),
              &RequestDeviceAddress,
              &RequestMapping
              );
@@ -358,6 +366,8 @@ SynchronousRequest (
     goto UnmapDataBuffer;
   }
 
+  CurrentTpl = gBS->RaiseTPL (TPL_NOTIFY);
+
   VirtioPrepare (&Dev->Ring, &Indices);
 
   //
@@ -372,7 +382,7 @@ SynchronousRequest (
   VirtioAppendDesc (
     &Dev->Ring,
     RequestDeviceAddress,
-    sizeof Request,
+    sizeof (*Request),
     VRING_DESC_F_NEXT,
     &Indices
     );
@@ -431,6 +441,7 @@ SynchronousRequest (
     Status = EFI_DEVICE_ERROR;
   }
 
+  gBS->RestoreTPL (CurrentTpl);
   Dev->VirtIo->UnmapSharedBuffer (Dev->VirtIo, StatusMapping);
 
 UnmapDataBuffer:
@@ -453,6 +464,9 @@ FreeHostStatusBuffer:
                  EFI_SIZE_TO_PAGES (sizeof *HostStatus),
                  HostStatusBuffer
                  );
+
+FreeBlkRequest:
+  FreePool ((VOID *)Request);
 
   return Status;
 }
@@ -943,7 +957,7 @@ VirtioBlkInit (
   DEBUG ((
     DEBUG_INFO,
     "%a: LbaSize=0x%x[B] NumBlocks=0x%Lx[Lba]\n",
-    __FUNCTION__,
+    __func__,
     Dev->BlockIoMedia.BlockSize,
     Dev->BlockIoMedia.LastBlock + 1
     ));
@@ -958,14 +972,14 @@ VirtioBlkInit (
     DEBUG ((
       DEBUG_INFO,
       "%a: FirstAligned=0x%Lx[Lba] PhysBlkSize=0x%x[Lba]\n",
-      __FUNCTION__,
+      __func__,
       Dev->BlockIoMedia.LowestAlignedLba,
       Dev->BlockIoMedia.LogicalBlocksPerPhysicalBlock
       ));
     DEBUG ((
       DEBUG_INFO,
       "%a: OptimalTransferLengthGranularity=0x%x[Lba]\n",
-      __FUNCTION__,
+      __func__,
       Dev->BlockIoMedia.OptimalTransferLengthGranularity
       ));
   }
@@ -1037,7 +1051,7 @@ VirtioBlkExitBoot (
 {
   VBLK_DEV  *Dev;
 
-  DEBUG ((DEBUG_VERBOSE, "%a: Context=0x%p\n", __FUNCTION__, Context));
+  DEBUG ((DEBUG_VERBOSE, "%a: Context=0x%p\n", __func__, Context));
   //
   // Reset the device. This causes the hypervisor to forget about the virtio
   // ring.

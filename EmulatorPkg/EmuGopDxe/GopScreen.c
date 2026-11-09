@@ -1,6 +1,6 @@
 /*++ @file
 
-Copyright (c) 2006 - 2018, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2006 - 2022, Intel Corporation. All rights reserved.<BR>
 Portions copyright (c) 2010 - 2011, Apple Inc. All rights reserved.
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -10,7 +10,7 @@ Module Name:
 
 Abstract:
 
-  This file produces the graphics abstration of UGA. It is called by
+  This file produces the graphics abstration of GOP. It is called by
   EmuGopDriver.c file which deals with the EFI 1.1 driver model.
   This file just does graphics.
 
@@ -107,11 +107,7 @@ EmuGopSetMode (
     return EFI_UNSUPPORTED;
   }
 
-  ModeData                                                 = &Private->ModeData[ModeNumber];
-  This->Mode->Mode                                         = ModeNumber;
-  Private->GraphicsOutput.Mode->Info->HorizontalResolution = ModeData->HorizontalResolution;
-  Private->GraphicsOutput.Mode->Info->VerticalResolution   = ModeData->VerticalResolution;
-  Private->GraphicsOutput.Mode->Info->PixelsPerScanLine    = ModeData->HorizontalResolution;
+  ModeData = &Private->ModeData[ModeNumber];
 
   if (Private->HardwareNeedsStarting) {
     Status = EmuGopStartWindow (
@@ -127,6 +123,11 @@ EmuGopSetMode (
 
     Private->HardwareNeedsStarting = FALSE;
   }
+
+  This->Mode->Mode                                         = ModeNumber;
+  Private->GraphicsOutput.Mode->Info->HorizontalResolution = ModeData->HorizontalResolution;
+  Private->GraphicsOutput.Mode->Info->VerticalResolution   = ModeData->VerticalResolution;
+  Private->GraphicsOutput.Mode->Info->PixelsPerScanLine    = ModeData->HorizontalResolution;
 
   Status = Private->EmuGraphicsWindow->Size (
                                          Private->EmuGraphicsWindow,
@@ -208,7 +209,7 @@ EmuGopBlt (
   // the number of bytes in each row can be computed.
   //
   if (Delta == 0) {
-    Delta = Width * sizeof (EFI_UGA_PIXEL);
+    Delta = Width * sizeof (EFI_GRAPHICS_OUTPUT_BLT_PIXEL);
   }
 
   //
@@ -219,8 +220,8 @@ EmuGopBlt (
   OriginalTPL = gBS->RaiseTPL (TPL_NOTIFY);
 
   //
-  // Pack UGA Draw protocol parameters to EMU_GRAPHICS_WINDOWS__BLT_ARGS structure to adapt to
-  // GopBlt() API of Unix UGA IO protocol.
+  // Pack GOP protocol parameters to EMU_GRAPHICS_WINDOWS__BLT_ARGS structure to adapt to
+  // GopBlt() API of GOP protocol.
   //
   GopBltArgs.DestinationX = DestinationX;
   GopBltArgs.DestinationY = DestinationY;
@@ -231,8 +232,8 @@ EmuGopBlt (
   GopBltArgs.Delta        = Delta;
   Status                  = Private->EmuGraphicsWindow->Blt (
                                                           Private->EmuGraphicsWindow,
-                                                          (EFI_UGA_PIXEL *)BltBuffer,
-                                                          (EFI_UGA_BLT_OPERATION)BltOperation,
+                                                          BltBuffer,
+                                                          BltOperation,
                                                           &GopBltArgs
                                                           );
 
@@ -383,7 +384,7 @@ ShutdownGopEvent (
 
 Routine Description:
 
-  This is the UGA screen's callback notification function for exit-boot-services.
+  This is the screen's callback notification function for exit-boot-services.
   All we do here is call EmuGopDestructor().
 
 Arguments:

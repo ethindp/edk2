@@ -268,7 +268,7 @@ ERR_XML_INVALID_VARIABLENAME = \
       "Only a Hex Byte Array of UCS-2 format or L\"string\" is allowed): %s %s %s")
 ERR_XML_INVALID_LIB_SUPMODLIST = _("The LIBRARY_CLASS entry %s must have the list appended using the format as: \n"
 "BASE SEC PEI_CORE PEIM DXE_CORE DXE_DRIVER SMM_CORE DXE_SMM_DRIVER DXE_RUNTIME_DRIVER "
-"DXE_SAL_DRIVER UEFI_DRIVER UEFI_APPLICATION USER_DEFINED\n Current is %s.")
+"UEFI_DRIVER UEFI_APPLICATION USER_DEFINED\n Current is %s.")
 ERR_XML_INVALID_EXTERN_SUPARCHLIST = \
     _("There is a mismatch of SupArchList %s between the EntryPoint, UnloadImage, Constructor, "
       "and Destructor elements in the ModuleSurfaceArea.ModuleProperties: SupArchList: %s. ")
@@ -316,10 +316,6 @@ MSG_NEW_FILE_NAME_FOR_DIST      = _(
     "Provide new filename for distribution file to be saved:\n")
 MSG_UPDATE_PACKAGE_DATABASE    = _("Update Distribution Package Database ...")
 MSG_PYTHON_ON                  = _("(Python %s on %s) ")
-MSG_EDKII_MAIL_ADDR            = 'devel@edk2.groups.io'
-MSG_SEARCH_FOR_HELP            = _(
-    "\n(Please send email to %s for\n"
-    " help, attach the following call stack trace.)\n")
 MSG_REMOVE_TEMP_FILE_STARTED   = _("Removing temp files started ... ")
 MSG_REMOVE_TEMP_FILE_DONE   = _("Removing temp files ... Done.")
 MSG_FINISH                     = _("Successfully Done.")

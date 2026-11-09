@@ -155,7 +155,7 @@ CommandInit (
   @param ImageHandle    the image handle of the process
   @param SystemTable    the EFI System Table pointer
 
-  @retval EFI_SUCCESS   the initialization was complete sucessfully
+  @retval EFI_SUCCESS   the initialization was complete successfully
 **/
 RETURN_STATUS
 EFIAPI
@@ -398,7 +398,11 @@ ShellCommandIsCommandOnInternalList (
         ; Node = (SHELL_COMMAND_INTERNAL_LIST_ENTRY *)GetNextNode (&mCommandList.Link, &Node->Link)
         )
   {
-    ASSERT (Node->CommandString != NULL);
+    if (Node->CommandString == NULL) {
+      ASSERT (FALSE);
+      continue;
+    }
+
     if (gUnicodeCollation->StriColl (
                              gUnicodeCollation,
                              (CHAR16 *)CommandString,
@@ -485,7 +489,11 @@ ShellCommandGetInternalCommandHelp (
         ; Node = (SHELL_COMMAND_INTERNAL_LIST_ENTRY *)GetNextNode (&mCommandList.Link, &Node->Link)
         )
   {
-    ASSERT (Node->CommandString != NULL);
+    if (Node->CommandString == NULL) {
+      ASSERT (FALSE);
+      continue;
+    }
+
     if (gUnicodeCollation->StriColl (
                              gUnicodeCollation,
                              (CHAR16 *)CommandString,
@@ -672,23 +680,25 @@ ShellCommandRegisterCommandName (
     //
     // Get Lexical Comparison Value between PrevCommand and Command list entry
     //
-    LexicalMatchValue = gUnicodeCollation->StriColl (
-                                             gUnicodeCollation,
-                                             PrevCommand->CommandString,
-                                             Command->CommandString
-                                             );
+    if ((PrevCommand->CommandString != NULL) && (Command->CommandString != NULL)) {
+      LexicalMatchValue = gUnicodeCollation->StriColl (
+                                               gUnicodeCollation,
+                                               PrevCommand->CommandString,
+                                               Command->CommandString
+                                               );
 
-    //
-    // Swap PrevCommand and Command list entry if PrevCommand list entry
-    // is alphabetically greater than Command list entry
-    //
-    if (LexicalMatchValue > 0) {
-      Command = (SHELL_COMMAND_INTERNAL_LIST_ENTRY *)SwapListEntries (&PrevCommand->Link, &Command->Link);
-    } else if (LexicalMatchValue < 0) {
       //
-      // PrevCommand entry is lexically lower than Command entry
+      // Swap PrevCommand and Command list entry if PrevCommand list entry
+      // is alphabetically greater than Command list entry
       //
-      break;
+      if (LexicalMatchValue > 0) {
+        Command = (SHELL_COMMAND_INTERNAL_LIST_ENTRY *)SwapListEntries (&PrevCommand->Link, &Command->Link);
+      } else if (LexicalMatchValue < 0) {
+        //
+        // PrevCommand entry is lexically lower than Command entry
+        //
+        break;
+      }
     }
   }
 
@@ -758,7 +768,11 @@ ShellCommandRunCommandHandler (
         ; Node = (SHELL_COMMAND_INTERNAL_LIST_ENTRY *)GetNextNode (&mCommandList.Link, &Node->Link)
         )
   {
-    ASSERT (Node->CommandString != NULL);
+    if (Node->CommandString == NULL) {
+      ASSERT (FALSE);
+      continue;
+    }
+
     if (gUnicodeCollation->StriColl (
                              gUnicodeCollation,
                              (CHAR16 *)CommandString,
@@ -831,7 +845,11 @@ ShellCommandGetManFileNameHandler (
         ; Node = (SHELL_COMMAND_INTERNAL_LIST_ENTRY *)GetNextNode (&mCommandList.Link, &Node->Link)
         )
   {
-    ASSERT (Node->CommandString != NULL);
+    if (Node->CommandString == NULL) {
+      ASSERT (FALSE);
+      continue;
+    }
+
     if (gUnicodeCollation->StriColl (
                              gUnicodeCollation,
                              (CHAR16 *)CommandString,
@@ -1142,7 +1160,7 @@ DeleteScriptFileStruct (
   IN SCRIPT_FILE  *Script
   )
 {
-  UINT8  LoopVar;
+  UINTN  LoopVar;
 
   if (Script == NULL) {
     return;
@@ -1263,6 +1281,10 @@ ShellCommandCreateNewMappingName (
   String = NULL;
 
   String = AllocateZeroPool (PcdGet8 (PcdShellMapNameLength) * sizeof (String[0]));
+  if (String == NULL) {
+    return (NULL);
+  }
+
   UnicodeSPrint (
     String,
     PcdGet8 (PcdShellMapNameLength) * sizeof (String[0]),
@@ -1286,7 +1308,7 @@ ShellCommandCreateNewMappingName (
   @param[in] Flags              The Flags attribute for this map item.
   @param[in] Path               TRUE to update path, FALSE to skip this step (should only be TRUE during initialization).
 
-  @retval EFI_SUCCESS           The addition was sucessful.
+  @retval EFI_SUCCESS           The addition was successful.
   @retval EFI_OUT_OF_RESOURCES  A memory allocation failed.
   @retval EFI_INVALID_PARAMETER A parameter was invalid.
 **/
@@ -1374,7 +1396,7 @@ ShellCommandAddMapItemAndUpdatePath (
 
   Also sets up the default path environment variable if Type is FileSystem.
 
-  @retval EFI_SUCCESS           All map names were created sucessfully.
+  @retval EFI_SUCCESS           All map names were created successfully.
   @retval EFI_NOT_FOUND         No protocols were found in the system.
   @return                       Error returned from gBS->LocateHandle().
 
@@ -1399,10 +1421,11 @@ ShellCommandCreateInitialMappingsAndPaths (
   CHAR16                    *MapName;
   SHELL_MAP_LIST            *MapListItem;
 
-  SplitCurDir = NULL;
-  MapName     = NULL;
-  MapListItem = NULL;
-  HandleList  = NULL;
+  ConsistMappingTable = NULL;
+  SplitCurDir         = NULL;
+  MapName             = NULL;
+  MapListItem         = NULL;
+  HandleList          = NULL;
 
   //
   // Reset the static members back to zero
@@ -1458,7 +1481,13 @@ ShellCommandCreateInitialMappingsAndPaths (
     //
     PerformQuickSort (DevicePathList, Count, sizeof (EFI_DEVICE_PATH_PROTOCOL *), DevicePathCompare);
 
-    ShellCommandConsistMappingInitialize (&ConsistMappingTable);
+    Status = ShellCommandConsistMappingInitialize (&ConsistMappingTable);
+    if (EFI_ERROR (Status)) {
+      SHELL_FREE_NON_NULL (HandleList);
+      SHELL_FREE_NON_NULL (DevicePathList);
+      return Status;
+    }
+
     //
     // Assign new Mappings to all...
     //
@@ -1467,7 +1496,12 @@ ShellCommandCreateInitialMappingsAndPaths (
       // Get default name first
       //
       NewDefaultName = ShellCommandCreateNewMappingName (MappingTypeFileSystem);
-      ASSERT (NewDefaultName != NULL);
+      if (NewDefaultName == NULL) {
+        ASSERT (NewDefaultName != NULL);
+        Status = EFI_OUT_OF_RESOURCES;
+        break;
+      }
+
       Status = ShellCommandAddMapItemAndUpdatePath (NewDefaultName, DevicePathList[Count], 0, TRUE);
       ASSERT_EFI_ERROR (Status);
       FreePool (NewDefaultName);
@@ -1483,7 +1517,9 @@ ShellCommandCreateInitialMappingsAndPaths (
       }
     }
 
-    ShellCommandConsistMappingUnInitialize (ConsistMappingTable);
+    if (ConsistMappingTable != NULL) {
+      ShellCommandConsistMappingUnInitialize (ConsistMappingTable);
+    }
 
     SHELL_FREE_NON_NULL (HandleList);
     SHELL_FREE_NON_NULL (DevicePathList);
@@ -1557,7 +1593,13 @@ ShellCommandCreateInitialMappingsAndPaths (
       // Get default name first
       //
       NewDefaultName = ShellCommandCreateNewMappingName (MappingTypeBlockIo);
-      ASSERT (NewDefaultName != NULL);
+      if (NewDefaultName == NULL) {
+        ASSERT (NewDefaultName != NULL);
+        SHELL_FREE_NON_NULL (HandleList);
+        SHELL_FREE_NON_NULL (DevicePathList);
+        return EFI_OUT_OF_RESOURCES;
+      }
+
       Status = ShellCommandAddMapItemAndUpdatePath (NewDefaultName, DevicePathList[Count], 0, FALSE);
       ASSERT_EFI_ERROR (Status);
       FreePool (NewDefaultName);
@@ -1626,12 +1668,17 @@ ShellCommandUpdateMapping (
     //
     PerformQuickSort (DevicePathList, Count, sizeof (EFI_DEVICE_PATH_PROTOCOL *), DevicePathCompare);
 
-    ShellCommandConsistMappingInitialize (&ConsistMappingTable);
+    Status = ShellCommandConsistMappingInitialize (&ConsistMappingTable);
+    if (EFI_ERROR (Status)) {
+      SHELL_FREE_NON_NULL (HandleList);
+      SHELL_FREE_NON_NULL (DevicePathList);
+      return Status;
+    }
 
     //
     // Assign new Mappings to remainders
     //
-    for (Count = 0; !EFI_ERROR (Status) && HandleList[Count] != NULL && !EFI_ERROR (Status); Count++) {
+    for (Count = 0; !EFI_ERROR (Status) && HandleList[Count] != NULL; Count++) {
       //
       // Skip ones that already have
       //
@@ -1931,7 +1978,7 @@ DumpHex (
 
     Val[Index * 3] = 0;
     Str[Index]     = 0;
-    ShellPrintEx (-1, -1, L"%*a%08X: %-48a *%a*\r\n", Indent, "", Offset, Val, Str);
+    ShellPrintDefaultEx (L"%*a%08X: %-48a *%a*\r\n", Indent, "", Offset, Val, Str);
 
     Data     += Size;
     Offset   += Size;

@@ -1,7 +1,7 @@
 ## @file
 # Provides drivers and definitions to support fsp in EDKII bios.
 #
-# Copyright (c) 2014 - 2021, Intel Corporation. All rights reserved.<BR>
+# Copyright (c) 2014 - 2022, Intel Corporation. All rights reserved.<BR>
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 #
 ##
@@ -41,13 +41,14 @@
   DebugAgentLib|MdeModulePkg/Library/DebugAgentLibNull/DebugAgentLibNull.inf
 
   # UefiCpuPkg
-  UefiCpuLib|UefiCpuPkg/Library/BaseUefiCpuLib/BaseUefiCpuLib.inf
   LocalApicLib|UefiCpuPkg/Library/BaseXApicLib/BaseXApicLib.inf
 
   # FSP Wrapper Lib
   FspWrapperApiLib|IntelFsp2WrapperPkg/Library/BaseFspWrapperApiLib/BaseFspWrapperApiLib.inf
   FspWrapperApiTestLib|IntelFsp2WrapperPkg/Library/BaseFspWrapperApiTestLibNull/BaseFspWrapperApiTestLibNull.inf
   FspMeasurementLib|IntelFsp2WrapperPkg/Library/BaseFspMeasurementLib/BaseFspMeasurementLib.inf
+  FspWrapperPlatformMultiPhaseLib|IntelFsp2WrapperPkg/Library/BaseFspWrapperPlatformMultiPhaseLibNull/BaseFspWrapperPlatformMultiPhaseLibNull.inf
+  FspWrapperMultiPhaseProcessLib|IntelFsp2WrapperPkg/Library/FspWrapperMultiPhaseProcessLib/FspWrapperMultiPhaseProcessLib.inf
 
   # FSP platform sample
   FspWrapperPlatformLib|IntelFsp2WrapperPkg/Library/BaseFspWrapperPlatformLibSample/BaseFspWrapperPlatformLibSample.inf
@@ -55,6 +56,7 @@
   FspWrapperHobProcessLib|IntelFsp2WrapperPkg/Library/PeiFspWrapperHobProcessLibSample/PeiFspWrapperHobProcessLibSample.inf
 
   Tpm2CommandLib|SecurityPkg/Library/Tpm2CommandLib/Tpm2CommandLib.inf
+  Tpm2HelpLib|SecurityPkg/Library/Tpm2HelpLib/Tpm2HelpLib.inf
 
 [LibraryClasses.common.PEIM,LibraryClasses.common.PEI_CORE]
   PeimEntryPoint|MdePkg/Library/PeimEntryPoint/PeimEntryPoint.inf
@@ -77,7 +79,7 @@
   DevicePathLib|MdePkg/Library/UefiDevicePathLibDevicePathProtocol/UefiDevicePathLibDevicePathProtocol.inf
   HobLib|MdePkg/Library/DxeHobLib/DxeHobLib.inf
 
-[Components.Ia32]
+[Components.Ia32, Components.X64]
   IntelFsp2WrapperPkg/Library/BaseFspWrapperApiTestLibNull/BaseFspWrapperApiTestLibNull.inf
   IntelFsp2WrapperPkg/Library/SecFspWrapperPlatformSecLibSample/SecFspWrapperPlatformSecLibSample.inf
   IntelFsp2WrapperPkg/Library/PeiFspWrapperHobProcessLibSample/PeiFspWrapperHobProcessLibSample.inf
@@ -86,11 +88,14 @@
 
   IntelFsp2WrapperPkg/FspmWrapperPeim/FspmWrapperPeim.inf
   IntelFsp2WrapperPkg/FspsWrapperPeim/FspsWrapperPeim.inf
+  IntelFsp2WrapperPkg/FspiWrapperPeim/FspiWrapperPeim.inf
 
 [Components.IA32, Components.X64]
   IntelFsp2WrapperPkg/Library/BaseFspWrapperApiLib/BaseFspWrapperApiLib.inf
   IntelFsp2WrapperPkg/Library/BaseFspWrapperPlatformLibSample/BaseFspWrapperPlatformLibSample.inf
   IntelFsp2WrapperPkg/FspWrapperNotifyDxe/FspWrapperNotifyDxe.inf
+  IntelFsp2WrapperPkg/Library/BaseFspWrapperPlatformMultiPhaseLibNull/BaseFspWrapperPlatformMultiPhaseLibNull.inf
+  IntelFsp2WrapperPkg/Library/FspWrapperMultiPhaseProcessLib/FspWrapperMultiPhaseProcessLib.inf
 
 [PcdsFixedAtBuild.common]
   gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask|0x1f

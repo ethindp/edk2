@@ -6,8 +6,7 @@
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#ifndef AML_HELPER_H_
-#define AML_HELPER_H_
+#pragma once
 
 #include <AmlNodeDefines.h>
 #include <ResourceData/AmlResourceData.h>
@@ -19,7 +18,7 @@
   of NameSegs that have less that 4 chars, like "DEV". "DEV" will be expanded
   as "DEV_".
 
-  An AML NameString is not NULL terminated and is is only composed of
+  An AML NameString is not NULL terminated and is only composed of
   4 chars long NameSegs.
 
   @param  [in] NameOpNode   NameOp object node defining a variable.
@@ -89,5 +88,3 @@ AmlNodeHasRdDataType (
   IN  AML_DATA_NODE_HANDLE  RdNode,
   IN  AML_RD_HEADER         RdDataType
   );
-
-#endif // AML_HELPER_H_

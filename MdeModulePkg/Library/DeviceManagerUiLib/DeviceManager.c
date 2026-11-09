@@ -593,7 +593,10 @@ CreateDeviceManagerForm (
   // Get all the Hii handles
   //
   HiiHandles = HiiGetHiiHandles (NULL);
-  ASSERT (HiiHandles != NULL);
+  if (HiiHandles == NULL) {
+    ASSERT (HiiHandles != NULL);
+    return;
+  }
 
   //
   // Search for formset of each class type
@@ -848,7 +851,17 @@ DeviceManagerCallback (
 {
   UINTN  CurIndex;
 
-  if (Action != EFI_BROWSER_ACTION_CHANGING) {
+  if (Action == EFI_BROWSER_ACTION_FORM_OPEN) {
+    //
+    // Means enter the device manager form.
+    // Update device manager page when form opens, because options may add or remove.
+    //
+    if (QuestionId == 0x1212) {
+      CreateDeviceManagerForm (DEVICE_MANAGER_FORM_ID);
+    }
+
+    return EFI_SUCCESS;
+  } else if (Action != EFI_BROWSER_ACTION_CHANGING) {
     //
     // Do nothing for other UEFI Action. Only do call back when data is changed.
     //
@@ -925,11 +938,6 @@ DeviceManagerUiLibConstructor (
   // handles have been connected, so do it here.
   //
   EfiBootManagerConnectAll ();
-
-  //
-  // Update boot manager page
-  //
-  CreateDeviceManagerForm (DEVICE_MANAGER_FORM_ID);
 
   return EFI_SUCCESS;
 }

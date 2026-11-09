@@ -1,19 +1,25 @@
 /** @file
 
-  Copyright (c) 2017 - 2022, ARM Limited. All rights reserved.
+  Copyright (c) 2017 - 2024, Arm Limited. All rights reserved.
+  Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+  Copyright (c) 2026, Loongson Technology Corporation Limited. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
   @par Glossary:
     - Cm or CM   - Configuration Manager
     - Obj or OBJ - Object
+    - X64 or x64 - X64 Architecture
 **/
 
-#ifndef CONFIGURATION_MANAGER_OBJECT_H_
-#define CONFIGURATION_MANAGER_OBJECT_H_
+#pragma once
 
+#include <ArchCommonNameSpaceObjects.h>
 #include <ArmNameSpaceObjects.h>
+#include <LoongArch64NameSpaceObjects.h>
+#include <RiscVNameSpaceObjects.h>
 #include <StandardNameSpaceObjects.h>
+#include <X64NameSpaceObjects.h>
 
 #pragma pack(1)
 
@@ -29,8 +35,12 @@ _______________________________________________________________________________
 
 Bits: [31:28] - Name Space ID
                 0000 - Standard
-                0001 - ARM
-                1000 - Custom/OEM
+                0001 - Arch Common
+                0010 - ARM
+                0011 - X64
+                0100 - RISC-V
+                0101 - LoongArch64
+                1111 - Custom/OEM
                 All other values are reserved.
 
 Bits: [27:16] - Reserved.
@@ -49,38 +59,11 @@ Object ID's in the Standard Namespace:
   1 - ACPI Table List
   2 - SMBIOS Table List
 
+Object ID's in the Arch Common Namespace:
+   See EARCH_COMMON_OBJECT_ID.
+
 Object ID's in the ARM Namespace:
-   0 - Reserved
-   1 - Boot Architecture Info
-   2 - CPU Info
-   3 - Power Management Profile Info
-   4 - GICC Info
-   5 - GICD Info
-   6 - GIC MSI Frame Info
-   7 - GIC Redistributor Info
-   8 - GIC ITS Info
-   9 - Serial Console Port Info
-  10 - Serial Debug Port Info
-  11 - Generic Timer Info
-  12 - Platform GT Block Info
-  13 - Generic Timer Block Frame Info
-  14 - Platform Generic Watchdog
-  15 - PCI Configuration Space Info
-  16 - Hypervisor Vendor Id
-  17 - Fixed feature flags for FADT
-  18 - ITS Group
-  19 - Named Component
-  20 - Root Complex
-  21 - SMMUv1 or SMMUv2
-  22 - SMMUv3
-  23 - PMCG
-  24 - GIC ITS Identifier Array
-  25 - ID Mapping Array
-  26 - SMMU Interrupt Array
-  27 - Processor Hierarchy Info
-  28 - Cache Info
-  29 - Processor Hierarchy Node ID Info
-  30 - CM Object Reference
+   See EARM_OBJECT_ID.
 */
 typedef UINT32 CM_OBJECT_ID;
 
@@ -105,10 +88,14 @@ typedef UINT32 CM_OBJECT_ID;
     for the Configuration Manager Objects.
 */
 typedef enum ObjectNameSpaceID {
-  EObjNameSpaceStandard,      ///< Standard Objects Namespace
-  EObjNameSpaceArm,           ///< ARM Objects Namespace
-  EObjNameSpaceOem = 0x8,     ///< OEM Objects Namespace
-  EObjNameSpaceMax
+  EObjNameSpaceStandard,          ///< Standard Objects Namespace
+  EObjNameSpaceArchCommon,        ///< Arch Common Objects Namespace
+  EObjNameSpaceArm,               ///< ARM Objects Namespace
+  EObjNameSpaceX64,               ///< X64 Objects Namespace
+  EObjNameSpaceRiscV,             ///< RISC-V Objects Namespace
+  EObjNameSpaceLoongArch64,       ///< LoongArch64 Objects Namespace
+  EObjNameSpaceOem = 0xF,         ///< OEM Objects Namespace
+  EObjNameSpaceMax,
 } EOBJECT_NAMESPACE_ID;
 
 /** A descriptor for Configuration Manager Objects.
@@ -159,8 +146,8 @@ typedef struct CmObjDescriptor {
   @retval Returns the Configuration Manager Object ID.
 **/
 #define CREATE_CM_OBJECT_ID(NameSpaceId, ObjectId)                           \
-          ((((NameSpaceId) & NAMESPACE_ID_MASK) << NAMESPACE_ID_BIT_SHIFT) | \
-            ((ObjectId) & OBJECT_ID_MASK))
+          (((((CM_OBJECT_ID)NameSpaceId) & NAMESPACE_ID_MASK) << NAMESPACE_ID_BIT_SHIFT) | \
+            (((CM_OBJECT_ID)ObjectId) & OBJECT_ID_MASK))
 
 /** This macro returns a Configuration Manager Object ID
     in the Standard Object Namespace.
@@ -183,6 +170,36 @@ typedef struct CmObjDescriptor {
           (CREATE_CM_OBJECT_ID (EObjNameSpaceArm, ObjectId))
 
 /** This macro returns a Configuration Manager Object ID
+    in the RISC-V Object Namespace.
+
+  @param [in] ObjectId    The Object ID.
+
+  @retval Returns an RISC-V Configuration Manager Object ID.
+**/
+#define CREATE_CM_RISCV_OBJECT_ID(ObjectId) \
+          (CREATE_CM_OBJECT_ID (EObjNameSpaceRiscV, ObjectId))
+
+/** This macro returns a Configuration Manager Object ID
+    in the LoongArch64 Object Namespace.
+
+  @param [in] ObjectId    The Object ID.
+
+  @retval Returns a LoongArch64 Configuration Manager Object ID.
+**/
+#define CREATE_CM_LOONGARCH64_OBJECT_ID(ObjectId) \
+          (CREATE_CM_OBJECT_ID (EObjNameSpaceLoongArch64, ObjectId))
+
+/** This macro returns a Configuration Manager Object ID
+    in the Arch Common Object Namespace.
+
+  @param [in] ObjectId    The Object ID.
+
+  @retval Returns an Arch Common Configuration Manager Object ID.
+**/
+#define CREATE_CM_ARCH_COMMON_OBJECT_ID(ObjectId) \
+          (CREATE_CM_OBJECT_ID (EObjNameSpaceArchCommon, ObjectId))
+
+/** This macro returns a Configuration Manager Object ID
     in the OEM Object Namespace.
 
   @param [in] ObjectId    The Object ID.
@@ -192,4 +209,12 @@ typedef struct CmObjDescriptor {
 #define CREATE_CM_OEM_OBJECT_ID(ObjectId) \
           (CREATE_CM_OBJECT_ID (EObjNameSpaceOem, ObjectId))
 
-#endif // CONFIGURATION_MANAGER_OBJECT_H_
+/** This macro returns a Configuration Manager Object ID
+    in the X64 Object Namespace.
+
+  @param [in] ObjectId    The Object ID.
+
+  @retval Returns X64 Configuration Manager Object ID.
+**/
+#define CREATE_CM_X64_OBJECT_ID(ObjectId) \
+          (CREATE_CM_OBJECT_ID (EObjNameSpaceX64, ObjectId))

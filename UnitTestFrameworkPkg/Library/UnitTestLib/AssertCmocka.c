@@ -290,7 +290,7 @@ UnitTestAssertStatusEqual (
 {
   CHAR8  TempStr[MAX_STRING_SIZE];
 
-  snprintf (TempStr, sizeof (TempStr), "UT_ASSERT_STATUS_EQUAL(%s:%p)", Description, (VOID *)Status);
+  snprintf (TempStr, sizeof (TempStr), "UT_ASSERT_STATUS_EQUAL(%s:%p expected:%p)", Description, (VOID *)Status, (VOID *)Expected);
   _assert_true ((Status == Expected), TempStr, FileName, (INT32)LineNumber);
 
   return (Status == Expected);
@@ -381,21 +381,27 @@ UnitTestExpectAssertFailure (
   }
 
   if (UnitTestStatus == UNIT_TEST_PASSED) {
-    UT_LOG_INFO (
-      "[ASSERT PASS] %a:%d: UT_EXPECT_ASSERT_FAILURE(%a) detected expected assert\n",
+    snprintf (
+      TempStr,
+      sizeof (TempStr),
+      "[ASSERT PASS] %s:%d: UT_EXPECT_ASSERT_FAILURE(%s) detected expected assert\n",
       FileName,
-      LineNumber,
+      (int)LineNumber,
       FunctionCall
       );
+    UT_LOG_INFO (TempStr);
   }
 
   if (UnitTestStatus == UNIT_TEST_SKIPPED) {
-    UT_LOG_WARNING (
-      "[ASSERT WARN] %a:%d: UT_EXPECT_ASSERT_FAILURE(%a) disabled\n",
+    snprintf (
+      TempStr,
+      sizeof (TempStr),
+      "[ASSERT WARN] %s:%d: UT_EXPECT_ASSERT_FAILURE(%s) disabled\n",
       FileName,
-      LineNumber,
+      (int)LineNumber,
       FunctionCall
       );
+    UT_LOG_WARNING (TempStr);
   }
 
   if (UnitTestStatus == UNIT_TEST_ERROR_TEST_FAILED) {

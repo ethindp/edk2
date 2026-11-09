@@ -26,7 +26,7 @@
   FILE_GUID                      = 778CE4F4-36BD-4ae7-B8F0-10B420B0D174
   MODULE_TYPE                    = DXE_DRIVER
   VERSION_STRING                 = 1.0
-  LIBRARY_CLASS                  = NULL|DXE_DRIVER DXE_RUNTIME_DRIVER DXE_SAL_DRIVER UEFI_APPLICATION UEFI_DRIVER
+  LIBRARY_CLASS                  = NULL|DXE_DRIVER DXE_RUNTIME_DRIVER UEFI_APPLICATION UEFI_DRIVER
   CONSTRUCTOR                    = DxeTpm2MeasureBootLibConstructor
 
 #
@@ -37,6 +37,8 @@
 
 [Sources]
   DxeTpm2MeasureBootLib.c
+  DxeTpm2MeasureBootLibSanitization.c
+  DxeTpm2MeasureBootLibSanitization.h
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -46,6 +48,7 @@
 
 [LibraryClasses]
   BaseMemoryLib
+  SafeIntLib
   DebugLib
   MemoryAllocationLib
   DevicePathLib
@@ -55,9 +58,11 @@
   BaseLib
   SecurityManagementLib
   HobLib
+  GptLib
 
 [Guids]
-  gMeasuredFvHobGuid                    ## SOMETIMES_CONSUMES ## HOB
+  gMeasuredFvHobGuid                               ## SOMETIMES_CONSUMES ## HOB
+  gEdkiiFirmwareVolumeMeasurementExcludedHobGuid   ## SOMETIMES_CONSUMES ## HOB
 
 [Protocols]
   gEfiTcg2ProtocolGuid                  ## SOMETIMES_CONSUMES
@@ -65,4 +70,3 @@
   gEfiFirmwareVolumeBlockProtocolGuid   ## SOMETIMES_CONSUMES
   gEfiBlockIoProtocolGuid               ## SOMETIMES_CONSUMES
   gEfiDiskIoProtocolGuid                ## SOMETIMES_CONSUMES
-

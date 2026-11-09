@@ -4,12 +4,12 @@
 
   (C) Copyright 2014-2021 Hewlett Packard Enterprise Development LP<BR>
   Copyright (c) 2020, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2022-2023, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#ifndef ONIGURUMA_UEFI_PORT_H
-#define ONIGURUMA_UEFI_PORT_H
+#pragma once
 
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PrintLib.h>
@@ -31,16 +31,15 @@
 typedef UINTN   size_t;
 typedef UINT32  uint32_t;
 typedef INTN    intptr_t;
+typedef INT64   ptrdiff_t;
 
 #ifndef offsetof
 #define offsetof  OFFSET_OF
 #endif
 
-#ifdef MDE_CPU_IA32
+#if defined (MDE_CPU_IA32) || defined (MDE_CPU_EBC)
 #define SIZEOF_VOIDP  4
-#endif
-
-#ifdef MDE_CPU_X64
+#else
 #define SIZEOF_VOIDP  8
 #endif
 
@@ -118,7 +117,7 @@ memcpy (
 void *
 memset (
   void          *dest,
-  char          ch,
+  int           ch,
   unsigned int  count
   );
 
@@ -128,5 +127,3 @@ free (
   );
 
 #define exit(n)  ASSERT(FALSE);
-
-#endif // !ONIGURUMA_UEFI_PORT_H

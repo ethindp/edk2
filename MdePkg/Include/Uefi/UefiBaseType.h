@@ -4,15 +4,18 @@
 Copyright (c) 2006 - 2021, Intel Corporation. All rights reserved.<BR>
 Portions copyright (c) 2011 - 2016, ARM Ltd. All rights reserved.<BR>
 Copyright (c) 2020, Hewlett Packard Enterprise Development LP. All rights reserved.<BR>
+Copyright (c) 2022, Loongson Technology Corporation Limited. All rights reserved.<BR>
 
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
+#pragma once
+
 #ifndef __UEFI_BASETYPE_H__
 #define __UEFI_BASETYPE_H__
 
-#include <Base.h>
+  #include <Base.h>
 
 //
 // Basic data type definitions introduced in UEFI.
@@ -140,6 +143,7 @@ typedef union {
 #define EFI_END_OF_FILE           RETURN_END_OF_FILE
 #define EFI_INVALID_LANGUAGE      RETURN_INVALID_LANGUAGE
 #define EFI_COMPROMISED_DATA      RETURN_COMPROMISED_DATA
+#define EFI_IP_ADDRESS_CONFLICT   RETURN_IP_ADDRESS_CONFLICT
 #define EFI_HTTP_ERROR            RETURN_HTTP_ERROR
 
 #define EFI_WARN_UNKNOWN_GLYPH     RETURN_WARN_UNKNOWN_GLYPH
@@ -148,6 +152,7 @@ typedef union {
 #define EFI_WARN_BUFFER_TOO_SMALL  RETURN_WARN_BUFFER_TOO_SMALL
 #define EFI_WARN_STALE_DATA        RETURN_WARN_STALE_DATA
 #define EFI_WARN_FILE_SYSTEM       RETURN_WARN_FILE_SYSTEM
+#define EFI_WARN_RESET_REQUIRED    RETURN_WARN_RESET_REQUIRED
 ///@}
 
 ///
@@ -230,11 +235,6 @@ typedef union {
 #define EFI_IMAGE_MACHINE_X64  0x8664
 
 ///
-/// PE32+ Machine type for ARM mixed ARM and Thumb/Thumb2 images.
-///
-#define EFI_IMAGE_MACHINE_ARMTHUMB_MIXED  0x01C2
-
-///
 /// PE32+ Machine type for AARCH64 A64 images.
 ///
 #define EFI_IMAGE_MACHINE_AARCH64  0xAA64
@@ -246,41 +246,48 @@ typedef union {
 #define EFI_IMAGE_MACHINE_RISCV64   0x5064
 #define EFI_IMAGE_MACHINE_RISCV128  0x5128
 
-#if !defined (EFI_IMAGE_MACHINE_TYPE_VALUE) && !defined (EFI_IMAGE_MACHINE_CROSS_TYPE_VALUE)
-  #if   defined (MDE_CPU_IA32)
+///
+/// PE32+ Machine type for LoongArch 32/64 images.
+///
+#define EFI_IMAGE_MACHINE_LOONGARCH32  0x6232
+#define EFI_IMAGE_MACHINE_LOONGARCH64  0x6264
+
+  #if !defined (EFI_IMAGE_MACHINE_TYPE_VALUE) && !defined (EFI_IMAGE_MACHINE_CROSS_TYPE_VALUE)
+    #if   defined (MDE_CPU_IA32)
 
 #define EFI_IMAGE_MACHINE_TYPE_SUPPORTED(Machine) \
   ((Machine) == EFI_IMAGE_MACHINE_IA32)
 
 #define EFI_IMAGE_MACHINE_CROSS_TYPE_SUPPORTED(Machine)  ((Machine) == EFI_IMAGE_MACHINE_X64)
 
-  #elif defined (MDE_CPU_X64)
+    #elif defined (MDE_CPU_X64)
 
 #define EFI_IMAGE_MACHINE_TYPE_SUPPORTED(Machine) \
   ((Machine) == EFI_IMAGE_MACHINE_X64)
 
 #define EFI_IMAGE_MACHINE_CROSS_TYPE_SUPPORTED(Machine)  ((Machine) == EFI_IMAGE_MACHINE_IA32)
 
-  #elif defined (MDE_CPU_ARM)
-
-#define EFI_IMAGE_MACHINE_TYPE_SUPPORTED(Machine)  ((Machine) == EFI_IMAGE_MACHINE_ARMTHUMB_MIXED)
-
-#define EFI_IMAGE_MACHINE_CROSS_TYPE_SUPPORTED(Machine)  (FALSE)
-
-  #elif defined (MDE_CPU_AARCH64)
+    #elif defined (MDE_CPU_AARCH64)
 
 #define EFI_IMAGE_MACHINE_TYPE_SUPPORTED(Machine) \
   ((Machine) == EFI_IMAGE_MACHINE_AARCH64)
 
 #define EFI_IMAGE_MACHINE_CROSS_TYPE_SUPPORTED(Machine)  (FALSE)
 
-  #elif defined (MDE_CPU_RISCV64)
+    #elif defined (MDE_CPU_RISCV64)
 #define EFI_IMAGE_MACHINE_TYPE_SUPPORTED(Machine) \
   ((Machine) == EFI_IMAGE_MACHINE_RISCV64)
 
 #define EFI_IMAGE_MACHINE_CROSS_TYPE_SUPPORTED(Machine)  (FALSE)
 
-  #elif defined (MDE_CPU_EBC)
+    #elif defined (MDE_CPU_LOONGARCH64)
+
+#define EFI_IMAGE_MACHINE_TYPE_SUPPORTED(Machine) \
+    ((Machine) == EFI_IMAGE_MACHINE_LOONGARCH64)
+
+#define EFI_IMAGE_MACHINE_CROSS_TYPE_SUPPORTED(Machine)  (FALSE)
+
+    #elif defined (MDE_CPU_EBC)
 
 ///
 /// This is just to make sure you can cross compile with the EBC compiler.
@@ -290,20 +297,20 @@ typedef union {
 
 #define EFI_IMAGE_MACHINE_CROSS_TYPE_SUPPORTED(Machine)  (FALSE)
 
+    #else
+      #error Unknown Processor Type
+    #endif
   #else
-    #error Unknown Processor Type
-  #endif
-#else
-  #if defined (EFI_IMAGE_MACHINE_TYPE_VALUE)
+    #if defined (EFI_IMAGE_MACHINE_TYPE_VALUE)
 #define EFI_IMAGE_MACHINE_TYPE_SUPPORTED(Machine)  ((Machine) == EFI_IMAGE_MACHINE_TYPE_VALUE)
-  #else
+    #else
 #define EFI_IMAGE_MACHINE_TYPE_SUPPORTED(Machine)  (FALSE)
-  #endif
-  #if defined (EFI_IMAGE_MACHINE_CROSS_TYPE_VALUE)
+    #endif
+    #if defined (EFI_IMAGE_MACHINE_CROSS_TYPE_VALUE)
 #define EFI_IMAGE_MACHINE_CROSS_TYPE_SUPPORTED(Machine)  ((Machine) == EFI_IMAGE_MACHINE_CROSS_TYPE_VALUE)
-  #else
+    #else
 #define EFI_IMAGE_MACHINE_CROSS_TYPE_SUPPORTED(Machine)  (FALSE)
+    #endif
   #endif
-#endif
 
 #endif

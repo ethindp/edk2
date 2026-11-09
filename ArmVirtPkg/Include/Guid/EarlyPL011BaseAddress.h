@@ -1,6 +1,6 @@
 /** @file
-  GUID for the HOB that caches the base address of the PL011 serial port, for
-  when PCD access is not available.
+  GUID for the HOB that caches the base address(es) of the PL011 serial port(s),
+  for when PCD access is not available.
 
   Copyright (C) 2014, Red Hat, Inc.
 
@@ -8,8 +8,7 @@
 
 **/
 
-#ifndef __EARLY_PL011_BASE_ADDRESS_H__
-#define __EARLY_PL011_BASE_ADDRESS_H__
+#pragma once
 
 #define EARLY_PL011_BASE_ADDRESS_GUID  {\
           0xB199DEA9, 0xFD5C, 0x4A84, \
@@ -18,4 +17,20 @@
 
 extern EFI_GUID  gEarlyPL011BaseAddressGuid;
 
-#endif
+typedef struct {
+  //
+  // for SerialPortLib and console IO
+  //
+  UINT64     ConsoleAddress;
+  //
+  // for DebugLib; may equal ConsoleAddress if there's only one PL011 UART
+  //
+  UINT64     DebugAddress;
+  //
+  // Serial debug log level override from fw_cfg "opt/org.tianocore/DebugLevel"
+  // or PcdSerialDebugPrintErrorLevel.  DebugLevelSet is TRUE when an override
+  // is active; DebugLevel contains the parsed bitmask.
+  //
+  BOOLEAN    DebugLevelSet;
+  UINT32     DebugLevel;
+} EARLY_PL011_BASE_ADDRESS;

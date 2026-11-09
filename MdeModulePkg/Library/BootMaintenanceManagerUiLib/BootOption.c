@@ -281,7 +281,7 @@ BOpt_FreeMenu (
   @param CallbackData The BMM context data.
 
   @return EFI_NOT_FOUND Fail to find "BootOrder" variable.
-  @return EFI_SUCESS    Success build boot option menu.
+  @return EFI_SUCCESS   Success build boot option menu.
 
 **/
 EFI_STATUS
@@ -340,6 +340,10 @@ BOpt_GetBootOptions (
 
   BootOption = EfiBootManagerGetLoadOptions (&BootOptionCount, LoadOptionTypeBoot);
   for (Index = 0; Index < BootOrderListSize / sizeof (UINT16); Index++) {
+    if (BootOption == NULL) {
+      continue;
+    }
+
     //
     // Don't display the hidden/inactive boot option
     //
@@ -363,7 +367,10 @@ BOpt_GetBootOptions (
     }
 
     NewMenuEntry = BOpt_CreateMenuEntry (BM_LOAD_CONTEXT_SELECT);
-    ASSERT (NULL != NewMenuEntry);
+    if (NewMenuEntry == NULL) {
+      ASSERT (NULL != NewMenuEntry);
+      return EFI_OUT_OF_RESOURCES;
+    }
 
     NewLoadContext = (BM_LOAD_CONTEXT *)NewMenuEntry->VariableContext;
 
@@ -669,7 +676,7 @@ BOpt_GetDriverOptionNumber (
 
   @param CallbackData The BMM context data.
 
-  @retval EFI_SUCESS           The functin completes successfully.
+  @retval EFI_SUCCESS          The function completes successfully.
   @retval EFI_OUT_OF_RESOURCES Not enough memory to compete the operation.
   @retval EFI_NOT_FOUND        Fail to get "DriverOrder" variable.
 
@@ -813,7 +820,7 @@ GetBootOrder (
   )
 {
   BMM_FAKE_NV_DATA  *BmmConfig;
-  UINT16            Index;
+  UINTN             Index;
   UINT16            OptionOrderIndex;
   UINTN             DeviceType;
   BM_MENU_ENTRY     *NewMenuEntry;
@@ -860,8 +867,8 @@ GetDriverOrder (
   )
 {
   BMM_FAKE_NV_DATA  *BmmConfig;
-  UINT16            Index;
-  UINT16            OptionOrderIndex;
+  UINTN             Index;
+  UINTN             OptionOrderIndex;
   UINTN             DeviceType;
   BM_MENU_ENTRY     *NewMenuEntry;
   BM_LOAD_CONTEXT   *NewLoadContext;
@@ -909,23 +916,28 @@ BootFromFile (
   IN EFI_DEVICE_PATH_PROTOCOL  *FilePath
   )
 {
+  EFI_STATUS                    Status;
   EFI_BOOT_MANAGER_LOAD_OPTION  BootOption;
   CHAR16                        *FileName;
 
+  Status   = EFI_NOT_STARTED;
   FileName = NULL;
 
   FileName = ExtractFileNameFromDevicePath (FilePath);
   if (FileName != NULL) {
-    EfiBootManagerInitializeLoadOption (
-      &BootOption,
-      0,
-      LoadOptionTypeBoot,
-      LOAD_OPTION_ACTIVE,
-      FileName,
-      FilePath,
-      NULL,
-      0
-      );
+    Status = EfiBootManagerInitializeLoadOption (
+               &BootOption,
+               0,
+               LoadOptionTypeBoot,
+               LOAD_OPTION_ACTIVE,
+               FileName,
+               FilePath,
+               NULL,
+               0
+               );
+  }
+
+  if (!EFI_ERROR (Status)) {
     //
     // Since current no boot from removable media directly is allowed */
     //

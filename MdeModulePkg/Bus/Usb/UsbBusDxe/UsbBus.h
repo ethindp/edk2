@@ -7,13 +7,11 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _EFI_USB_BUS_H_
-#define _EFI_USB_BUS_H_
+#pragma once
 
 #include <Uefi.h>
 
 #include <Protocol/Usb2HostController.h>
-#include <Protocol/UsbHostController.h>
 #include <Protocol/UsbIo.h>
 #include <Protocol/DevicePath.h>
 
@@ -144,6 +142,16 @@ typedef struct _USB_HUB_API    USB_HUB_API;
 #define USB_BUS_FROM_THIS(a) \
           CR(a, USB_BUS, BusId, USB_BUS_SIGNATURE)
 
+#define USB_CONFIG_DESC_DEF_ALLOC_LEN  255
+
+typedef enum {
+  UsbEnumScriptEdk2    = 0,         // 0   :EDK2 flow
+  UsbEnumScriptRsrv    = 1,         // 1   :Reserved flow - EDK2
+  UsbEnumScriptLinux   = 2,         // 2   :Linux flow
+  UsbEnumScriptWin     = 3,         // 3   :Window flow
+  UsbEnumScriptUnknown = 0xFF,      // 0xff:Unknow flow
+} USB_ENUM_SCRIPT_TYPE;
+
 //
 // Used to locate USB_BUS
 // UsbBusProtocol is the private protocol.
@@ -189,6 +197,8 @@ struct _USB_DEVICE {
   UINT8                                 ParentPort; // Start at 0
   UINT8                                 Tier;
   BOOLEAN                               DisconnectFail;
+  UINT8                                 EnumScript;
+  BOOLEAN                               IsSSDev;
 };
 
 //
@@ -243,7 +253,6 @@ struct _USB_BUS {
   EFI_HANDLE                  HostHandle;
   EFI_DEVICE_PATH_PROTOCOL    *DevicePath;
   EFI_USB2_HC_PROTOCOL        *Usb2Hc;
-  EFI_USB_HC_PROTOCOL         *UsbHc;
 
   //
   // Recorded the max supported usb devices.
@@ -281,7 +290,7 @@ struct _USB_HUB_API {
   USB_HUB_RELEASE               Release;
 };
 
-#define USB_US_LAND_ID  0x0409
+#define USB_US_LANG_ID  0x0409
 
 #define DEVICE_PATH_LIST_ITEM_SIGNATURE  SIGNATURE_32('d','p','l','i')
 typedef struct _DEVICE_PATH_LIST_ITEM {
@@ -755,5 +764,3 @@ extern EFI_USB_IO_PROTOCOL           mUsbIoProtocol;
 extern EFI_DRIVER_BINDING_PROTOCOL   mUsbBusDriverBinding;
 extern EFI_COMPONENT_NAME_PROTOCOL   mUsbBusComponentName;
 extern EFI_COMPONENT_NAME2_PROTOCOL  mUsbBusComponentName2;
-
-#endif

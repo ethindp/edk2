@@ -7,8 +7,7 @@
 
 **/
 
-#ifndef _SMM_CORE_H_
-#define _SMM_CORE_H_
+#pragma once
 
 #include <PiSmm.h>
 
@@ -54,6 +53,7 @@
 #include <Library/PerformanceLib.h>
 #include <Library/HobLib.h>
 #include <Library/SmmMemLib.h>
+#include <Library/SafeIntLib.h>
 
 #include "PiSmmCorePrivateData.h"
 #include "HeapGuard.h"
@@ -92,6 +92,7 @@ typedef struct {
   SMI_ENTRY                       *SmiEntry;
   VOID                            *Context;    // for profile
   UINTN                           ContextSize; // for profile
+  BOOLEAN                         ToRemove;    // To remove this SMI_HANDLER later
 } SMI_HANDLER;
 
 //
@@ -215,6 +216,7 @@ typedef struct {
 // SMM Core Global Variables
 //
 extern SMM_CORE_PRIVATE_DATA  *gSmmCorePrivate;
+extern SMM_CORE_PRIVATE_DATA  *gSmmCoreMailbox;
 extern EFI_SMM_SYSTEM_TABLE2  gSmmCoreSmst;
 extern LIST_ENTRY             gHandleList;
 extern EFI_PHYSICAL_ADDRESS   gLoadModuleAtFixAddressSmramBase;
@@ -1349,5 +1351,3 @@ VOID
 SmmEntryPointMemoryManagementHook (
   VOID
   );
-
-#endif

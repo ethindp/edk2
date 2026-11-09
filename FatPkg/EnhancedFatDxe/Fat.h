@@ -6,14 +6,14 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _FAT_H_
-#define _FAT_H_
+#pragma once
 
 #include <Uefi.h>
 
 #include <Guid/FileInfo.h>
 #include <Guid/FileSystemInfo.h>
 #include <Guid/FileSystemVolumeLabelInfo.h>
+#include <Guid/EventGroup.h>
 #include <Protocol/BlockIo.h>
 #include <Protocol/DiskIo.h>
 #include <Protocol/DiskIo2.h>
@@ -84,6 +84,19 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #define FAT_FATCACHE_GROUP_MIN_COUNT      1
 #define FAT_FATCACHE_GROUP_MAX_COUNT      16
 
+// For cache block bits, use a UINT64
+typedef UINT64 DIRTY_BLOCKS;
+#define BITS_PER_BYTE         8
+#define DIRTY_BITS_PER_BLOCK  ((sizeof (DIRTY_BLOCKS) * BITS_PER_BYTE))
+
+// largest cache line (64KB) / MinLbaSize (512) = 128 bits
+#define DIRTY_BITS  ((1 << FAT_DATACACHE_PAGE_MAX_ALIGNMENT) / (1 << MIN_BLOCK_ALIGNMENT))
+
+// Number of DIRTY_BLOCKS to hold DIRTY_BITS bits.
+#define DIRTY_BLOCKS_SIZE  (DIRTY_BITS / sizeof (DIRTY_BLOCKS))
+
+STATIC_ASSERT ((((1 << FAT_DATACACHE_PAGE_MAX_ALIGNMENT) / (1 << MIN_BLOCK_ALIGNMENT)) % sizeof (DIRTY_BLOCKS)) == 0, "DIRTY_BLOCKS not a proper size");
+
 //
 // Used in 8.3 generation algorithm
 //
@@ -143,15 +156,17 @@ typedef enum {
 // Disk cache tag
 //
 typedef struct {
-  UINTN      PageNo;
-  UINTN      RealSize;
-  BOOLEAN    Dirty;
+  UINTN           PageNo;
+  UINTN           RealSize;
+  BOOLEAN         Dirty;
+  DIRTY_BLOCKS    DirtyBlocks[DIRTY_BLOCKS_SIZE];
 } CACHE_TAG;
 
 typedef struct {
   UINT64       BaseAddress;
   UINT64       LimitAddress;
   UINT8        *CacheBase;
+  UINT32       BlockSize;
   BOOLEAN      Dirty;
   UINT8        PageAlignment;
   UINTN        GroupMask;
@@ -374,6 +389,16 @@ struct _FAT_VOLUME {
   //
   VOID                               *CacheBuffer;
   DISK_CACHE                         DiskCache[CacheMaxType];
+
+  //
+  // Event signaled before ExitBootServices that flushes any dirty caches.
+  //
+  EFI_EVENT                          FlushEvent;
+
+  //
+  // A flag that disables caching on this volume.
+  //
+  BOOLEAN                            CachingDisabled;
 };
 
 //
@@ -831,6 +856,24 @@ FatSetVolumeError (
 EFI_STATUS
 FatIFileClose (
   FAT_IFILE  *IFile
+  );
+
+/**
+
+  Write back any dirty FAT metadata and disk-cache pages for the volume to
+  the underlying media.
+
+  @param  Volume                - The volume whose dirty cache should be flushed.
+  @param  Task                  - Point to task instance, may be NULL.
+
+  @retval EFI_SUCCESS           - Any dirty caches were flushed.
+  @return Others                - An I/O error occurred while writing back.
+
+**/
+EFI_STATUS
+FatFlushDirtyCache (
+  IN FAT_VOLUME  *Volume,
+  IN FAT_TASK    *Task
   );
 
 /**
@@ -2016,4 +2059,16 @@ extern EFI_LOCK                      FatFsLock;
 extern EFI_LOCK                      FatTaskLock;
 extern EFI_FILE_PROTOCOL             FatFileInterface;
 
-#endif
+/**
+  Notification callback for the pre-ExitBootServices event to flush any dirty caches.
+
+  @param Event   - The event that was signaled.
+  @param Context - The context of the event, which is the FAT_VOLUME for which to flush caches.
+
+**/
+VOID
+EFIAPI
+FatOnBeforeExitBootServices (
+  IN EFI_EVENT  Event,
+  IN VOID       *Context
+  );

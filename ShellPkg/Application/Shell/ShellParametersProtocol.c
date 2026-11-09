@@ -298,11 +298,20 @@ CreatePopulateInstallShellParametersProtocol (
   EFI_STATUS                 Status;
   EFI_LOADED_IMAGE_PROTOCOL  *LoadedImage;
   CHAR16                     *FullCommandLine;
+  CHAR16                     *ShellOpt;
+  CHAR16                     *ImageName;
+  CONST CHAR16               *ImageNameEnd;
+  CHAR16                     *LoadOptionsTail;
+  UINTN                      FullCommandLineSize;
+  UINTN                      LoadOptionsLength;
   UINTN                      Size;
 
-  Size            = 0;
-  FullCommandLine = NULL;
-  LoadedImage     = NULL;
+  Size                = 0;
+  FullCommandLine     = NULL;
+  FullCommandLineSize = 0;
+  LoadedImage         = NULL;
+  ShellOpt            = NULL;
+  LoadOptionsTail     = NULL;
 
   //
   // Assert for valid parameters
@@ -351,33 +360,121 @@ CreatePopulateInstallShellParametersProtocol (
   //
   // Build the full command line
   //
-  Status = SHELL_GET_ENVIRONMENT_VARIABLE (L"ShellOpt", &Size, FullCommandLine);
+  Status = SHELL_GET_ENVIRONMENT_VARIABLE (L"ShellOpt", &Size, ShellOpt);
   if (Status == EFI_BUFFER_TOO_SMALL) {
-    FullCommandLine = AllocateZeroPool (Size + LoadedImage->LoadOptionsSize);
-    Status          = SHELL_GET_ENVIRONMENT_VARIABLE (L"ShellOpt", &Size, FullCommandLine);
+    //
+    // Variable data is not guaranteed to be NUL-terminated, so allocate room
+    // for a terminator in addition to the returned data size.
+    //
+    ShellOpt = AllocateZeroPool (Size + sizeof (ShellOpt[0]));
+    if (ShellOpt == NULL) {
+      return EFI_OUT_OF_RESOURCES;
+    }
+
+    Status = SHELL_GET_ENVIRONMENT_VARIABLE (L"ShellOpt", &Size, ShellOpt);
+    if (EFI_ERROR (Status)) {
+      FreePool (ShellOpt);
+      return Status;
+    }
+
+    //
+    // ShellOpt is a CHAR16 string.  Reject malformed variable data before
+    // indexing the buffer in CHAR16 units.
+    //
+    if ((Size % sizeof (CHAR16)) != 0) {
+      FreePool (ShellOpt);
+      return EFI_INVALID_PARAMETER;
+    }
+
+    //
+    // Use the first NUL as the end of the string.  The zero-initialized byte
+    // following the variable data also terminates a non-NUL-terminated value.
+    //
+    Size = StrLen (ShellOpt) * sizeof (ShellOpt[0]);
   }
 
-  if (Status == EFI_NOT_FOUND) {
+  if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
+    return Status;
+  }
+
+  if ((LoadedImage->LoadOptionsSize != 0) || (Size != 0)) {
     //
-    // no parameters via environment... ok
+    // Reserve room for both inputs, a separator and a NUL terminator.
+    // Load options are not guaranteed to be NUL-terminated.
     //
-  } else {
-    if (EFI_ERROR (Status)) {
-      return (Status);
+    FullCommandLineSize = LoadedImage->LoadOptionsSize + Size +
+                          2 * sizeof (FullCommandLine[0]);
+    FullCommandLine = AllocateZeroPool (FullCommandLineSize);
+    if (FullCommandLine == NULL) {
+      SHELL_FREE_NON_NULL (ShellOpt);
+      return EFI_OUT_OF_RESOURCES;
+    }
+
+    if (LoadedImage->LoadOptionsSize != 0) {
+      CopyMem (
+        FullCommandLine,
+        LoadedImage->LoadOptions,
+        LoadedImage->LoadOptionsSize
+        );
+    }
+
+    LoadOptionsLength = StrLen (FullCommandLine);
+    if ((LoadOptionsLength != 0) && (Size != 0)) {
+      //
+      // Keep the image name at Argv[0], but insert ShellOpt before the remaining
+      // load options so shell options are not passed to a file being launched.
+      // Use the command-line parser's boundary rules for quotes and escapes.
+      //
+      ImageName = FullCommandLine;
+      while (*ImageName == L' ') {
+        ImageName++;
+      }
+
+      ImageNameEnd = FindEndOfParameter (ImageName);
+      if (ImageNameEnd == NULL) {
+        FreePool (FullCommandLine);
+        FreePool (ShellOpt);
+        return EFI_INVALID_PARAMETER;
+      }
+
+      LoadOptionsTail = AllocateCopyPool (StrSize (ImageNameEnd), ImageNameEnd);
+      if (LoadOptionsTail == NULL) {
+        FreePool (FullCommandLine);
+        FreePool (ShellOpt);
+        return EFI_OUT_OF_RESOURCES;
+      }
+
+      LoadOptionsLength                    = ImageNameEnd - FullCommandLine;
+      FullCommandLine[LoadOptionsLength++] = L' ';
+    }
+
+    if (Size != 0) {
+      Status = StrCpyS (
+                 &FullCommandLine[LoadOptionsLength],
+                 FullCommandLineSize / sizeof (FullCommandLine[0]) - LoadOptionsLength,
+                 ShellOpt
+                 );
+      if (!EFI_ERROR (Status) && (LoadOptionsTail != NULL)) {
+        LoadOptionsLength += Size / sizeof (ShellOpt[0]);
+        Status             = StrCpyS (
+                               &FullCommandLine[LoadOptionsLength],
+                               FullCommandLineSize / sizeof (FullCommandLine[0]) - LoadOptionsLength,
+                               LoadOptionsTail
+                               );
+      }
+
+      SHELL_FREE_NON_NULL (LoadOptionsTail);
+      if (EFI_ERROR (Status)) {
+        FreePool (FullCommandLine);
+        FreePool (ShellOpt);
+        return Status;
+      }
     }
   }
 
-  if ((Size == 0) && (LoadedImage->LoadOptionsSize != 0)) {
-    ASSERT (FullCommandLine == NULL);
-    //
-    // Now we need to include a NULL terminator in the size.
-    //
-    Size            = LoadedImage->LoadOptionsSize + sizeof (FullCommandLine[0]);
-    FullCommandLine = AllocateZeroPool (Size);
-  }
+  SHELL_FREE_NON_NULL (ShellOpt);
 
   if (FullCommandLine != NULL) {
-    CopyMem (FullCommandLine, LoadedImage->LoadOptions, LoadedImage->LoadOptionsSize);
     //
     // Populate Argc and Argv
     //
@@ -738,6 +835,7 @@ UpdateStdInStdOutStdErr (
   OutAppend        = FALSE;
   CommandLineCopy  = NULL;
   FirstLocation    = NULL;
+  TempHandle       = NULL;
 
   if ((ShellParameters == NULL) || (SystemTableInfo == NULL) || (OldStdIn == NULL) || (OldStdOut == NULL) || (OldStdErr == NULL)) {
     return (EFI_INVALID_PARAMETER);
@@ -1176,7 +1274,10 @@ UpdateStdInStdOutStdErr (
 
         if (!ErrUnicode && !EFI_ERROR (Status)) {
           TempHandle = CreateFileInterfaceFile (TempHandle, FALSE);
-          ASSERT (TempHandle != NULL);
+          if (TempHandle == NULL) {
+            ASSERT (TempHandle != NULL);
+            Status = EFI_OUT_OF_RESOURCES;
+          }
         }
 
         if (!EFI_ERROR (Status)) {
@@ -1223,7 +1324,10 @@ UpdateStdInStdOutStdErr (
 
           if (!OutUnicode && !EFI_ERROR (Status)) {
             TempHandle = CreateFileInterfaceFile (TempHandle, FALSE);
-            ASSERT (TempHandle != NULL);
+            if (TempHandle == NULL) {
+              ASSERT (TempHandle != NULL);
+              Status = EFI_OUT_OF_RESOURCES;
+            }
           }
 
           if (!EFI_ERROR (Status)) {
@@ -1245,9 +1349,13 @@ UpdateStdInStdOutStdErr (
         }
 
         TempHandle = CreateFileInterfaceEnv (StdOutVarName);
-        ASSERT (TempHandle != NULL);
-        ShellParameters->StdOut = TempHandle;
-        gST->ConOut             = CreateSimpleTextOutOnFile (TempHandle, &gST->ConsoleOutHandle, gST->ConOut);
+        if (TempHandle == NULL) {
+          ASSERT (TempHandle != NULL);
+          Status = EFI_OUT_OF_RESOURCES;
+        } else {
+          ShellParameters->StdOut = TempHandle;
+          gST->ConOut             = CreateSimpleTextOutOnFile (TempHandle, &gST->ConsoleOutHandle, gST->ConOut);
+        }
       }
 
       //
@@ -1262,9 +1370,13 @@ UpdateStdInStdOutStdErr (
         }
 
         TempHandle = CreateFileInterfaceEnv (StdErrVarName);
-        ASSERT (TempHandle != NULL);
-        ShellParameters->StdErr = TempHandle;
-        gST->StdErr             = CreateSimpleTextOutOnFile (TempHandle, &gST->StandardErrorHandle, gST->StdErr);
+        if (TempHandle == NULL) {
+          ASSERT (TempHandle != NULL);
+          Status = EFI_OUT_OF_RESOURCES;
+        } else {
+          ShellParameters->StdErr = TempHandle;
+          gST->StdErr             = CreateSimpleTextOutOnFile (TempHandle, &gST->StandardErrorHandle, gST->StdErr);
+        }
       }
 
       //
@@ -1307,8 +1419,12 @@ UpdateStdInStdOutStdErr (
             TempHandle = CreateFileInterfaceFile (TempHandle, FALSE);
           }
 
-          ShellParameters->StdIn = TempHandle;
-          gST->ConIn             = CreateSimpleTextInOnFile (TempHandle, &gST->ConsoleInHandle);
+          if (TempHandle == NULL) {
+            Status = EFI_OUT_OF_RESOURCES;
+          } else {
+            ShellParameters->StdIn = TempHandle;
+            gST->ConIn             = CreateSimpleTextInOnFile (TempHandle, &gST->ConsoleInHandle);
+          }
         }
       }
     }
@@ -1323,9 +1439,9 @@ UpdateStdInStdOutStdErr (
   }
 
   if (Status == EFI_NOT_FOUND) {
-    ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_SHELL_REDUNDA_REDIR), ShellInfoObject.HiiHandle);
+    ShellPrintHiiDefaultEx (STRING_TOKEN (STR_SHELL_REDUNDA_REDIR), ShellInfoObject.HiiHandle);
   } else if (EFI_ERROR (Status)) {
-    ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_SHELL_INVALID_REDIR), ShellInfoObject.HiiHandle);
+    ShellPrintHiiDefaultEx (STRING_TOKEN (STR_SHELL_INVALID_REDIR), ShellInfoObject.HiiHandle);
   }
 
   return (Status);
@@ -1447,7 +1563,7 @@ UpdateArgcArgv (
     *OldArgc = ShellParameters->Argc;
   }
 
-  if (OldArgc != NULL) {
+  if (OldArgv != NULL) {
     *OldArgv = ShellParameters->Argv;
   }
 

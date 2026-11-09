@@ -8,7 +8,10 @@
 **/
 
 #include <Library/BaseLib.h>
+#include <Library/CpuLib.h>
+#include <Library/CpuPageTableLib.h>
 #include <Library/DebugLib.h>
+#include <Library/LocalApicLib.h>
 #include <Library/MemEncryptSevLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Register/Amd/Ghcb.h>
@@ -251,7 +254,7 @@ IsSevGuest (
 
   WorkArea = (OVMF_WORK_AREA *)FixedPcdGet32 (PcdOvmfWorkAreaBase);
 
-  return ((WorkArea != NULL) && (WorkArea->Header.GuestType == GUEST_TYPE_AMD_SEV));
+  return ((WorkArea != NULL) && (WorkArea->Header.GuestType == CcGuestTypeAmdSev));
 }
 
 /**
@@ -278,13 +281,13 @@ SevEsIsEnabled (
 
   SevEsWorkArea = (SEC_SEV_ES_WORK_AREA *)FixedPcdGet32 (PcdSevEsWorkAreaBase);
 
-  return (SevEsWorkArea->SevEsEnabled != 0);
+  return ((SevEsWorkArea->SevStatusMsrValue & BIT1) != 0);
 }
 
 /**
  Validate System RAM used for decompressing the PEI and DXE firmware volumes
  when SEV-SNP is active. The PCDs SecValidatedStart and SecValidatedEnd are
- set in OvmfPkg/FvmainCompactScratchEnd.fdf.inc.
+ set in OvmfPkg/Include/Fdf/FvmainCompactScratchEnd.fdf.inc.
 
 **/
 VOID
@@ -300,4 +303,59 @@ SecValidateSystemRam (
 
     MemEncryptSevSnpPreValidateSystemRam (Start, EFI_SIZE_TO_PAGES ((UINTN)(End - Start)));
   }
+}
+
+/**
+  Map known MMIO regions unencrypted if SEV-ES is active.
+
+  During early booting, page table entries default to having the encryption bit
+  set for SEV-ES/SEV-SNP guests. In cases where there is MMIO to an address, the
+  encryption bit should be cleared. Clear it here for any known MMIO accesses
+  during SEC, which is currently just the APIC base address.
+
+**/
+VOID
+SecMapApicBaseUnencrypted (
+  VOID
+  )
+{
+  PHYSICAL_ADDRESS    Cr3;
+  UINT64              ApicAddress;
+  VOID                *Buffer;
+  UINTN               BufferSize;
+  IA32_MAP_ATTRIBUTE  MapAttribute;
+  IA32_MAP_ATTRIBUTE  MapMask;
+  RETURN_STATUS       Status;
+
+  if (!SevEsIsEnabled ()) {
+    return;
+  }
+
+  ApicAddress = (UINT64)GetLocalApicBaseAddress ();
+  Buffer      = (VOID *)(UINTN)FixedPcdGet32 (PcdOvmfSecApicPageTableBase);
+  Cr3         = AsmReadCr3 ();
+
+  MapAttribute.Uint64         = ApicAddress;
+  MapAttribute.Bits.Present   = 1;
+  MapAttribute.Bits.ReadWrite = 1;
+  MapMask.Uint64              = MAX_UINT64;
+  BufferSize                  = SIZE_4KB;
+
+  Status = PageTableMap (
+             (UINTN *)&Cr3,
+             Paging4Level,
+             Buffer,
+             &BufferSize,
+             ApicAddress,
+             SIZE_4KB,
+             &MapAttribute,
+             &MapMask,
+             NULL
+             );
+  if (RETURN_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "Failed to map APIC MMIO region as unencrypted: %d\n", Status));
+    ASSERT (FALSE);
+  }
+
+  CpuFlushTlb ();
 }

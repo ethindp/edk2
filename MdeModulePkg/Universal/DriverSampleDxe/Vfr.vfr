@@ -186,7 +186,6 @@ formset
                  // CHECKBOX_DEFAULT_MFG indicate EFI_IFR_CHECKBOX_DEFAULT_MFG.
                  //
                  flags    = CHECKBOX_DEFAULT | CHECKBOX_DEFAULT_MFG,
-                 default  = TRUE,
         endcheckbox;
       endif;
     endif;
@@ -511,6 +510,16 @@ formset
             minimum = 0,
             maximum = 255,
             default = 18,
+    endnumeric;
+
+    numeric varid   = MyIfrNVData.QuestionApply,
+            questionid = 0x1253,
+            prompt  = STRING_TOKEN(STR_QUESTION_APPLY_TEST_PROMPT),
+            help    = STRING_TOKEN(STR_QUESTION_APPLY_TEST_HELP),
+            flags   = INTERACTIVE,
+            minimum = 0,
+            maximum = 255,
+            default = 19,
     endnumeric;
 
     text

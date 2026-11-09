@@ -1987,7 +1987,7 @@ GetNameFromId (
                    NULL
                    );
   if (BestLanguage == NULL) {
-    BestLanguage = AllocateCopyPool (AsciiStrLen ("en-US"), "en-US");
+    BestLanguage = AllocateCopyPool (sizeof ("en-US"), "en-US");
     ASSERT (BestLanguage != NULL);
   }
 
@@ -2101,8 +2101,9 @@ ExtractConfigRequest (
       //
       // Header->VarStoreId == 0 means no storage for this question.
       //
-      ASSERT (Header->VarStoreId != 0);
-      DEBUG ((DEBUG_INFO, "Varstore Id: 0x%x\n", Header->VarStoreId));
+      if (Header->VarStoreId == 0) {
+        continue;
+      }
 
       Storage = FindStorageFromVarId (FormPackage, Header->VarStoreId);
       ASSERT (Storage != NULL);

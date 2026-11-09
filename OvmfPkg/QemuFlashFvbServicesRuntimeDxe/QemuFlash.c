@@ -114,9 +114,17 @@ QemuFlashDetected (
       DEBUG ((DEBUG_INFO, "QemuFlashDetected => FD behaves as RAM\n"));
       *Ptr = OriginalUint8;
     } else if (ProbeUint8 == CLEARED_ARRAY_STATUS) {
-      DEBUG ((DEBUG_INFO, "QemuFlashDetected => FD behaves as FLASH\n"));
-      FlashDetected = TRUE;
-      *Ptr          = READ_ARRAY_CMD;
+      *Ptr       = WRITE_BYTE_CMD;
+      *Ptr       = OriginalUint8;
+      *Ptr       = READ_STATUS_CMD;
+      ProbeUint8 = *Ptr;
+      *Ptr       = READ_ARRAY_CMD;
+      if (ProbeUint8 & 0x10 /* programming error */) {
+        DEBUG ((DEBUG_INFO, "QemuFlashDetected => FD behaves as FLASH, write-protected\n"));
+      } else {
+        DEBUG ((DEBUG_INFO, "QemuFlashDetected => FD behaves as FLASH, writable\n"));
+        FlashDetected = TRUE;
+      }
     }
   }
 
@@ -251,6 +259,14 @@ QemuFlashInitialize (
   VOID
   )
 {
+  //
+  // The SNP model does not provide for QEMU flash device support, so exit
+  // early before attempting to initialize any QEMU flash device support.
+  //
+  if (MemEncryptSevSnpIsEnabled ()) {
+    return EFI_UNSUPPORTED;
+  }
+
   mFlashBase   = (UINT8 *)(UINTN)PcdGet32 (PcdOvmfFdBaseAddress);
   mFdBlockSize = PcdGet32 (PcdOvmfFirmwareBlockSize);
   ASSERT (PcdGet32 (PcdOvmfFirmwareFdSize) % mFdBlockSize == 0);
@@ -268,6 +284,14 @@ QemuFlashInitialize (
   if (!QemuFlashDetected ()) {
     ASSERT (!FeaturePcdGet (PcdSmmSmramRequire));
     return EFI_WRITE_PROTECTED;
+  } else {
+    if (!FeaturePcdGet (PcdSmmSmramRequire) && FeaturePcdGet (PcdSecureBootSupported)) {
+      DEBUG ((DEBUG_ERROR, "ERROR: This VM configuration is not secure.\n"));
+      DEBUG ((DEBUG_ERROR, "When using secure boot and storing UEFI variables in pflash SMM mode\n"));
+      DEBUG ((DEBUG_ERROR, "must be used to prevent unauthorized updates of secure boot variables.\n"));
+      ASSERT (FeaturePcdGet (PcdSmmSmramRequire) || !FeaturePcdGet (PcdSecureBootSupported));
+      CpuDeadLoop ();
+    }
   }
 
   return EFI_SUCCESS;

@@ -24,7 +24,6 @@
 #
 
 [Sources.AARCH64]
-  MmCommunicate.h
   MmCommunication.c
 
 [Packages]
@@ -33,20 +32,25 @@
 
 [LibraryClasses]
   ArmLib
+  ArmFfaLib
   ArmSmcLib
   BaseMemoryLib
   DebugLib
   DxeServicesTableLib
   HobLib
   UefiDriverEntryPoint
+  SafeIntLib
 
 [Protocols]
+  gEfiDxeMmReadyToLockProtocolGuid              ## UNDEFINED # SmiHandlerRegister
   gEfiMmCommunication2ProtocolGuid              ## PRODUCES
+  gEfiMmCommunication3ProtocolGuid              ## PRODUCES
 
 [Guids]
   gEfiEndOfDxeEventGroupGuid
   gEfiEventExitBootServicesGuid
   gEfiEventReadyToBootGuid
+  gEfiMmCommunicateHeaderV3Guid
 
 [Pcd.common]
   gArmTokenSpaceGuid.PcdMmBufferBase

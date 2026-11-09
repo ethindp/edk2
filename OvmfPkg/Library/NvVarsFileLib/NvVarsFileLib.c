@@ -30,6 +30,12 @@ ConnectNvVarsToFileSystem (
 {
   EFI_STATUS  Status;
 
+  if (FeaturePcdGet (PcdSecureBootSupported) ||
+      FeaturePcdGet (PcdBootRestrictToFirmware))
+  {
+    return EFI_UNSUPPORTED;
+  }
+
   //
   // We might fail to load the variable, since the file system initially
   // will not have the NvVars file.

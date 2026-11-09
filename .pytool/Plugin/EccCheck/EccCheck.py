@@ -34,6 +34,10 @@ class EccCheck(ICiBuildPlugin):
     LineScopePattern = (r'@@ -\d*\,*\d* \+\d*\,*\d* @@.*')
     LineNumRange = re.compile(r'@@ -\d*\,*\d* \+(\d*)\,*(\d*) @@.*')
 
+    # Sub-directory of the workspace where the package under review is copied
+    # and scanned by ECC.
+    BuildTempSubDir = os.path.join('Build', '.pytool', 'Plugin', 'EccCheck')
+
     def GetTestName(self, packagename: str, environment: VarDict) -> tuple:
         """ Provide the testcase name and classname for use in reporting
             testclassname: a descriptive string for the testcase can include whitespace
@@ -69,15 +73,22 @@ class EccCheck(ICiBuildPlugin):
         env.set_shell_var('PACKAGES_PATH', os.pathsep.join(Edk2pathObj.PackagePathList))
         self.ECC_PASS = True
 
+        abs_pkg_path = Edk2pathObj.GetAbsolutePathOnThisSystemFromEdk2RelativePath(packagename)
+
+        if abs_pkg_path is None:
+            tc.SetSkipped()
+            tc.LogStdError("No Package folder {0}".format(abs_pkg_path))
+            return 0
+
         # Create temp directory
-        temp_path = os.path.join(workspace_path, 'Build', '.pytool', 'Plugin', 'EccCheck')
+        temp_path = os.path.join(workspace_path, self.BuildTempSubDir)
         try:
             # Delete temp directory
             if os.path.exists(temp_path):
                 shutil.rmtree(temp_path)
             # Copy package being scanned to temp_path
             shutil.copytree (
-              os.path.join(workspace_path, packagename),
+              abs_pkg_path,
               os.path.join(temp_path, packagename),
               symlinks=True
               )
@@ -137,7 +148,7 @@ class EccCheck(ICiBuildPlugin):
         #
         params = "diff --output={} --unified=0 origin/master HEAD".format(temp_diff_output)
         RunCmd("git", params)
-        with open(temp_diff_output) as file:
+        with open(temp_diff_output, encoding='utf8') as file:
             patch = file.read().strip().split('\n')
         return patch
 
@@ -156,7 +167,7 @@ class EccCheck(ICiBuildPlugin):
         params = "diff --output={} --diff-filter=dr --name-status origin/master HEAD".format(temp_diff_output)
         RunCmd("git", params)
         dir_list = []
-        with open(temp_diff_output) as file:
+        with open(temp_diff_output, encoding='utf8') as file:
             dir_list = file.read().strip().split('\n')
 
         modify_dir_list = []
@@ -174,6 +185,11 @@ class EccCheck(ICiBuildPlugin):
             # Parse the directory name from the file name
             #
             file_dir = os.path.dirname(file_path[-1])
+            #
+            # strip the prefix path till the package name
+            #
+            if pkg in file_dir:
+                file_dir = file_dir[file_dir.find(pkg):]
             #
             # Skip directory names that do not start with the package being scanned.
             #
@@ -259,7 +275,7 @@ class EccCheck(ICiBuildPlugin):
         modify_file_path = os.path.join(temp_path, modify_file)
         if not os.path.exists (modify_file_path):
             return comment_range
-        with open(modify_file_path) as f:
+        with open(modify_file_path, encoding='utf8') as f:
             line_no = 1
             Start = False
             for line in f:
@@ -307,7 +323,7 @@ class EccCheck(ICiBuildPlugin):
         row_lines = []
         ignore_error_code = self.GetIgnoreErrorCode()
         if os.path.exists(ecc_csv):
-            with open(ecc_csv) as csv_file:
+            with open(ecc_csv, encoding='utf8') as csv_file:
                 reader = csv.reader(csv_file)
                 for row in reader:
                     for modify_file in ecc_diff_range:
@@ -315,6 +331,8 @@ class EccCheck(ICiBuildPlugin):
                             for i in ecc_diff_range[modify_file]:
                                 line_no = int(row[4])
                                 if i[0] <= line_no <= i[1] and row[1] not in ignore_error_code:
+                                    row[3] = modify_file
+                                    row[5] = row[5].replace(self.BuildTempSubDir + os.sep, '')
                                     row[0] = '\nEFI coding style error'
                                     row[1] = 'Error code: ' + row[1]
                                     row[3] = 'file: ' + row[3]

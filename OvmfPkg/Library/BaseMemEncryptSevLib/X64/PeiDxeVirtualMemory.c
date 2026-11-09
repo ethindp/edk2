@@ -3,7 +3,7 @@
   Virtual Memory Management Services to set or clear the memory encryption bit
 
   Copyright (c) 2006 - 2018, Intel Corporation. All rights reserved.<BR>
-  Copyright (c) 2017 - 2020, AMD Incorporated. All rights reserved.<BR>
+  Copyright (c) 2017 - 2024, AMD Incorporated. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -19,9 +19,9 @@
 #include "VirtualMemory.h"
 #include "SnpPageStateChange.h"
 
-STATIC BOOLEAN          mAddressEncMaskChecked = FALSE;
-STATIC UINT64           mAddressEncMask;
 STATIC PAGE_TABLE_POOL  *mPageTablePool = NULL;
+
+STATIC VOID  *mPscBuffer = NULL;
 
 typedef enum {
   SetCBit,
@@ -40,18 +40,10 @@ InternalGetMemEncryptionAddressMask (
   VOID
   )
 {
-  UINT64  EncryptionMask;
+  UINT64  EncryptionMask = MemEncryptSevGetEncryptionMask ();
+  UINT64  AddressEncMask = EncryptionMask & PAGING_1G_ADDRESS_MASK_64;
 
-  if (mAddressEncMaskChecked) {
-    return mAddressEncMask;
-  }
-
-  EncryptionMask = MemEncryptSevGetEncryptionMask ();
-
-  mAddressEncMask        = EncryptionMask & PAGING_1G_ADDRESS_MASK_64;
-  mAddressEncMaskChecked = TRUE;
-
-  return mAddressEncMask;
+  return AddressEncMask;
 }
 
 /**
@@ -161,10 +153,10 @@ AllocatePageTableMemory (
   mPageTablePool->FreePages -= Pages;
 
   DEBUG ((
-    DEBUG_VERBOSE,
+    DEBUG_PAGING,
     "%a:%a: Buffer=0x%Lx Pages=%ld\n",
     gEfiCallerBaseName,
-    __FUNCTION__,
+    __func__,
     Buffer,
     Pages
     ));
@@ -232,8 +224,14 @@ Split2MPageTo4K (
   //
   // Fill in 2M page entry.
   //
+  // AddressEncMask is not set for non-leaf entries since CpuPageTableLib doesn't consume
+  // encryption mask PCD. The encryption mask is overlapped with the PageTableBaseAddress
+  // field of non-leaf page table entries. If encryption mask is set for non-leaf entries,
+  // issue happens when CpuPageTableLib code use the non-leaf entry PageTableBaseAddress
+  // field with the encryption mask set to find the next level page table.
+  //
   *PageEntry2M = ((UINT64)(UINTN)PageTableEntry1 |
-                  IA32_PG_P | IA32_PG_RW | AddressEncMask);
+                  IA32_PG_P | IA32_PG_RW);
 }
 
 /**
@@ -352,7 +350,10 @@ SetPageTablePoolReadOnly (
         PhysicalAddress += LevelSize[Level - 1];
       }
 
-      PageTable[Index] = (UINT64)(UINTN)NewPageTable | AddressEncMask |
+      //
+      // AddressEncMask is not set for non-leaf entries because of the way CpuPageTableLib works
+      //
+      PageTable[Index] = (UINT64)(UINTN)NewPageTable |
                          IA32_PG_P | IA32_PG_RW;
       PageTable = NewPageTable;
     }
@@ -439,8 +440,10 @@ Split1GPageTo2M (
   //
   // Fill in 1G page entry.
   //
+  // AddressEncMask is not set for non-leaf entries because of the way CpuPageTableLib works
+  //
   *PageEntry1G = ((UINT64)(UINTN)PageDirectoryEntry |
-                  IA32_PG_P | IA32_PG_RW | AddressEncMask);
+                  IA32_PG_P | IA32_PG_RW);
 
   PhysicalAddress2M = PhysicalAddress;
   for (IndexOfPageDirectoryEntries = 0;
@@ -548,6 +551,7 @@ InternalMemEncryptSevCreateIdentityMap1G (
   PAGE_MAP_AND_DIRECTORY_POINTER  *PageMapLevel4Entry;
   PAGE_TABLE_1G_ENTRY             *PageDirectory1GEntry;
   UINT64                          PgTableMask;
+  UINT64                          *NewPageTable;
   UINT64                          AddressEncMask;
   BOOLEAN                         IsWpEnabled;
   RETURN_STATUS                   Status;
@@ -558,10 +562,10 @@ InternalMemEncryptSevCreateIdentityMap1G (
   PageMapLevel4Entry = NULL;
 
   DEBUG ((
-    DEBUG_VERBOSE,
+    DEBUG_PAGING,
     "%a:%a: Cr3Base=0x%Lx Physical=0x%Lx Length=0x%Lx\n",
     gEfiCallerBaseName,
-    __FUNCTION__,
+    __func__,
     Cr3BaseAddress,
     PhysicalAddress,
     (UINT64)Length
@@ -602,15 +606,27 @@ InternalMemEncryptSevCreateIdentityMap1G (
     PageMapLevel4Entry  = (VOID *)(Cr3BaseAddress & ~PgTableMask);
     PageMapLevel4Entry += PML4_OFFSET (PhysicalAddress);
     if (!PageMapLevel4Entry->Bits.Present) {
-      DEBUG ((
-        DEBUG_ERROR,
-        "%a:%a: bad PML4 for Physical=0x%Lx\n",
-        gEfiCallerBaseName,
-        __FUNCTION__,
-        PhysicalAddress
-        ));
-      Status = RETURN_NO_MAPPING;
-      goto Done;
+      NewPageTable = AllocatePageTableMemory (1);
+      if (NewPageTable == NULL) {
+        DEBUG ((
+          DEBUG_ERROR,
+          "%a:%a: failed to allocate a new PML4 entry\n",
+          gEfiCallerBaseName,
+          __func__
+          ));
+        Status = RETURN_NO_MAPPING;
+        goto Done;
+      }
+
+      SetMem (NewPageTable, EFI_PAGE_SIZE, 0);
+
+      //
+      // AddressEncMask is not set for non-leaf entries because of the way CpuPageTableLib works
+      //
+      PageMapLevel4Entry->Uint64          = (UINT64)(UINTN)NewPageTable;
+      PageMapLevel4Entry->Bits.MustBeZero = 0;
+      PageMapLevel4Entry->Bits.ReadWrite  = 1;
+      PageMapLevel4Entry->Bits.Present    = 1;
     }
 
     PageDirectory1GEntry = (VOID *)(
@@ -704,16 +720,11 @@ SetMemoryEncDec (
   UINTN                           OrigLength;
   RETURN_STATUS                   Status;
 
-  //
-  // Set PageMapLevel4Entry to suppress incorrect compiler/analyzer warnings.
-  //
-  PageMapLevel4Entry = NULL;
-
   DEBUG ((
-    DEBUG_VERBOSE,
+    DEBUG_PAGING,
     "%a:%a: Cr3Base=0x%Lx Physical=0x%Lx Length=0x%Lx Mode=%a CacheFlush=%u Mmio=%u\n",
     gEfiCallerBaseName,
-    __FUNCTION__,
+    __func__,
     Cr3BaseAddress,
     PhysicalAddress,
     (UINT64)Length,
@@ -762,7 +773,19 @@ SetMemoryEncDec (
   // The InternalSetPageState() is used for setting the page state in the RMP table.
   //
   if (!Mmio && (Mode == ClearCBit) && MemEncryptSevSnpIsEnabled ()) {
-    InternalSetPageState (PhysicalAddress, EFI_SIZE_TO_PAGES (Length), SevSnpPageShared, FALSE);
+    if (mPscBuffer == NULL) {
+      mPscBuffer = AllocateReservedPages (1);
+      ASSERT (mPscBuffer != NULL);
+    }
+
+    InternalSetPageState (
+      PhysicalAddress,
+      EFI_SIZE_TO_PAGES (Length),
+      SevSnpPageShared,
+      FALSE,
+      mPscBuffer,
+      EFI_PAGE_SIZE
+      );
   }
 
   //
@@ -771,14 +794,14 @@ SetMemoryEncDec (
   OrigLength          = Length;
   OrigPhysicalAddress = PhysicalAddress;
 
-  while (Length != 0) {
-    //
-    // If Cr3BaseAddress is not specified then read the current CR3
-    //
-    if (Cr3BaseAddress == 0) {
-      Cr3BaseAddress = AsmReadCr3 ();
-    }
+  //
+  // If Cr3BaseAddress is not specified then read the current CR3
+  //
+  if (Cr3BaseAddress == 0) {
+    Cr3BaseAddress = AsmReadCr3 ();
+  }
 
+  while (Length != 0) {
     PageMapLevel4Entry  = (VOID *)(Cr3BaseAddress & ~PgTableMask);
     PageMapLevel4Entry += PML4_OFFSET (PhysicalAddress);
     if (!PageMapLevel4Entry->Bits.Present) {
@@ -786,7 +809,7 @@ SetMemoryEncDec (
         DEBUG_ERROR,
         "%a:%a: bad PML4 for Physical=0x%Lx\n",
         gEfiCallerBaseName,
-        __FUNCTION__,
+        __func__,
         PhysicalAddress
         ));
       Status = RETURN_NO_MAPPING;
@@ -803,7 +826,7 @@ SetMemoryEncDec (
         DEBUG_ERROR,
         "%a:%a: bad PDPE for Physical=0x%Lx\n",
         gEfiCallerBaseName,
-        __FUNCTION__,
+        __func__,
         PhysicalAddress
         ));
       Status = RETURN_NO_MAPPING;
@@ -821,10 +844,10 @@ SetMemoryEncDec (
       if (((PhysicalAddress & (BIT30 - 1)) == 0) && (Length >= BIT30)) {
         SetOrClearCBit (&PageDirectory1GEntry->Uint64, Mode);
         DEBUG ((
-          DEBUG_VERBOSE,
+          DEBUG_PAGING,
           "%a:%a: updated 1GB entry for Physical=0x%Lx\n",
           gEfiCallerBaseName,
-          __FUNCTION__,
+          __func__,
           PhysicalAddress
           ));
         PhysicalAddress += BIT30;
@@ -834,10 +857,10 @@ SetMemoryEncDec (
         // We must split the page
         //
         DEBUG ((
-          DEBUG_VERBOSE,
+          DEBUG_PAGING,
           "%a:%a: splitting 1GB page for Physical=0x%Lx\n",
           gEfiCallerBaseName,
-          __FUNCTION__,
+          __func__,
           PhysicalAddress
           ));
         Split1GPageTo2M (
@@ -865,7 +888,7 @@ SetMemoryEncDec (
           DEBUG_ERROR,
           "%a:%a: bad PDE for Physical=0x%Lx\n",
           gEfiCallerBaseName,
-          __FUNCTION__,
+          __func__,
           PhysicalAddress
           ));
         Status = RETURN_NO_MAPPING;
@@ -889,10 +912,10 @@ SetMemoryEncDec (
           // We must split up this page into 4K pages
           //
           DEBUG ((
-            DEBUG_VERBOSE,
+            DEBUG_PAGING,
             "%a:%a: splitting 2MB page for Physical=0x%Lx\n",
             gEfiCallerBaseName,
-            __FUNCTION__,
+            __func__,
             PhysicalAddress
             ));
           Split2MPageTo4K (
@@ -917,7 +940,7 @@ SetMemoryEncDec (
             DEBUG_ERROR,
             "%a:%a: bad PTE for Physical=0x%Lx\n",
             gEfiCallerBaseName,
-            __FUNCTION__,
+            __func__,
             PhysicalAddress
             ));
           Status = RETURN_NO_MAPPING;
@@ -936,7 +959,7 @@ SetMemoryEncDec (
   // read-only.
   //
   if (IsWpEnabled) {
-    EnablePageTableProtection ((UINTN)PageMapLevel4Entry, TRUE);
+    EnablePageTableProtection ((UINTN)(Cr3BaseAddress & ~PgTableMask), TRUE);
   }
 
   //
@@ -951,11 +974,18 @@ SetMemoryEncDec (
   // The InternalSetPageState() is used for setting the page state in the RMP table.
   //
   if ((Mode == SetCBit) && MemEncryptSevSnpIsEnabled ()) {
+    if (mPscBuffer == NULL) {
+      mPscBuffer = AllocateReservedPages (1);
+      ASSERT (mPscBuffer != NULL);
+    }
+
     InternalSetPageState (
       OrigPhysicalAddress,
       EFI_SIZE_TO_PAGES (OrigLength),
       SevSnpPagePrivate,
-      FALSE
+      FALSE,
+      mPscBuffer,
+      EFI_PAGE_SIZE
       );
   }
 

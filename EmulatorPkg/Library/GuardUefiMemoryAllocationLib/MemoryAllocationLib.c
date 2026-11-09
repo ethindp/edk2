@@ -42,9 +42,6 @@ InternalAllocatePages (
   IN UINTN            Pages
   )
 {
-  EFI_STATUS            Status;
-  EFI_PHYSICAL_ADDRESS  Memory;
-
   if (Pages == 0) {
     return NULL;
   }
@@ -178,12 +175,11 @@ InternalAllocateAlignedPages (
   IN UINTN            Alignment
   )
 {
-  EFI_STATUS  Status;
-  VOID        *Memory;
-  UINTN       AlignedMemory;
-  UINTN       AlignmentMask;
-  UINTN       UnalignedPages;
-  UINTN       RealPages;
+  VOID   *Memory;
+  UINTN  AlignedMemory;
+  UINTN  AlignmentMask;
+  UINTN  UnalignedPages;
+  UINTN  RealPages;
 
   //
   // Alignment must be a power of two or zero.
@@ -196,7 +192,7 @@ InternalAllocateAlignedPages (
 
   if (Alignment > EFI_PAGE_SIZE) {
     //
-    // Caculate the total number of pages since alignment is larger than page size.
+    // Calculate the total number of pages since alignment is larger than page size.
     //
     AlignmentMask = Alignment - 1;
     RealPages     = Pages + EFI_SIZE_TO_PAGES (Alignment);

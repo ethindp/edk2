@@ -7,8 +7,7 @@
 
 **/
 
-#ifndef _SHELL_PARAMETERS_PROTOCOL_PROVIDER_HEADER_
-#define _SHELL_PARAMETERS_PROTOCOL_PROVIDER_HEADER_
+#pragma once
 
 #include "Shell.h"
 
@@ -180,6 +179,16 @@ ParseCommandLineToArgs (
   );
 
 /**
+  Return the next parameter's end from a command line string.
+
+  @param[in] String        the string to parse
+**/
+CONST CHAR16 *
+FindEndOfParameter (
+  IN CONST CHAR16  *String
+  );
+
+/**
   return the next parameter from a command line string;
 
   This function moves the next parameter from Walker into TempParameter and moves
@@ -206,5 +215,3 @@ GetNextParameter (
   IN CONST UINTN  Length,
   IN BOOLEAN      StripQuotation
   );
-
-#endif //_SHELL_PARAMETERS_PROTOCOL_PROVIDER_HEADER_

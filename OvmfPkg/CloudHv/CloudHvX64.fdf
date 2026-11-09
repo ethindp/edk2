@@ -11,11 +11,11 @@
 ################################################################################
 
 [Defines]
-!include OvmfPkg/OvmfPkgDefines.fdf.inc
+!include CloudHvDefines.fdf.inc
 
 #
-# Build the variable store and the firmware code as one unified flash device
-# image.
+# This will allow the flash device image to be recognize as an ELF, with first
+# an ELF headers, then the firmware code.
 #
 [FD.CLOUDHV]
 BaseAddress   = $(FW_BASE_ADDRESS)
@@ -24,38 +24,17 @@ ErasePolarity = 1
 BlockSize     = $(BLOCK_SIZE)
 NumBlocks     = $(FW_BLOCKS)
 
-!include OvmfPkg/VarStore.fdf.inc
+#
+# Leaving 4kiB for the PVH ELF header. This is more than enough.
+#
+0x00000000|0x00001000
 
-$(VARS_SIZE)|$(FVMAIN_SIZE)
+!include CloudHvElfHeader.fdf.inc
+
+0x00001000|$(FVMAIN_SIZE)
 FV = FVMAIN_COMPACT
 
 $(SECFV_OFFSET)|$(SECFV_SIZE)
-FV = SECFV
-
-#
-# Build the variable store and the firmware code as separate flash device
-# images.
-#
-[FD.CLOUDHV_VARS]
-BaseAddress   = $(FW_BASE_ADDRESS)
-Size          = $(VARS_SIZE)
-ErasePolarity = 1
-BlockSize     = $(BLOCK_SIZE)
-NumBlocks     = $(VARS_BLOCKS)
-
-!include OvmfPkg/VarStore.fdf.inc
-
-[FD.CLOUDHV_CODE]
-BaseAddress   = $(CODE_BASE_ADDRESS)
-Size          = $(CODE_SIZE)
-ErasePolarity = 1
-BlockSize     = $(BLOCK_SIZE)
-NumBlocks     = $(CODE_BLOCKS)
-
-0x00000000|$(FVMAIN_SIZE)
-FV = FVMAIN_COMPACT
-
-$(FVMAIN_SIZE)|$(SECFV_SIZE)
 FV = SECFV
 
 ################################################################################
@@ -94,7 +73,13 @@ gUefiOvmfPkgTokenSpaceGuid.PcdOvmfSnpSecretsBase|gUefiOvmfPkgTokenSpaceGuid.PcdO
 0x00E000|0x001000
 gUefiOvmfPkgTokenSpaceGuid.PcdOvmfCpuidBase|gUefiOvmfPkgTokenSpaceGuid.PcdOvmfCpuidSize
 
-0x010000|0x010000
+0x00F000|0x001000
+gUefiOvmfPkgTokenSpaceGuid.PcdXenPvhStartOfDayStructPtr|gUefiOvmfPkgTokenSpaceGuid.PcdXenPvhStartOfDayStructPtrSize
+
+0x010000|0x001000
+gUefiOvmfPkgTokenSpaceGuid.PcdOvmfSecApicPageTableBase|gUefiOvmfPkgTokenSpaceGuid.PcdOvmfSecApicPageTableSize
+
+0x011000|0x00F000
 gUefiOvmfPkgTokenSpaceGuid.PcdOvmfSecPeiTempRamBase|gUefiOvmfPkgTokenSpaceGuid.PcdOvmfSecPeiTempRamSize
 
 0x020000|0x0E0000
@@ -142,7 +127,7 @@ READ_LOCK_STATUS   = TRUE
 #
 INF  OvmfPkg/Sec/SecMain.inf
 
-INF  RuleOverride=RESET_VECTOR OvmfPkg/ResetVector/ResetVector.inf
+INF  RuleOverride=RESET_VECTOR OvmfPkg/XenResetVector/XenResetVector.inf
 
 ################################################################################
 [FV.PEIFV]
@@ -186,7 +171,7 @@ INF  OvmfPkg/SmmAccess/SmmAccessPei.inf
 !endif
 INF  UefiCpuPkg/CpuMpPei/CpuMpPei.inf
 
-!include OvmfPkg/OvmfTpmPei.fdf.inc
+!include OvmfPkg/Include/Fdf/OvmfTpmPei.fdf.inc
 
 ################################################################################
 
@@ -234,7 +219,7 @@ INF  MdeModulePkg/Universal/SecurityStubDxe/SecurityStubDxe.inf
 INF  MdeModulePkg/Universal/EbcDxe/EbcDxe.inf
 INF  UefiCpuPkg/CpuIo2Dxe/CpuIo2Dxe.inf
 INF  UefiCpuPkg/CpuDxe/CpuDxe.inf
-INF  OvmfPkg/XenTimerDxe/XenTimerDxe.inf
+INF  OvmfPkg/LocalApicTimerDxe/LocalApicTimerDxe.inf
 INF  OvmfPkg/IncompatiblePciDeviceSupportDxe/IncompatiblePciDeviceSupport.inf
 INF  OvmfPkg/PciHotPlugInitDxe/PciHotPlugInit.inf
 INF  MdeModulePkg/Bus/Pci/PciHostBridgeDxe/PciHostBridgeDxe.inf
@@ -248,21 +233,13 @@ INF  OvmfPkg/Virtio10Dxe/Virtio10.inf
 INF  OvmfPkg/VirtioBlkDxe/VirtioBlk.inf
 INF  OvmfPkg/VirtioScsiDxe/VirtioScsi.inf
 INF  OvmfPkg/VirtioRngDxe/VirtioRng.inf
-!if $(PVSCSI_ENABLE) == TRUE
-INF  OvmfPkg/PvScsiDxe/PvScsiDxe.inf
-!endif
-!if $(MPT_SCSI_ENABLE) == TRUE
-INF  OvmfPkg/MptScsiDxe/MptScsiDxe.inf
-!endif
-!if $(LSI_SCSI_ENABLE) == TRUE
-INF  OvmfPkg/LsiScsiDxe/LsiScsiDxe.inf
-!endif
 
 !if $(SECURE_BOOT_ENABLE) == TRUE
   INF  SecurityPkg/VariableAuthenticated/SecureBootConfigDxe/SecureBootConfigDxe.inf
 !endif
 
 INF  MdeModulePkg/Universal/WatchdogTimerDxe/WatchdogTimer.inf
+INF  MdeModulePkg/Universal/TimestampDxe/TimestampDxe.inf
 INF  MdeModulePkg/Universal/MonotonicCounterRuntimeDxe/MonotonicCounterRuntimeDxe.inf
 INF  MdeModulePkg/Universal/CapsuleRuntimeDxe/CapsuleRuntimeDxe.inf
 INF  MdeModulePkg/Universal/Console/ConPlatformDxe/ConPlatformDxe.inf
@@ -272,6 +249,7 @@ INF  MdeModulePkg/Universal/Console/TerminalDxe/TerminalDxe.inf
 INF  MdeModulePkg/Universal/DriverHealthManagerDxe/DriverHealthManagerDxe.inf
 INF  MdeModulePkg/Universal/BdsDxe/BdsDxe.inf
 INF  MdeModulePkg/Application/UiApp/UiApp.inf
+INF  MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuApp.inf
 INF  OvmfPkg/QemuKernelLoaderFsDxe/QemuKernelLoaderFsDxe.inf
 INF  MdeModulePkg/Universal/DevicePathDxe/DevicePathDxe.inf
 INF  MdeModulePkg/Universal/Disk/DiskIoDxe/DiskIoDxe.inf
@@ -280,14 +258,13 @@ INF  MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskDxe.inf
 INF  MdeModulePkg/Universal/Disk/UnicodeCollation/EnglishDxe/EnglishDxe.inf
 INF  MdeModulePkg/Bus/Scsi/ScsiBusDxe/ScsiBusDxe.inf
 INF  MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDiskDxe.inf
-INF  OvmfPkg/SataControllerDxe/SataControllerDxe.inf
+INF  MdeModulePkg/Bus/Pci/SataControllerDxe/SataControllerDxe.inf
 INF  MdeModulePkg/Bus/Ata/AtaAtapiPassThru/AtaAtapiPassThru.inf
 INF  MdeModulePkg/Bus/Ata/AtaBusDxe/AtaBusDxe.inf
 INF  MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.inf
 INF  MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
 INF  MdeModulePkg/Universal/SetupBrowserDxe/SetupBrowserDxe.inf
 INF  MdeModulePkg/Universal/DisplayEngineDxe/DisplayEngineDxe.inf
-INF  MdeModulePkg/Universal/MemoryTest/NullMemoryTestDxe/NullMemoryTestDxe.inf
 
 INF  MdeModulePkg/Universal/SerialDxe/SerialDxe.inf
 
@@ -304,12 +281,7 @@ INF  FatPkg/EnhancedFatDxe/Fat.inf
 INF  MdeModulePkg/Universal/Disk/UdfDxe/UdfDxe.inf
 INF  OvmfPkg/VirtioFsDxe/VirtioFsDxe.inf
 
-!if $(TOOL_CHAIN_TAG) != "XCODE5"
-INF  ShellPkg/DynamicCommand/TftpDynamicCommand/TftpDynamicCommand.inf
-INF  ShellPkg/DynamicCommand/HttpDynamicCommand/HttpDynamicCommand.inf
-INF  OvmfPkg/LinuxInitrdDynamicShellCommand/LinuxInitrdDynamicShellCommand.inf
-!endif
-INF  ShellPkg/Application/Shell/Shell.inf
+!include OvmfPkg/Include/Fdf/ShellDxe.fdf.inc
 
 INF MdeModulePkg/Logo/LogoDxe.inf
 
@@ -322,7 +294,9 @@ INF MdeModulePkg/Logo/LogoDxe.inf
   }
 !endif
 !include NetworkPkg/Network.fdf.inc
+!if $(NETWORK_ENABLE) == TRUE
   INF  OvmfPkg/VirtioNetDxe/VirtioNet.inf
+!endif
 
 INF  OvmfPkg/PlatformDxe/Platform.inf
 INF  OvmfPkg/AmdSevDxe/AmdSevDxe.inf
@@ -338,6 +312,7 @@ INF  OvmfPkg/CpuHotplugSmm/CpuHotplugSmm.inf
 INF  UefiCpuPkg/CpuIo2Smm/CpuIo2Smm.inf
 INF  MdeModulePkg/Universal/LockBox/SmmLockBox/SmmLockBox.inf
 INF  UefiCpuPkg/PiSmmCpuDxeSmm/PiSmmCpuDxeSmm.inf
+INF  MdeModulePkg/Universal/SmmCommunicationBufferDxe/SmmCommunicationBufferDxe.inf
 
 #
 # Variable driver stack (SMM)
@@ -361,7 +336,8 @@ INF  MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
 #
 # TPM support
 #
-!include OvmfPkg/OvmfTpmDxe.fdf.inc
+!include OvmfPkg/Include/Fdf/OvmfTpmDxe.fdf.inc
+!include OvmfPkg/Include/Fdf/OvmfOptHw.fdf.inc
 
 ################################################################################
 
@@ -396,7 +372,7 @@ FILE FV_IMAGE = 9E21FD93-9C72-4c15-8C4B-E77F1DB2D792 {
    }
  }
 
-!include OvmfPkg/FvmainCompactScratchEnd.fdf.inc
+!include OvmfPkg/Include/Fdf/FvmainCompactScratchEnd.fdf.inc
 
 ################################################################################
 
@@ -477,12 +453,7 @@ FILE FV_IMAGE = 9E21FD93-9C72-4c15-8C4B-E77F1DB2D792 {
     VERSION   STRING="$(INF_VERSION)" Optional BUILD_NUM=$(BUILD_NUMBER)
   }
 
-[Rule.Common.USER_DEFINED.CSM]
-  FILE FREEFORM = $(NAMED_GUID) {
-    RAW BIN                |.bin
-  }
-
-[Rule.Common.SEC.RESET_VECTOR]
+[Rule.Common.USER_DEFINED.RESET_VECTOR]
   FILE RAW = $(NAMED_GUID) {
     RAW BIN   Align = 16   |.bin
   }

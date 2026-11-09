@@ -1,6 +1,6 @@
 # @ GenYamlCfg.py
 #
-# Copyright (c) 2020 - 2021, Intel Corporation. All rights reserved.<BR>
+# Copyright (c) 2020 - 2026, Intel Corporation. All rights reserved.<BR>
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 #
 #
@@ -12,8 +12,6 @@ import marshal
 import string
 import operator as op
 import ast
-import tkinter.messagebox as messagebox
-import tkinter
 
 from datetime import date
 from collections import OrderedDict
@@ -166,11 +164,10 @@ class ExpressionEval(ast.NodeVisitor):
         else:
             return self._namespace[node.id]
 
-    def visit_Num(self, node):
-        return node.n
-
-    def visit_NameConstant(self, node):
-        return node.value
+    def visit_Constant(self, node):
+        if isinstance(node.value, (int, float, complex)) or node.value is None:
+            return node.value
+        return self.generic_visit(node)
 
     def visit_BoolOp(self, node):
         result = False
@@ -214,7 +211,7 @@ class ExpressionEval(ast.NodeVisitor):
             return val_true if condition else val_false
         elif node.func.id in ['offset', 'length']:
             if self._get_variable is not None:
-                return self._get_variable(node.args[0].s, node.func.id)
+                return self._get_variable(node.args[0].value, node.func.id)
         else:
             raise ValueError("Unsupported function: " + repr(node))
 
@@ -226,6 +223,7 @@ class CFG_YAML():
     TEMPLATE = 'template'
     CONFIGS = 'configs'
     VARIABLE = 'variable'
+    FORMSET = 'formset'
 
     def __init__(self):
         self.log_line = False
@@ -235,6 +233,7 @@ class CFG_YAML():
         self.var_dict = None
         self.def_dict = {}
         self.yaml_path = ''
+        self.yaml_type = 'fsp'
         self.lines = []
         self.full_lines = []
         self.index = 0
@@ -418,6 +417,7 @@ class CFG_YAML():
         last_indent = None
         key = ''
         temp_chk = {}
+        temp_data = []
 
         while True:
             line = self.get_line()
@@ -425,6 +425,9 @@ class CFG_YAML():
                 break
 
             curr_line = line.strip()
+            if curr_line == "## DO NOT REMOVE -- YAML Mode":
+                self.yaml_type = "vfr"
+
             if curr_line == '' or curr_line[0] == '#':
                 continue
 
@@ -482,9 +485,14 @@ class CFG_YAML():
                 return curr
 
             marker1 = curr_line[0]
-            marker2 = curr_line[-1]
             start = 1 if marker1 == '-' else 0
             pos = curr_line.find(': ')
+            if marker1 == '-':
+                marker2 = curr_line[curr_line.find(":")]
+                pos = -1
+            else:
+                marker2 = curr_line[-1]
+
             if pos > 0:
                 child = None
                 key = curr_line[start:pos].strip()
@@ -516,15 +524,31 @@ class CFG_YAML():
                     # special virtual nodes, rename to ensure unique key
                     key = '$ACTION_%04X' % self.index
                     self.index += 1
-                if key in curr:
-                    if key not in temp_chk:
-                        # check for duplicated keys at same level
-                        temp_chk[key] = 1
-                    else:
-                        raise Exception("Duplicated item '%s:%s' found !"
-                                        % (parent_name, key))
 
-                curr[key] = child
+                if self.yaml_type =='fsp':
+                    if key in curr:
+                        if key not in temp_chk:
+                            # check for duplicated keys at same level
+                            temp_chk[key] = 1
+                        else:
+                            raise Exception("Duplicated item '%s:%s' found !"
+                                            % (parent_name, key))
+
+                    curr[key] = child
+                if self.yaml_type == 'vfr':
+                    if key in curr.keys():
+                        if type(curr[key]) == type([]):
+                            temp_data = curr[key]
+                        else:
+                            temp_data.append(curr[key])
+
+                        temp_data.append(child)
+                        if level < 5:
+                            curr[key] = temp_data
+                        temp_data = []
+                    else:
+                        if level < 5:
+                            curr[key] = child
                 if self.var_dict is None and key == CFG_YAML.VARIABLE:
                     self.var_dict = child
                 if self.tmp_tree is None and key == CFG_YAML.TEMPLATE:
@@ -536,6 +560,8 @@ class CFG_YAML():
                                 self.def_dict['(%s)' % each] = txt
                 if self.tmp_tree and key == CFG_YAML.CONFIGS:
                     # apply template for the main configs
+                    self.allow_template = True
+                if self.tmp_tree and key == CFG_YAML.FORMSET:
                     self.allow_template = True
             else:
                 child = None
@@ -550,8 +576,30 @@ class CFG_YAML():
         self.yaml_path = os.path.dirname(opt_file)
         self.load_file(opt_file)
         yaml_tree = self.parse()
-        self.tmp_tree = yaml_tree[CFG_YAML.TEMPLATE]
-        self.cfg_tree = yaml_tree[CFG_YAML.CONFIGS]
+        for key in yaml_tree.keys():
+            if key.lower() == "configs":
+                self.yaml_type = 'fsp'
+                self.tmp_tree = yaml_tree[CFG_YAML.TEMPLATE]
+                self.cfg_tree = yaml_tree[CFG_YAML.CONFIGS]
+                break
+            else:
+                self.cfg_tree = yaml_tree
+                break
+
+        if self.yaml_type == 'vfr':
+            formset_found = True
+            for key in yaml_tree.keys():
+                if key == CFG_YAML.FORMSET:
+                    self.cfg_tree = yaml_tree[CFG_YAML.FORMSET]
+                    formset_found = False
+                    break
+
+            if formset_found == True:
+                self.cfg_tree = yaml_tree
+        elif self.yaml_type == 'fsp':
+            self.tmp_tree = yaml_tree[CFG_YAML.TEMPLATE]
+            self.cfg_tree = yaml_tree[CFG_YAML.CONFIGS]
+
         return self.cfg_tree
 
     def expand_yaml(self, opt_file):
@@ -573,6 +621,8 @@ class CGenYamlCfg:
     builtin_option = {'$EN_DIS': [('0', 'Disable'), ('1', 'Enable')]}
     exclude_struct = ['FSP_UPD_HEADER', 'FSPT_ARCH_UPD',
                       'FSPM_ARCH_UPD', 'FSPS_ARCH_UPD',
+                      'FSPI_ARCH_UPD', 'FSPT_ARCH2_UPD',
+                      'FSPM_ARCH2_UPD', 'FSPS_ARCH2_UPD',
                       'GPIO_GPP_*', 'GPIO_CFG_DATA',
                       'GpioConfPad*', 'GpioPinConfig',
                       'BOOT_OPTION*', 'PLATFORMID_CFG_DATA', '\\w+_Half[01]']
@@ -586,6 +636,7 @@ class CGenYamlCfg:
         self._macro_dict = {}
         self.binseg_dict = {}
         self.initialize()
+        self._tk = self.import_tkinter()
 
     def initialize(self):
         self._old_bin = None
@@ -594,9 +645,14 @@ class CGenYamlCfg:
         self._cfg_list = []
         self._cfg_page = {'root': {'title': '', 'child': []}}
         self._cur_page = ''
+        self._main_page = ''
         self._var_dict = {}
         self._def_dict = {}
         self._yaml_path = ''
+        self.yaml_type = ''
+        #Added to overcome duplicate formid
+        self.form_page_map = {}
+        self.formset_level = 0
 
     @staticmethod
     def deep_convert_dict(layer):
@@ -674,7 +730,11 @@ class CGenYamlCfg:
 
         if count > 1:
             name = '%s[%d]' % (name, count)
-
+        #
+        # FSP[T/M/S]_ARCH2_UPD struct field name is Fsp[t/m/s]Arch2Upd,
+        # it should change to Fsp[t/m/s]ArchUpd for code compatibility.
+        #
+        name = re.sub(r'(Fsp[tms]Arch)2Upd', r'\1Upd', name)
         return name
 
     def get_mode(self):
@@ -760,13 +820,22 @@ class CGenYamlCfg:
         return error
 
     def get_cfg_list(self, page_id=None):
+        cfgs = []
         if page_id is None:
             # return full list
             return self._cfg_list
         else:
-            # build a new list for items under a page ID
-            cfgs = [i for i in self._cfg_list if i['cname'] and
-                    (i['page'] == page_id)]
+            if self.yaml_type == 'fsp':
+                # build a new list for items under a page ID
+                cfgs = [i for i in self._cfg_list if i['cname'] and
+                        (i['page'] == page_id)]
+            #VFR YAML Support Start
+            elif self.yaml_type =='vfr':
+                for cfg in self._cfg_list:
+                    for i in cfg:
+                        if (i['page'] == page_id):
+                            cfgs.append(i)
+            #VFR YAML Support End
             return cfgs
 
     def get_cfg_page(self):
@@ -929,16 +998,24 @@ into %d bytes !" % (value_str, length))
                                                                       ]]:
                     tmp_list.append((op_val, op_str))
             else:
-                opt_list = item['option'].split(',')
+                if item['option'].find(';') != -1:
+                    opt_list = item['option'].split(';')
+                else:
+                    opt_list = re.split(', ', item['option'])
                 for option in opt_list:
                     option = option.strip()
                     try:
-                        (op_val, op_str) = option.split(':')
+                        if option.find(':') != -1:
+                            (op_val, op_str) = option.split(':')
+                        else:
+                            op_val = option
+                            op_str = option
                     except Exception:
-                        raise SystemExit("Exception: Invalide \
+                        raise SystemExit("Exception: Invalid \
 option format '%s' !" % option)
                     tmp_list.append((op_val, op_str))
         return tmp_list
+
 
     def get_page_title(self, page_id, top=None):
         if top is None:
@@ -994,6 +1071,9 @@ option format '%s' !" % option)
         def _locate_cfg_item(root, path, level=0):
             if len(path) == level:
                 return root
+            if type(root) == type([]):
+                for temp_root in root:
+                    return _locate_cfg_item(temp_root, path, level)
             next_root = root.get(path[level], None)
             if next_root is None:
                 if allow_exp:
@@ -1150,7 +1230,7 @@ option format '%s' !" % option)
 
         self.set_cur_page(item.get('page', ''))
 
-        if name[0] == '$':
+        if name != '' and name[0] == '$':
             # skip all virtual node
             return 0
 
@@ -1180,7 +1260,7 @@ option format '%s' !" % option)
             # define is length in bytes
             length = length * 8
 
-        if not name.isidentifier():
+        if name != '' and not name.isidentifier():
             raise Exception("Invalid config name '%s' for '%s' !" %
                             (name, '.'.join(path)))
 
@@ -1279,6 +1359,90 @@ option format '%s' !" % option)
             if struct_node['length'] % 8 != 0:
                 raise SystemExit("Error: Bits length not aligned for %s !" %
                                  str(path))
+
+#EDK2 VFR YAML Support start
+
+    def build_formset_list(self, form_name='', top=None, parent_form='',path =[]):
+
+        if self.formset_level == 1:
+            self._cfg_page['root']['title'] = 'Platform'
+            self._cfg_page['root']['child'].append({form_name: {'title': form_name,
+                                                       'child': []}})
+            self._main_page = form_name
+
+        if top is None:
+            top = self._cfg_tree
+            form_name = "Formset"
+            self._cfg_page['root']['title'] = 'Formset'
+
+        is_leaf = True
+
+        if form_name == "form" or form_name == "formid":
+            self._cur_page = top["title"].split('#')[0]
+            self.form_page_map[top['formid'].split('#')[0]] = self._cur_page
+            for driver in self._cfg_page['root']['child']:
+                if list(driver.keys())[0] == self._main_page:
+                    driver[self._main_page]['child'].append({self._cur_page: {'title': self._cur_page, 'child': []}})
+
+        if form_name == "formmap":
+            self._cur_page = top["formid"].split('#')[0]
+            self.form_page_map[top['FormId'].split('#')[0]] = self._cur_page
+            self._cfg_page['root']['child'].append({self._cur_page: {'title': self._cur_page,
+                                                       'child': []}})
+
+
+        form_data = {}
+        temp_data = []
+
+        for key in top:
+            if key == 'include':
+                form_data['type'] = key
+                form_data["page"] = self._cur_page
+                continue
+            if type(top[key]) is list and self.formset_level <= 3:
+                self.formset_level += 1
+                path.append(key)
+                for data in top[key]:
+                    self.build_formset_list(key, data, key, path)
+                path.pop()
+                self.formset_level -= 1
+            elif type(top[key]) is OrderedDict and (self.formset_level <= 3):
+                if parent_form != '':
+                    self.formset_level += 1
+                    path.append(key)
+                    self.build_formset_list(key, top[key], form_name, path)
+                    path.pop()
+                    self.formset_level -= 1
+                else:
+                    self.formset_level += 1
+                    path.append(key)
+                    self.build_formset_list(key, top[key], key, path)
+                    path.pop()
+                    self.formset_level -= 1
+
+            else:
+                form_data["page"] = self._cur_page
+                form_data[key] = top[key]
+                form_data['path'] = ".".join(path)
+                if form_name != 'form' or form_name != "formid":
+                    form_data["type"] = form_name
+                else:
+                    form_data["type"] = " "
+                count = 0
+                if self._cfg_list != []:
+                    for cfg_name in self._cfg_list:
+                        for list_data in cfg_name:
+                            if key == list_data['type']:
+                                count +=1
+                    if count > 1:
+                        temp_data = cfg_name
+
+        if len(temp_data) != 0 or len(form_data)!=0:
+            temp_data.append(form_data)
+            self._cfg_list.append(temp_data)
+        return
+
+#EDK2 VFR YAML Support End
 
     def get_field_value(self, top=None):
         def _get_field_value(name, cfgs, level):
@@ -1437,7 +1601,7 @@ for '%s' !" % (act_cfg['value'], act_cfg['path']))
         if len(cfg_segs) == 3:
             fsp = True
             for idx, seg in enumerate(cfg_segs):
-                if not seg[0].endswith('UPD_%s' % 'TMS'[idx]):
+                if not seg[0].endswith('UPD_%s' % 'TMSI'[idx]):
                     fsp = False
                     break
         else:
@@ -1474,6 +1638,15 @@ for '%s' !" % (act_cfg['value'], act_cfg['path']))
 
         return cfg_segs
 
+    def import_tkinter(self):
+        try:
+            import tkinter
+            import tkinter.messagebox
+            return tkinter
+        except ImportError:
+            print('tkinter is not supported under current OS')
+            return None
+
     def get_bin_segment(self, bin_data):
         cfg_segs = self.get_cfg_segment()
         bin_segs = []
@@ -1488,11 +1661,14 @@ for '%s' !" % (act_cfg['value'], act_cfg['path']))
                 next_pos = bin_data.find(key, pos + len(seg[0]))
                 if next_pos >= 0:
                     if key == b'$SKLFSP$' or key == b'$BSWFSP$':
-                        string = ('Warning: Multiple matches for %s in '
+                        string = ('Multiple matches for %s in '
                                   'binary!\n\nA workaround applied to such '
                                   'FSP 1.x binary to use second'
                                   ' match instead of first match!' % key)
-                        messagebox.showwarning('Warning!', string)
+                        if self._tk:
+                            self._tk.messagebox.showwarning('Warning: ', string)
+                        else:
+                            print('Warning: ', string)
                         pos = next_pos
                     else:
                         print("Warning: Multiple matches for '%s' "
@@ -1522,7 +1698,10 @@ for '%s' !" % (act_cfg['value'], act_cfg['path']))
             else:
                 self.missing_fv.append(each[0])
                 string = each[0] + ' is not availabe.'
-                messagebox.showinfo('', string)
+                if self._tk:
+                    self._tk.messagebox.showinfo('', string)
+                else:
+                    print('warning: ', string)
                 cfg_bins.extend(bytearray(each[2]))
             Dummy_offset += each[2]
         return cfg_bins
@@ -1549,32 +1728,34 @@ for '%s' !" % (act_cfg['value'], act_cfg['path']))
         return bin_data
 
     def show_data_difference(self, data_diff):
+        if self._tk is None:
+            return
         # Displays if any data difference detected in BSF and Binary file
         pop_up_text = 'There are differences in Config file and binary '\
             'data detected!\n'
         pop_up_text += data_diff
 
-        window = tkinter.Tk()
+        window = self._tk.Tk()
         window.title("Data Difference")
         window.resizable(1, 1)
         # Window Size
         window.geometry("800x400")
-        frame = tkinter.Frame(window, height=800, width=700)
-        frame.pack(side=tkinter.BOTTOM)
+        frame = self._tk.Frame(window, height=800, width=700)
+        frame.pack(side=self._tk.BOTTOM)
         # Vertical (y) Scroll Bar
-        scroll = tkinter.Scrollbar(window)
-        scroll.pack(side=tkinter.RIGHT, fill=tkinter.Y)
+        scroll = self._tk.Scrollbar(window)
+        scroll.pack(side=self._tk.RIGHT, fill=self._tk.Y)
 
-        text = tkinter.Text(window, wrap=tkinter.NONE,
+        text = self._tk.Text(window, wrap=self._tk.NONE,
                             yscrollcommand=scroll.set,
                             width=700, height=400)
-        text.insert(tkinter.INSERT, pop_up_text)
+        text.insert(self._tk.INSERT, pop_up_text)
         text.pack()
         # Configure the scrollbars
         scroll.config(command=text.yview)
-        exit_button = tkinter.Button(
+        exit_button = self._tk.Button(
             window, text="Close", command=window.destroy)
-        exit_button.pack(in_=frame, side=tkinter.RIGHT, padx=20, pady=10)
+        exit_button.pack(in_=frame, side=self._tk.RIGHT, padx=20, pady=10)
 
     def load_default_from_bin(self, bin_data):
         self._old_bin = bin_data
@@ -1734,7 +1915,7 @@ for '%s' !" % (act_cfg['value'], act_cfg['path']))
     def write_cfg_header_file(self, hdr_file_name, tag_mode,
                               tag_dict, struct_list):
         lines = []
-        lines.append('\n\n')
+        lines.append ('\n')
         if self.get_mode() == 'FSP':
             lines.append('#include <FspUpd.h>\n')
 
@@ -1746,15 +1927,14 @@ for '%s' !" % (act_cfg['value'], act_cfg['path']))
                 continue
             lines.append('#define    %-30s 0x%03X\n' % (
                 'CDATA_%s_TAG' % tagname[:-9], tagval))
-        lines.append('\n\n')
-
+        lines.append ('\n#pragma pack(1)\n')
         name_dict = {}
         new_dict = {}
         for each in struct_list:
             if (tag_mode == 0 and each['tag'] >= 0x100) or \
                (tag_mode == 1 and each['tag'] < 0x100):
                 continue
-            new_dict[each['name']] = (each['alias'], each['count'])
+            new_dict[each['name']] = (each['alias'], each['count'], each['exclude'])
             if each['alias'] not in name_dict:
                 name_dict[each['alias']] = 1
                 lines.extend(self.create_struct(each['alias'],
@@ -1772,12 +1952,8 @@ for '%s' !" % (act_cfg['value'], act_cfg['path']))
         lines = []
         lines.append("%s\n" % get_copyright_header(type))
         lines.append("#ifndef __%s__\n" % file_name_def)
-        lines.append("#define __%s__\n\n" % file_name_def)
-        if type == 'h':
-            lines.append("#pragma pack(1)\n\n")
+        lines.append ("#define __%s__\n" % file_name_def)
         lines.extend(txt_body)
-        if type == 'h':
-            lines.append("#pragma pack()\n\n")
         lines.append("#endif\n")
 
         # Don't rewrite if the contents are the same
@@ -1910,8 +2086,8 @@ xbe\x8f\x64\x12\x05\x8d\x0a\xa8'
                      bsf_name, help, option, bits_length=None):
         pos_name = 28
         name_line = ''
-        # help_line = ''
-        # option_line = ''
+        help_line=''
+        option_line=''
 
         if length == 0 and name == 'dummy':
             return '\n'
@@ -1955,11 +2131,11 @@ xbe\x8f\x64\x12\x05\x8d\x0a\xa8'
         else:
             name_line = "N/A\n"
 
-        # if help != '':
-            # help_line = self.process_multilines(help, 80)
+        if help != '':
+            help_line = self.process_multilines(help, 80)
 
-        # if option != '':
-            # option_line = self.process_multilines(option, 80)
+        if option != '':
+            option_line = self.process_multilines(option, 80)
 
         if offset is None:
             offset_str = '????'
@@ -1971,11 +2147,7 @@ xbe\x8f\x64\x12\x05\x8d\x0a\xa8'
         else:
             bits_length = ' : %d' % bits_length
 
-        # return "\n/** %s%s%s**/\n  %s%s%s%s;\n" % (name_line, help_line,
-        # option_line, type, ' ' * space1, name, bits_length)
-        return "\n  /* Offset %s: %s */\n  %s%s%s%s;\n" % (
-            offset_str, name_line.strip(), type, ' ' * space1,
-            name, bits_length)
+        return "\n/** %s%s%s**/\n  %s%s%s%s;\n" % (name_line, help_line, option_line, type, ' ' * space1, name, bits_length)
 
     def create_struct(self, cname, top, struct_dict):
         index = 0
@@ -2054,7 +2226,7 @@ xbe\x8f\x64\x12\x05\x8d\x0a\xa8'
             prompt = item['name']
             help = item['help']
             option = item['option']
-            line = self.create_field(item, name, length, offset, struct,
+            line = self.create_field(item, name, length, offset - off_base, struct,
                                      prompt, help, option, bit_length)
             lines.append('  %s' % line)
             last = struct
@@ -2071,7 +2243,7 @@ xbe\x8f\x64\x12\x05\x8d\x0a\xa8'
                      "#include <FspEas.h>\n\n"
                      "#pragma pack(1)\n\n")
         lines = []
-        for fsp_comp in 'TMS':
+        for fsp_comp in 'TMSI':
             top = self.locate_cfg_item('FSP%s_UPD' % fsp_comp)
             if not top:
                 raise Exception('Could not find FSP UPD definition !')
@@ -2118,7 +2290,7 @@ xbe\x8f\x64\x12\x05\x8d\x0a\xa8'
         else:
             hdr_mode = 1
 
-        if re.match('FSP[TMS]_UPD', path):
+        if re.match('FSP[TMSI]_UPD', path):
             hdr_mode |= 0x80
 
         # filter out the items to be built for tags and structures
@@ -2132,11 +2304,11 @@ xbe\x8f\x64\x12\x05\x8d\x0a\xa8'
                         if each not in CGenYamlCfg.include_tag:
                             del tag_dict[each]
                     break
-            if not match:
-                struct_list.append({'name': each, 'alias': '', 'count': 0,
-                                    'level': struct_dict[each][0],
-                                    'tag': struct_dict[each][1],
-                                    'node': struct_dict[each][2]})
+            struct_list.append({'name': each, 'alias': '', 'count': 0,
+                                'level': struct_dict[each][0],
+                                'tag': struct_dict[each][1],
+                                'node': struct_dict[each][2],
+                                'exclude': True if match else False})
 
         # sort by level so that the bottom level struct
         # will be build first to satisfy dependencies
@@ -2188,10 +2360,14 @@ xbe\x8f\x64\x12\x05\x8d\x0a\xa8'
         self.initialize()
         self._cfg_tree = cfg_yaml.load_yaml(cfg_file)
         self._def_dict = cfg_yaml.def_dict
+        self.yaml_type = cfg_yaml.yaml_type
         self._yaml_path = os.path.dirname(cfg_file)
-        self.build_cfg_list()
-        self.build_var_dict()
-        self.update_def_value()
+        if self.yaml_type == 'vfr':
+            self.build_formset_list()
+        elif self.yaml_type == 'fsp':
+            self.build_cfg_list()
+            self.build_var_dict()
+            self.update_def_value()
         return 0
 
 
@@ -2330,7 +2506,8 @@ def main():
     if dlt_file:
         gen_cfg_data.override_default_value(dlt_file)
 
-    gen_cfg_data.detect_fsp()
+    if gen_cfg_data.yaml_type == 'fsp':
+        gen_cfg_data.detect_fsp()
 
     if command == "GENBIN":
         if len(file_list) == 3:

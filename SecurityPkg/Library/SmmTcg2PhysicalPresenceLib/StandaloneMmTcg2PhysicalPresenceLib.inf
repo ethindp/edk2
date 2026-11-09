@@ -7,7 +7,7 @@
 #  This driver will have external input - variable.
 #  This external input must be validated carefully to avoid security issue.
 #
-# Copyright (c) 2015 - 2020, Intel Corporation. All rights reserved.<BR>
+# Copyright (c) 2015 - 2024, Intel Corporation. All rights reserved.<BR>
 # Copyright (c) Microsoft Corporation.
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 #
@@ -30,9 +30,14 @@
 #
 
 [Sources]
-  StandaloneMmTcg2PhysicalPresenceLib.c
   MmTcg2PhysicalPresenceLibCommon.c
   MmTcg2PhysicalPresenceLibCommon.h
+
+[Sources.IA32, Sources.X64]
+  StandaloneMmTcg2PhysicalPresenceLib.c
+
+[Sources.AARCH64]
+  StandaloneMmTcg2PhysicalPresenceLibArm.c
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -44,19 +49,23 @@
   Tcg2PpVendorLib
   MmServicesTableLib
   BaseMemoryLib
+  HobLib
 
 [Guids]
   ## SOMETIMES_PRODUCES ## Variable:L"PhysicalPresence"
   ## SOMETIMES_CONSUMES ## Variable:L"PhysicalPresence"
   ## SOMETIMES_CONSUMES ## Variable:L"PhysicalPresenceFlags"
   gEfiTcg2PhysicalPresenceGuid
+  gEdkiiTcgPhysicalPresenceInterfaceVerHobGuid
 
 [Protocols]
   gEfiSmmVariableProtocolGuid                                       ## CONSUMES
 
 [Pcd]
-  gEfiSecurityPkgTokenSpaceGuid.PcdTcgPhysicalPresenceInterfaceVer  ## CONSUMES
   gEfiSecurityPkgTokenSpaceGuid.PcdTcg2PhysicalPresenceFlags        ## SOMETIMES_CONSUMES
+
+[Pcd.AARCH64]
+  gEfiSecurityPkgTokenSpaceGuid.PcdTcgPhysicalPresenceInterfaceVer
 
 [Depex]
   gEfiSmmVariableProtocolGuid

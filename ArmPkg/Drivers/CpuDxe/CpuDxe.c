@@ -11,7 +11,62 @@
 
 #include <Guid/IdleLoopEvent.h>
 
+#include <Library/MemoryAllocationLib.h>
+
 BOOLEAN  mIsFlushingGCD;
+
+// Shadow state for the CPU interrupt en/disabled bit
+STATIC BOOLEAN  mInterruptsEnabled;
+STATIC VOID     *mHardwareInterruptProtocolNotifyEventRegistration;
+
+/**
+  Mark interrupts as enabled in the shadow variable but don't actually enable them yet.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+CpuShadowEnableInterrupt (
+  IN EFI_CPU_ARCH_PROTOCOL  *This
+  )
+{
+  mInterruptsEnabled = TRUE;
+
+  return EFI_SUCCESS;
+}
+
+/**
+  Mark interrupts as disabled in the shadow variable.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+CpuShadowDisableInterrupt (
+  IN EFI_CPU_ARCH_PROTOCOL  *This
+  )
+{
+  mInterruptsEnabled = FALSE;
+
+  return EFI_SUCCESS;
+}
+
+/**
+  Return whether interrupts would be enabled based on the shadow variable.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+CpuShadowGetInterruptState (
+  IN  EFI_CPU_ARCH_PROTOCOL  *This,
+  OUT BOOLEAN                *State
+  )
+{
+  if (State == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  *State = mInterruptsEnabled;
+  return EFI_SUCCESS;
+}
 
 /**
   This function flushes the range of addresses from Start to Start+Length
@@ -40,6 +95,7 @@ BOOLEAN  mIsFlushingGCD;
                                 from the processor's data cache.
 
 **/
+STATIC
 EFI_STATUS
 EFIAPI
 CpuFlushCpuDataCache (
@@ -75,6 +131,7 @@ CpuFlushCpuDataCache (
   @retval EFI_DEVICE_ERROR      Interrupts could not be enabled on the processor.
 
 **/
+STATIC
 EFI_STATUS
 EFIAPI
 CpuEnableInterrupt (
@@ -95,6 +152,7 @@ CpuEnableInterrupt (
   @retval EFI_DEVICE_ERROR      Interrupts could not be disabled on the processor.
 
 **/
+STATIC
 EFI_STATUS
 EFIAPI
 CpuDisableInterrupt (
@@ -119,6 +177,7 @@ CpuDisableInterrupt (
   @retval EFI_INVALID_PARAMETER State is NULL.
 
 **/
+STATIC
 EFI_STATUS
 EFIAPI
 CpuGetInterruptState (
@@ -150,6 +209,7 @@ CpuGetInterruptState (
   @retval EFI_DEVICE_ERROR      The processor INIT failed.
 
 **/
+STATIC
 EFI_STATUS
 EFIAPI
 CpuInit (
@@ -160,6 +220,7 @@ CpuInit (
   return EFI_UNSUPPORTED;
 }
 
+STATIC
 EFI_STATUS
 EFIAPI
 CpuRegisterInterruptHandler (
@@ -171,6 +232,7 @@ CpuRegisterInterruptHandler (
   return RegisterInterruptHandler (InterruptType, InterruptHandler);
 }
 
+STATIC
 EFI_STATUS
 EFIAPI
 CpuGetTimerValue (
@@ -191,6 +253,7 @@ CpuGetTimerValue (
                                 which is implementation-dependent.
 
 **/
+STATIC
 VOID
 EFIAPI
 IdleLoopEventCallback (
@@ -204,12 +267,11 @@ IdleLoopEventCallback (
 //
 // Globals used to initialize the protocol
 //
-EFI_HANDLE             mCpuHandle = NULL;
-EFI_CPU_ARCH_PROTOCOL  mCpu       = {
+STATIC EFI_CPU_ARCH_PROTOCOL  mCpu = {
   CpuFlushCpuDataCache,
-  CpuEnableInterrupt,
-  CpuDisableInterrupt,
-  CpuGetInterruptState,
+  CpuShadowEnableInterrupt,
+  CpuShadowDisableInterrupt,
+  CpuShadowGetInterruptState,
   CpuInit,
   CpuRegisterInterruptHandler,
   CpuGetTimerValue,
@@ -227,6 +289,111 @@ InitializeDma (
   CpuArchProtocol->DmaBufferAlignment = ArmCacheWritebackGranule ();
 }
 
+/**
+  Map all EfiConventionalMemory regions in the memory map with NX
+  attributes so that allocating or freeing EfiBootServicesData regions
+  does not result in changes to memory permission attributes.
+
+**/
+STATIC
+VOID
+RemapUnusedMemoryNx (
+  VOID
+  )
+{
+  UINT64                 TestBit;
+  UINTN                  MemoryMapSize;
+  UINTN                  MapKey;
+  UINTN                  DescriptorSize;
+  UINT32                 DescriptorVersion;
+  EFI_MEMORY_DESCRIPTOR  *MemoryMap;
+  EFI_MEMORY_DESCRIPTOR  *MemoryMapEntry;
+  EFI_MEMORY_DESCRIPTOR  *MemoryMapEnd;
+  EFI_STATUS             Status;
+
+  TestBit = LShiftU64 (1, EfiBootServicesData);
+  if ((PcdGet64 (PcdDxeNxMemoryProtectionPolicy) & TestBit) == 0) {
+    return;
+  }
+
+  MemoryMapSize = 0;
+  MemoryMap     = NULL;
+
+  Status = gBS->GetMemoryMap (
+                  &MemoryMapSize,
+                  MemoryMap,
+                  &MapKey,
+                  &DescriptorSize,
+                  &DescriptorVersion
+                  );
+  ASSERT (Status == EFI_BUFFER_TOO_SMALL);
+  do {
+    MemoryMap = (EFI_MEMORY_DESCRIPTOR *)AllocatePool (MemoryMapSize);
+    ASSERT (MemoryMap != NULL);
+    Status = gBS->GetMemoryMap (
+                    &MemoryMapSize,
+                    MemoryMap,
+                    &MapKey,
+                    &DescriptorSize,
+                    &DescriptorVersion
+                    );
+    if (EFI_ERROR (Status)) {
+      FreePool (MemoryMap);
+    }
+  } while (Status == EFI_BUFFER_TOO_SMALL);
+
+  ASSERT_EFI_ERROR (Status);
+
+  MemoryMapEntry = MemoryMap;
+  MemoryMapEnd   = (EFI_MEMORY_DESCRIPTOR *)((UINT8 *)MemoryMap + MemoryMapSize);
+  while ((UINTN)MemoryMapEntry < (UINTN)MemoryMapEnd) {
+    if (MemoryMapEntry->Type == EfiConventionalMemory) {
+      ArmSetMemoryAttributes (
+        MemoryMapEntry->PhysicalStart,
+        EFI_PAGES_TO_SIZE (MemoryMapEntry->NumberOfPages),
+        EFI_MEMORY_XP,
+        EFI_MEMORY_XP
+        );
+    }
+
+    MemoryMapEntry = NEXT_MEMORY_DESCRIPTOR (MemoryMapEntry, DescriptorSize);
+  }
+}
+
+STATIC
+VOID
+EFIAPI
+HardwareInterruptProtocolNotify (
+  IN  EFI_EVENT  Event,
+  IN  VOID       *Context
+  )
+{
+  VOID        *Protocol;
+  EFI_STATUS  Status;
+
+  Status = gBS->LocateProtocol (&gHardwareInterruptProtocolGuid, NULL, &Protocol);
+  if (EFI_ERROR (Status)) {
+    return;
+  }
+
+  //
+  // Now that the dedicated driver has taken control of the interrupt
+  // controller, we can allow interrupts to be enabled on the CPU side. So swap
+  // out the function stubs that manipulate the shadow state with the real
+  // ones. Interrupts are still disabled at the CPU so these fields can be set
+  // in any order.
+  //
+  mCpu.EnableInterrupt   = CpuEnableInterrupt;
+  mCpu.DisableInterrupt  = CpuDisableInterrupt;
+  mCpu.GetInterruptState = CpuGetInterruptState;
+
+  if (mInterruptsEnabled) {
+    ArmEnableInterrupts ();
+  }
+
+  gBS->CloseEvent (Event);
+}
+
 EFI_STATUS
 CpuDxeInitialize (
   IN EFI_HANDLE        ImageHandle,
@@ -235,17 +402,41 @@ CpuDxeInitialize (
 {
   EFI_STATUS  Status;
   EFI_EVENT   IdleLoopEvent;
+  EFI_HANDLE  CpuHandle;
 
-  InitializeExceptions (&mCpu);
+  ArmDisableInterrupts ();
+  InitializeExceptions ();
 
   InitializeDma (&mCpu);
 
+  //
+  // Once we install the CPU arch protocol, the DXE core's memory
+  // protection routines will invoke them to manage the permissions of page
+  // allocations as they are created. Given that this includes pages
+  // allocated for page tables by this driver, we must ensure that unused
+  // memory is mapped with the same permissions as boot services data
+  // regions. Otherwise, we may end up with unbounded recursion, due to the
+  // fact that updating permissions on a newly allocated page table may trigger
+  // a block entry split, which triggers a page table allocation, etc etc
+  //
+  if (FeaturePcdGet (PcdRemapUnusedMemoryNx)) {
+    RemapUnusedMemoryNx ();
+  }
+
+  CpuHandle = NULL;
+
   Status = gBS->InstallMultipleProtocolInterfaces (
-                  &mCpuHandle,
+                  &CpuHandle,
                   &gEfiCpuArchProtocolGuid,
                   &mCpu,
+                  &gEfiMemoryAttributeProtocolGuid,
+                  &mMemoryAttribute,
                   NULL
                   );
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    return Status;
+  }
 
   //
   // Make sure GCD and MMU settings match. This API calls gDS->SetMemorySpaceAttributes ()
@@ -255,12 +446,6 @@ CpuDxeInitialize (
   mIsFlushingGCD = TRUE;
   SyncCacheConfig (&mCpu);
   mIsFlushingGCD = FALSE;
-
-  // If the platform is a MPCore system then install the Configuration Table describing the
-  // secondary core states
-  if (ArmIsMpCore ()) {
-    PublishArmProcessorTable ();
-  }
 
   //
   // Setup a callback for idle events
@@ -275,5 +460,18 @@ CpuDxeInitialize (
                   );
   ASSERT_EFI_ERROR (Status);
 
-  return Status;
+  //
+  // Interrupts should only be enabled on the CPU side after the GIC driver has
+  // configured and deasserted all incoming interrupt lines. So keep interrupts
+  // masked until the gHardwareInterruptProtocolGuid protocol appears.
+  //
+  EfiCreateProtocolNotifyEvent (
+    &gHardwareInterruptProtocolGuid,
+    TPL_CALLBACK,
+    HardwareInterruptProtocolNotify,
+    NULL,
+    &mHardwareInterruptProtocolNotifyEventRegistration
+    );
+
+  return EFI_SUCCESS;
 }

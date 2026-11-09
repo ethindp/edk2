@@ -6,8 +6,7 @@
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#ifndef AML_CORE_INTERFACE_H_
-#define AML_CORE_INTERFACE_H_
+#pragma once
 
 /* This header file does not include internal Node definition,
    i.e. AML_ROOT_NODE, AML_OBJECT_NODE, etc. The node definitions
@@ -54,15 +53,15 @@
   @param  [in]      RootNode    Pointer to a root node.
   @param  [in]      Buffer      Buffer to write the DSDT/SSDT table to.
                                 If Buffer is NULL, the size needed to
-                                serialize the DSDT/SSDT table is returned
-                                in BufferSize.
+                                serialize the DSDT/SSDT table is returned in
+                                BufferSize with EFI_BUFFER_TOO_SMALL.
   @param  [in, out] BufferSize  Pointer holding the size of the Buffer.
                                 Its content is always updated to the size
                                 needed to serialize the DSDT/SSDT table.
 
   @retval EFI_SUCCESS             The function completed successfully.
   @retval EFI_INVALID_PARAMETER   Invalid parameter.
-  @retval EFI_BUFFER_TOO_SMALL    No space left in the buffer.
+  @retval EFI_BUFFER_TOO_SMALL    Buffer is NULL or too small.
 **/
 EFI_STATUS
 EFIAPI
@@ -763,5 +762,3 @@ AmlGetAslPathName (
   OUT CHAR8                *Buffer,
   IN  OUT UINT32           *BufferSize
   );
-
-#endif // AML_CORE_INTERFACE_H_

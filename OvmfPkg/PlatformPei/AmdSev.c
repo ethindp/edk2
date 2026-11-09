@@ -1,7 +1,7 @@
 /**@file
   Initialize Secure Encrypted Virtualization (SEV) support
 
-  Copyright (c) 2017 - 2020, Advanced Micro Devices. All rights reserved.<BR>
+  Copyright (c) 2017 - 2024, Advanced Micro Devices. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -9,6 +9,7 @@
 //
 // The package level header files this module uses
 //
+#include <Guid/GhcbApicIds.h>
 #include <IndustryStandard/Q35MchIch9.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
@@ -16,10 +17,11 @@
 #include <Library/MemEncryptSevLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PcdLib.h>
+#include <Pi/PiHob.h>
 #include <PiPei.h>
 #include <Register/Amd/Msr.h>
 #include <Register/Intel/SmramSaveStateMap.h>
-#include <Library/VmgExitLib.h>
+#include <Library/CcExitLib.h>
 #include <ConfidentialComputingGuestAttr.h>
 
 #include "Platform.h"
@@ -29,6 +31,87 @@ UINT64
 GetHypervisorFeature (
   VOID
   );
+
+/**
+  Retrieve APIC IDs from the hypervisor.
+
+**/
+STATIC
+VOID
+AmdSevSnpGetApicIds (
+  VOID
+  )
+{
+  MSR_SEV_ES_GHCB_REGISTER  Msr;
+  GHCB                      *Ghcb;
+  BOOLEAN                   InterruptState;
+  UINT64                    VmgExitStatus;
+  UINT64                    PageCount;
+  BOOLEAN                   PageCountValid;
+  VOID                      *ApicIds;
+  RETURN_STATUS             Status;
+  UINT64                    GuidData;
+
+  Msr.GhcbPhysicalAddress = AsmReadMsr64 (MSR_SEV_ES_GHCB);
+  Ghcb                    = Msr.Ghcb;
+
+  PageCount      = 0;
+  PageCountValid = FALSE;
+
+  CcExitVmgInit (Ghcb, &InterruptState);
+  Ghcb->SaveArea.Rax = PageCount;
+  CcExitVmgSetOffsetValid (Ghcb, GhcbRax);
+  VmgExitStatus = CcExitVmgExit (Ghcb, SVM_EXIT_GET_APIC_IDS, 0, 0);
+  if (CcExitVmgIsOffsetValid (Ghcb, GhcbRax)) {
+    PageCount      = Ghcb->SaveArea.Rax;
+    PageCountValid = TRUE;
+  }
+
+  CcExitVmgDone (Ghcb, InterruptState);
+
+  ASSERT (VmgExitStatus == 0);
+  ASSERT (PageCountValid);
+  if ((VmgExitStatus != 0) || !PageCountValid) {
+    return;
+  }
+
+  //
+  // Allocate the memory for the APIC IDs
+  //
+  ApicIds = AllocateReservedPages ((UINTN)PageCount);
+  ASSERT (ApicIds != NULL);
+
+  Status = MemEncryptSevClearPageEncMask (
+             0,
+             (UINTN)ApicIds,
+             (UINTN)PageCount
+             );
+  ASSERT_RETURN_ERROR (Status);
+
+  ZeroMem (ApicIds, EFI_PAGES_TO_SIZE ((UINTN)PageCount));
+
+  PageCountValid = FALSE;
+
+  CcExitVmgInit (Ghcb, &InterruptState);
+  Ghcb->SaveArea.Rax = PageCount;
+  CcExitVmgSetOffsetValid (Ghcb, GhcbRax);
+  VmgExitStatus = CcExitVmgExit (Ghcb, SVM_EXIT_GET_APIC_IDS, (UINTN)ApicIds, 0);
+  if (CcExitVmgIsOffsetValid (Ghcb, GhcbRax) && (Ghcb->SaveArea.Rax == PageCount)) {
+    PageCountValid = TRUE;
+  }
+
+  CcExitVmgDone (Ghcb, InterruptState);
+
+  ASSERT (VmgExitStatus == 0);
+  ASSERT (PageCountValid);
+  if ((VmgExitStatus != 0) || !PageCountValid) {
+    FreePages (ApicIds, (UINTN)PageCount);
+    return;
+  }
+
+  GuidData = (UINT64)(UINTN)ApicIds;
+  BuildGuidDataHob (&gGhcbApicIdsGuid, &GuidData, sizeof (GuidData));
+}
 
 /**
   Initialize SEV-SNP support if running as an SEV-SNP guest.
@@ -50,7 +133,7 @@ AmdSevSnpInitialize (
   }
 
   //
-  // Query the hypervisor feature using the VmgExit and set the value in the
+  // Query the hypervisor feature using the CcExitVmgExit and set the value in the
   // hypervisor features PCD.
   //
   HvFeatures = GetHypervisorFeature ();
@@ -61,16 +144,39 @@ AmdSevSnpInitialize (
   // Iterate through the system RAM and validate it.
   //
   for (Hob.Raw = GetHobList (); !END_OF_HOB_LIST (Hob); Hob.Raw = GET_NEXT_HOB (Hob)) {
-    if ((Hob.Raw != NULL) && (GET_HOB_TYPE (Hob) == EFI_HOB_TYPE_RESOURCE_DESCRIPTOR)) {
+    if ((Hob.Raw != NULL) && IS_RESOURCE_DESCRIPTOR_HOB (Hob)) {
       ResourceHob = Hob.ResourceDescriptor;
 
       if (ResourceHob->ResourceType == EFI_RESOURCE_SYSTEM_MEMORY) {
+        //
+        // Defer acceptance of memory above 4GB, which the OS accepts lazily.
+        // Specific Purpose Memory (E820 Soft Reserved) is excepted: it must
+        // keep the EFI_RESOURCE_SYSTEM_MEMORY type so its SPECIAL_PURPOSE
+        // attribute reaches the EFI memory map, and it is never handed to the
+        // OS allocator, so it would never be accepted lazily.  Pre-validate
+        // it in place, like sub-4GB memory.
+        //
+        if ((ResourceHob->PhysicalStart >= SIZE_4GB) &&
+            ((ResourceHob->ResourceAttribute & EFI_RESOURCE_ATTRIBUTE_SPECIAL_PURPOSE) == 0))
+        {
+          ResourceHob->ResourceType = EFI_RESOURCE_MEMORY_UNACCEPTED;
+          continue;
+        }
+
         MemEncryptSevSnpPreValidateSystemRam (
           ResourceHob->PhysicalStart,
           EFI_SIZE_TO_PAGES ((UINTN)ResourceHob->ResourceLength)
           );
       }
     }
+  }
+
+  //
+  // Retrieve the APIC IDs if the hypervisor supports it. These will be used
+  // to always start APs using SNP AP Create.
+  //
+  if ((HvFeatures & GHCB_HV_FEATURES_APIC_ID_LIST) == GHCB_HV_FEATURES_APIC_ID_LIST) {
+    AmdSevSnpGetApicIds ();
   }
 }
 
@@ -129,19 +235,19 @@ GetHypervisorFeature (
   //
   // Initialize the GHCB
   //
-  VmgInit (Ghcb, &InterruptState);
+  CcExitVmgInit (Ghcb, &InterruptState);
 
   //
   // Query the Hypervisor Features.
   //
-  Status = VmgExit (Ghcb, SVM_EXIT_HYPERVISOR_FEATURES, 0, 0);
+  Status = CcExitVmgExit (Ghcb, SVM_EXIT_HYPERVISOR_FEATURES, 0, 0);
   if ((Status != 0)) {
     SevEsProtocolFailure (GHCB_TERMINATE_GHCB_GENERAL);
   }
 
   Features = Ghcb->SaveArea.SwExitInfo2;
 
-  VmgDone (Ghcb, InterruptState);
+  CcExitVmgDone (Ghcb, InterruptState);
 
   return Features;
 }
@@ -201,7 +307,7 @@ GhcbRegister (
 STATIC
 VOID
 AmdSevEsInitialize (
-  VOID
+  IN EFI_HOB_PLATFORM_INFO  *PlatformInfoHob
   )
 {
   UINT8                *GhcbBase;
@@ -212,7 +318,7 @@ AmdSevEsInitialize (
   UINTN                GhcbBackupPageCount;
   SEV_ES_PER_CPU_DATA  *SevEsData;
   UINTN                PageCount;
-  RETURN_STATUS        PcdStatus, DecryptStatus;
+  RETURN_STATUS        Status;
   IA32_DESCRIPTOR      Gdtr;
   VOID                 *Gdt;
 
@@ -220,15 +326,15 @@ AmdSevEsInitialize (
     return;
   }
 
-  PcdStatus = PcdSetBoolS (PcdSevEsIsEnabled, TRUE);
-  ASSERT_RETURN_ERROR (PcdStatus);
+  Status = PcdSetBoolS (PcdSevEsIsEnabled, TRUE);
+  ASSERT_RETURN_ERROR (Status);
 
   //
   // Allocate GHCB and per-CPU variable pages.
   //   Since the pages must survive across the UEFI to OS transition
   //   make them reserved.
   //
-  GhcbPageCount = mMaxCpuCount * 2;
+  GhcbPageCount = PlatformInfoHob->PcdCpuMaxLogicalProcessorNumber * 2;
   GhcbBase      = AllocateReservedPages (GhcbPageCount);
   ASSERT (GhcbBase != NULL);
 
@@ -240,20 +346,20 @@ AmdSevEsInitialize (
   // only clear the encryption mask for the GHCB pages.
   //
   for (PageCount = 0; PageCount < GhcbPageCount; PageCount += 2) {
-    DecryptStatus = MemEncryptSevClearPageEncMask (
-                      0,
-                      GhcbBasePa + EFI_PAGES_TO_SIZE (PageCount),
-                      1
-                      );
-    ASSERT_RETURN_ERROR (DecryptStatus);
+    Status = MemEncryptSevClearPageEncMask (
+               0,
+               GhcbBasePa + EFI_PAGES_TO_SIZE (PageCount),
+               1
+               );
+    ASSERT_RETURN_ERROR (Status);
   }
 
   ZeroMem (GhcbBase, EFI_PAGES_TO_SIZE (GhcbPageCount));
 
-  PcdStatus = PcdSet64S (PcdGhcbBase, GhcbBasePa);
-  ASSERT_RETURN_ERROR (PcdStatus);
-  PcdStatus = PcdSet64S (PcdGhcbSize, EFI_PAGES_TO_SIZE (GhcbPageCount));
-  ASSERT_RETURN_ERROR (PcdStatus);
+  Status = PcdSet64S (PcdGhcbBase, GhcbBasePa);
+  ASSERT_RETURN_ERROR (Status);
+  Status = PcdSet64S (PcdGhcbSize, EFI_PAGES_TO_SIZE (GhcbPageCount));
+  ASSERT_RETURN_ERROR (Status);
 
   DEBUG ((
     DEBUG_INFO,
@@ -266,7 +372,7 @@ AmdSevEsInitialize (
   // Allocate #VC recursion backup pages. The number of backup pages needed is
   // one less than the maximum VC count.
   //
-  GhcbBackupPageCount = mMaxCpuCount * (VMGEXIT_MAXIMUM_VC_COUNT - 1);
+  GhcbBackupPageCount = PlatformInfoHob->PcdCpuMaxLogicalProcessorNumber * (VMGEXIT_MAXIMUM_VC_COUNT - 1);
   GhcbBackupBase      = AllocatePages (GhcbBackupPageCount);
   ASSERT (GhcbBackupBase != NULL);
 
@@ -296,6 +402,20 @@ AmdSevEsInitialize (
   AsmWriteMsr64 (MSR_SEV_ES_GHCB, GhcbBasePa);
 
   //
+  // Now that the PEI GHCB is set up, the SEC GHCB page is no longer necessary
+  // to keep shared. Later, it is exposed to the OS as EfiConventionalMemory, so
+  // it needs to be marked private. The size of the region is hardcoded in
+  // OvmfPkg/ResetVector/ResetVector.nasmb in the definition of
+  // SNP_SEC_MEM_BASE_DESC_2.
+  //
+  Status = MemEncryptSevSetPageEncMask (
+             0,                                  // Cr3 -- use system Cr3
+             FixedPcdGet32 (PcdOvmfSecGhcbBase), // BaseAddress
+             1                                   // NumPages
+             );
+  ASSERT_RETURN_ERROR (Status);
+
+  //
   // The SEV support will clear the C-bit from non-RAM areas.  The early GDT
   // lives in a non-RAM area, so when an exception occurs (like a #VC) the GDT
   // will be read as un-encrypted even though it was created before the C-bit
@@ -320,10 +440,11 @@ AmdSevEsInitialize (
   **/
 VOID
 AmdSevInitialize (
-  VOID
+  IN OUT EFI_HOB_PLATFORM_INFO  *PlatformInfoHob
   )
 {
   UINT64         EncryptionMask;
+  UINT64         CCGuestAttr;
   RETURN_STATUS  PcdStatus;
 
   //
@@ -367,7 +488,7 @@ AmdSevInitialize (
   // until after re-encryption, in order to prevent an information leak to the
   // hypervisor.
   //
-  if (FeaturePcdGet (PcdSmmSmramRequire) && (mBootMode != BOOT_ON_S3_RESUME)) {
+  if (PlatformInfoHob->SmmSmramRequire && (PlatformInfoHob->BootMode != BOOT_ON_S3_RESUME)) {
     RETURN_STATUS  LocateMapStatus;
     UINTN          MapPagesBase;
     UINTN          MapPagesCount;
@@ -378,7 +499,7 @@ AmdSevInitialize (
                         );
     ASSERT_RETURN_ERROR (LocateMapStatus);
 
-    if (mQ35SmramAtDefaultSmbase) {
+    if (PlatformInfoHob->Q35SmramAtDefaultSmbase) {
       //
       // The initial SMRAM Save State Map has been covered as part of a larger
       // reserved memory allocation in InitializeRamRegions().
@@ -400,19 +521,25 @@ AmdSevInitialize (
   //
   // Check and perform SEV-ES initialization if required.
   //
-  AmdSevEsInitialize ();
+  AmdSevEsInitialize (PlatformInfoHob);
 
   //
   // Set the Confidential computing attr PCD to communicate which SEV
   // technology is active.
   //
   if (MemEncryptSevSnpIsEnabled ()) {
-    PcdStatus = PcdSet64S (PcdConfidentialComputingGuestAttr, CCAttrAmdSevSnp);
+    CCGuestAttr = CCAttrAmdSevSnp;
   } else if (MemEncryptSevEsIsEnabled ()) {
-    PcdStatus = PcdSet64S (PcdConfidentialComputingGuestAttr, CCAttrAmdSevEs);
+    CCGuestAttr = CCAttrAmdSevEs;
   } else {
-    PcdStatus = PcdSet64S (PcdConfidentialComputingGuestAttr, CCAttrAmdSev);
+    CCGuestAttr = CCAttrAmdSev;
   }
+
+  if (MemEncryptSevEsDebugVirtualizationIsEnabled ()) {
+    CCGuestAttr |= CCAttrFeatureAmdSevEsDebugVirtualization;
+  }
+
+  PcdStatus = PcdSet64S (PcdConfidentialComputingGuestAttr, CCGuestAttr);
 
   ASSERT_RETURN_ERROR (PcdStatus);
 }
@@ -443,6 +570,17 @@ SevInitializeRam (
     BuildMemoryAllocationHob (
       (EFI_PHYSICAL_ADDRESS)(UINTN)PcdGet32 (PcdOvmfCpuidBase),
       (UINT64)(UINTN)PcdGet32 (PcdOvmfCpuidSize),
+      EfiReservedMemoryType
+      );
+
+    //
+    // The calling area memory needs to be protected until the OS can create
+    // its own calling area. Mark it as EfiReservedMemoryType so that the
+    // guest firmware and OS do not use it as a system memory.
+    //
+    BuildMemoryAllocationHob (
+      (EFI_PHYSICAL_ADDRESS)(UINTN)PcdGet32 (PcdOvmfSecSvsmCaaBase),
+      (UINT64)(UINTN)PcdGet32 (PcdOvmfSecSvsmCaaSize),
       EfiReservedMemoryType
       );
   }

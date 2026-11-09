@@ -1,6 +1,7 @@
 /** @file
   HII Config Access protocol implementation of SecureBoot configuration module.
 
+Copyright (C) 2024 Advanced Micro Devices, Inc. All rights reserved.<BR>
 Copyright (c) 2011 - 2018, Intel Corporation. All rights reserved.<BR>
 (C) Copyright 2018 Hewlett Packard Enterprise Development LP<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
@@ -8,10 +9,20 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
 #include "SecureBootConfigImpl.h"
+#include <UefiSecureBoot.h>
 #include <Protocol/HiiPopup.h>
+#include <Protocol/RealTimeClock.h>
 #include <Library/BaseCryptLib.h>
 #include <Library/SecureBootVariableLib.h>
 #include <Library/SecureBootVariableProvisionLib.h>
+
+EFI_STATUS
+FormatHelpInfo (
+  IN     SECUREBOOT_CONFIG_PRIVATE_DATA  *PrivateData,
+  IN     EFI_SIGNATURE_LIST              *ListEntry,
+  IN     EFI_SIGNATURE_DATA              *DataEntry,
+  OUT EFI_STRING_ID                      *StringId
+  );
 
 CHAR16  mSecureBootStorageName[] = L"SECUREBOOT_CONFIGURATION";
 
@@ -72,9 +83,8 @@ HASH_TABLE  mHash[] = {
 //
 UINT32                               mPeCoffHeaderOffset = 0;
 WIN_CERTIFICATE                      *mCertificate       = NULL;
-IMAGE_TYPE                           mImageType;
-UINT8                                *mImageBase = NULL;
-UINTN                                mImageSize  = 0;
+UINT8                                *mImageBase         = NULL;
+UINTN                                mImageSize          = 0;
 UINT8                                mImageDigest[MAX_DIGEST_SIZE];
 UINTN                                mImageDigestSize;
 EFI_GUID                             mCertType;
@@ -133,6 +143,51 @@ CloseEnrolledFile (
   }
 
   FileContext->FileType = UNKNOWN_FILE_TYPE;
+}
+
+/**
+  Helper function to populate an EFI_TIME instance.
+
+  @param[in] Time   FileContext cached in SecureBootConfig driver
+
+**/
+STATIC
+EFI_STATUS
+GetCurrentTime (
+  IN EFI_TIME  *Time
+  )
+{
+  EFI_STATUS  Status;
+  VOID        *TestPointer;
+
+  if (Time == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Status = gBS->LocateProtocol (&gEfiRealTimeClockArchProtocolGuid, NULL, &TestPointer);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  ZeroMem (Time, sizeof (EFI_TIME));
+  Status = gRT->GetTime (Time, NULL);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((
+      DEBUG_ERROR,
+      "%a(), GetTime() failed, status = '%r'\n",
+      __func__,
+      Status
+      ));
+    return Status;
+  }
+
+  Time->Pad1       = 0;
+  Time->Nanosecond = 0;
+  Time->TimeZone   = 0;
+  Time->Daylight   = 0;
+  Time->Pad2       = 0;
+
+  return EFI_SUCCESS;
 }
 
 /**
@@ -303,7 +358,7 @@ CheckX509Certificate (
   //
   Status = ReadFileContent (X509FileContext->FHandle, (VOID **)&X509Data, &X509DataSize, 0);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "Error occured while reading the file.\n"));
+    DEBUG ((DEBUG_ERROR, "Error occurred while reading the file.\n"));
     goto ON_EXIT;
   }
 
@@ -311,7 +366,7 @@ CheckX509Certificate (
   // Parse the public key context.
   //
   if (RsaGetPublicKeyFromX509 (X509Data, X509DataSize, &X509PubKey) == FALSE) {
-    DEBUG ((DEBUG_ERROR, "Error occured while parsing the pubkey from certificate.\n"));
+    DEBUG ((DEBUG_ERROR, "Error occurred while parsing the pubkey from certificate.\n"));
     Status = EFI_INVALID_PARAMETER;
     *Error = Unsupported_Type;
     goto ON_EXIT;
@@ -435,6 +490,7 @@ EnrollPlatformKey (
   UINT32              Attr;
   UINTN               DataSize;
   EFI_SIGNATURE_LIST  *PkCert;
+  EFI_TIME            Time;
 
   PkCert = NULL;
 
@@ -462,7 +518,13 @@ EnrollPlatformKey (
   Attr = EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_RUNTIME_ACCESS
          | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_TIME_BASED_AUTHENTICATED_WRITE_ACCESS;
   DataSize = PkCert->SignatureListSize;
-  Status   = CreateTimeBasedPayload (&DataSize, (UINT8 **)&PkCert);
+  Status   = GetCurrentTime (&Time);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "Fail to fetch valid time data: %r", Status));
+    goto ON_EXIT;
+  }
+
+  Status = CreateTimeBasedPayload (&DataSize, (UINT8 **)&PkCert, &Time);
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "Fail to create time-based data payload: %r", Status));
     goto ON_EXIT;
@@ -521,6 +583,7 @@ EnrollRsa2048ToKek (
   UINTN               KekSigListSize;
   UINT8               *KeyBuffer;
   UINTN               KeyLenInBytes;
+  EFI_TIME            Time;
 
   Attr           = 0;
   DataSize       = 0;
@@ -607,7 +670,13 @@ EnrollRsa2048ToKek (
   //
   Attr = EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_RUNTIME_ACCESS
          | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_TIME_BASED_AUTHENTICATED_WRITE_ACCESS;
-  Status = CreateTimeBasedPayload (&KekSigListSize, (UINT8 **)&KekSigList);
+  Status = GetCurrentTime (&Time);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "Fail to fetch valid time data: %r", Status));
+    goto ON_EXIT;
+  }
+
+  Status = CreateTimeBasedPayload (&KekSigListSize, (UINT8 **)&KekSigList, &Time);
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "Fail to create time-based data payload: %r", Status));
     goto ON_EXIT;
@@ -688,6 +757,7 @@ EnrollX509ToKek (
   UINTN               DataSize;
   UINTN               KekSigListSize;
   UINT32              Attr;
+  EFI_TIME            Time;
 
   X509Data       = NULL;
   X509DataSize   = 0;
@@ -734,7 +804,13 @@ EnrollX509ToKek (
   //
   Attr = EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_RUNTIME_ACCESS
          | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_TIME_BASED_AUTHENTICATED_WRITE_ACCESS;
-  Status = CreateTimeBasedPayload (&KekSigListSize, (UINT8 **)&KekSigList);
+  Status = GetCurrentTime (&Time);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "Fail to fetch valid time data: %r", Status));
+    goto ON_EXIT;
+  }
+
+  Status = CreateTimeBasedPayload (&KekSigListSize, (UINT8 **)&KekSigList, &Time);
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "Fail to create time-based data payload: %r", Status));
     goto ON_EXIT;
@@ -860,6 +936,7 @@ EnrollX509toSigDB (
   UINTN               DataSize;
   UINTN               SigDBSize;
   UINT32              Attr;
+  EFI_TIME            Time;
 
   X509DataSize  = 0;
   SigDBSize     = 0;
@@ -909,7 +986,13 @@ EnrollX509toSigDB (
   //
   Attr = EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_RUNTIME_ACCESS
          | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_TIME_BASED_AUTHENTICATED_WRITE_ACCESS;
-  Status = CreateTimeBasedPayload (&SigDBSize, (UINT8 **)&Data);
+  Status = GetCurrentTime (&Time);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "Fail to fetch valid time data: %r", Status));
+    goto ON_EXIT;
+  }
+
+  Status = CreateTimeBasedPayload (&SigDBSize, (UINT8 **)&Data, &Time);
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "Fail to create time-based data payload: %r", Status));
     goto ON_EXIT;
@@ -1011,7 +1094,7 @@ IsSignatureFoundInDatabase (
   // Enumerate all signature data in SigDB to check if signature exists for executable.
   //
   CertList = (EFI_SIGNATURE_LIST *)Data;
-  while ((DataSize > 0) && (DataSize >= CertList->SignatureListSize)) {
+  while ((DataSize > 0) && (DataSize >= (UINTN)CertList->SignatureListSize)) {
     CertCount = (CertList->SignatureListSize - sizeof (EFI_SIGNATURE_LIST) - CertList->SignatureHeaderSize) / CertList->SignatureSize;
     Cert      = (EFI_SIGNATURE_DATA *)((UINT8 *)CertList + sizeof (EFI_SIGNATURE_LIST) + CertList->SignatureHeaderSize);
     if ((CertList->SignatureSize == sizeof (EFI_SIGNATURE_DATA) - 1 + SignatureSize) && (CompareGuid (&CertList->SignatureType, &gEfiCertX509Guid))) {
@@ -1089,7 +1172,10 @@ CalculateCertHash (
   //
   CtxSize = mHash[HashAlg].GetContextSize ();
   HashCtx = AllocatePool (CtxSize);
-  ASSERT (HashCtx != NULL);
+  if (HashCtx == NULL) {
+    ASSERT (HashCtx != NULL);
+    return FALSE;
+  }
 
   //
   // 2. Initialize a hash context.
@@ -1177,7 +1263,7 @@ IsCertHashFoundInDbx (
   // Check whether the certificate hash exists in the forbidden database.
   //
   DbxList = (EFI_SIGNATURE_LIST *)Data;
-  while ((DataSize > 0) && (DataSize >= DbxList->SignatureListSize)) {
+  while ((DataSize > 0) && (DataSize >= (UINTN)DbxList->SignatureListSize)) {
     //
     // Determine Hash Algorithm of Certificate in the forbidden database.
     //
@@ -1264,7 +1350,7 @@ GetSignaturelistOffset (
 
   SigList     = Database;
   SiglistSize = DatabaseSize;
-  while ((SiglistSize > 0) && (SiglistSize >= SigList->SignatureListSize)) {
+  while ((SiglistSize > 0) && (SiglistSize >= (UINTN)SigList->SignatureListSize)) {
     if (CompareGuid (&SigList->SignatureType, SignatureType)) {
       *Offset = DatabaseSize - SiglistSize;
       return TRUE;
@@ -1320,6 +1406,7 @@ EnrollX509HashtoSigDB (
   UINT16              *FilePostFix;
   UINTN               NameLength;
   EFI_TIME            *Time;
+  EFI_TIME            NewTime;
 
   X509DataSize  = 0;
   DbSize        = 0;
@@ -1489,7 +1576,13 @@ EnrollX509HashtoSigDB (
     DataSize = DbSize;
   }
 
-  Status = CreateTimeBasedPayload (&DataSize, (UINT8 **)&Data);
+  Status = GetCurrentTime (&NewTime);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "Fail to fetch valid time data: %r", Status));
+    goto ON_EXIT;
+  }
+
+  Status = CreateTimeBasedPayload (&DataSize, (UINT8 **)&Data, &NewTime);
   if (EFI_ERROR (Status)) {
     goto ON_EXIT;
   }
@@ -1707,22 +1800,21 @@ LoadPeImage (
   // Note the size of FileHeader field is constant for both IA32 and X64 arch
   //
   if (  (NtHeader32->FileHeader.Machine == EFI_IMAGE_MACHINE_IA32)
-     || (NtHeader32->FileHeader.Machine == EFI_IMAGE_MACHINE_EBC)
-     || (NtHeader32->FileHeader.Machine == EFI_IMAGE_MACHINE_ARMTHUMB_MIXED))
+     || (NtHeader32->FileHeader.Machine == EFI_IMAGE_MACHINE_EBC))
   {
     //
     // 32-bits Architecture
     //
-    mImageType  = ImageType_IA32;
     mSecDataDir = (EFI_IMAGE_SECURITY_DATA_DIRECTORY *)&(NtHeader32->OptionalHeader.DataDirectory[EFI_IMAGE_DIRECTORY_ENTRY_SECURITY]);
   } else if (  (NtHeader32->FileHeader.Machine == EFI_IMAGE_MACHINE_IA64)
             || (NtHeader32->FileHeader.Machine == EFI_IMAGE_MACHINE_X64)
+            || (NtHeader32->FileHeader.Machine == EFI_IMAGE_MACHINE_LOONGARCH64)
+            || (NtHeader32->FileHeader.Machine == EFI_IMAGE_MACHINE_RISCV64)
             || (NtHeader32->FileHeader.Machine == EFI_IMAGE_MACHINE_AARCH64))
   {
     //
     // 64-bits Architecture
     //
-    mImageType  = ImageType_X64;
     NtHeader64  = (EFI_IMAGE_NT_HEADERS64 *)(mImageBase + mPeCoffHeaderOffset);
     mSecDataDir = (EFI_IMAGE_SECURITY_DATA_DIRECTORY *)&(NtHeader64->OptionalHeader.DataDirectory[EFI_IMAGE_DIRECTORY_ENTRY_SECURITY]);
   } else {
@@ -1765,7 +1857,7 @@ HashPeImage (
   SectionHeader = NULL;
   Status        = FALSE;
 
-  if (HashAlg != HASHALG_SHA256) {
+  if ((HashAlg >= HASHALG_MAX)) {
     return FALSE;
   }
 
@@ -1774,13 +1866,33 @@ HashPeImage (
   //
   ZeroMem (mImageDigest, MAX_DIGEST_SIZE);
 
-  mImageDigestSize = SHA256_DIGEST_SIZE;
-  mCertType        = gEfiCertSha256Guid;
+  switch (HashAlg) {
+    case HASHALG_SHA256:
+      mImageDigestSize = SHA256_DIGEST_SIZE;
+      mCertType        = gEfiCertSha256Guid;
+      break;
+
+    case HASHALG_SHA384:
+      mImageDigestSize = SHA384_DIGEST_SIZE;
+      mCertType        = gEfiCertSha384Guid;
+      break;
+
+    case HASHALG_SHA512:
+      mImageDigestSize = SHA512_DIGEST_SIZE;
+      mCertType        = gEfiCertSha512Guid;
+      break;
+
+    default:
+      return FALSE;
+  }
 
   CtxSize = mHash[HashAlg].GetContextSize ();
 
   HashCtx = AllocatePool (CtxSize);
-  ASSERT (HashCtx != NULL);
+  if (HashCtx == NULL) {
+    ASSERT (HashCtx != NULL);
+    goto Done;
+  }
 
   // 1.  Load the image header into memory.
 
@@ -1997,30 +2109,35 @@ HashPeImageByType (
 {
   UINT8                     Index;
   WIN_CERTIFICATE_EFI_PKCS  *PkcsCertData;
+  UINT32                    PkcsCertSize;
 
   PkcsCertData = (WIN_CERTIFICATE_EFI_PKCS *)(mImageBase + mSecDataDir->Offset);
+  PkcsCertSize = mSecDataDir->SizeOfCert;
+
+  //
+  // Check the Hash algorithm in PE/COFF Authenticode.
+  //    According to PKCS#7 Definition:
+  //        SignedData ::= SEQUENCE {
+  //            version Version,
+  //            digestAlgorithms DigestAlgorithmIdentifiers,
+  //            contentInfo ContentInfo,
+  //            .... }
+  //    The DigestAlgorithmIdentifiers can be used to determine the hash algorithm in PE/COFF hashing
+  //    This field has the fixed offset (+32) in final Authenticode ASN.1 data.
+  //    Fixed offset (+32) is calculated based on two bytes of length encoding.
+  //
+  if ((PkcsCertSize > 1) && ((*(PkcsCertData->CertData + 1) & TWO_BYTE_ENCODE) != TWO_BYTE_ENCODE)) {
+    //
+    // Only support two bytes of Long Form of Length Encoding.
+    //
+    return EFI_BAD_BUFFER_SIZE;
+  }
 
   for (Index = 0; Index < HASHALG_MAX; Index++) {
-    //
-    // Check the Hash algorithm in PE/COFF Authenticode.
-    //    According to PKCS#7 Definition:
-    //        SignedData ::= SEQUENCE {
-    //            version Version,
-    //            digestAlgorithms DigestAlgorithmIdentifiers,
-    //            contentInfo ContentInfo,
-    //            .... }
-    //    The DigestAlgorithmIdentifiers can be used to determine the hash algorithm in PE/COFF hashing
-    //    This field has the fixed offset (+32) in final Authenticode ASN.1 data.
-    //    Fixed offset (+32) is calculated based on two bytes of length encoding.
-    //
-    if ((*(PkcsCertData->CertData + 1) & TWO_BYTE_ENCODE) != TWO_BYTE_ENCODE) {
-      //
-      // Only support two bytes of Long Form of Length Encoding.
-      //
+    if (PkcsCertSize < 32 + mHash[Index].OidLength) {
       continue;
     }
 
-    //
     if (CompareMem (PkcsCertData->CertData + 32, mHash[Index].OidValue, mHash[Index].OidLength) == 0) {
       break;
     }
@@ -2168,6 +2285,8 @@ EnrollImageSignatureToSigDB (
   UINTN                      SigDBSize;
   UINT32                     Attr;
   WIN_CERTIFICATE_UEFI_GUID  *GuidCertData;
+  EFI_TIME                   Time;
+  UINT32                     HashAlg;
 
   Data         = NULL;
   GuidCertData = NULL;
@@ -2206,8 +2325,22 @@ EnrollImageSignatureToSigDB (
   }
 
   if (mSecDataDir->SizeOfCert == 0) {
-    if (!HashPeImage (HASHALG_SHA256)) {
-      Status =  EFI_SECURITY_VIOLATION;
+    Status  = EFI_SECURITY_VIOLATION;
+    HashAlg = sizeof (mHash) / sizeof (HASH_TABLE);
+    while (HashAlg > 0) {
+      HashAlg--;
+      if ((mHash[HashAlg].GetContextSize == NULL) || (mHash[HashAlg].HashInit == NULL) || (mHash[HashAlg].HashUpdate == NULL) || (mHash[HashAlg].HashFinal == NULL)) {
+        continue;
+      }
+
+      if (HashPeImage (HashAlg)) {
+        Status = EFI_SUCCESS;
+        break;
+      }
+    }
+
+    if (EFI_ERROR (Status)) {
+      DEBUG ((DEBUG_ERROR, "Fail to get hash digest: %r", Status));
       goto ON_EXIT;
     }
   } else {
@@ -2266,7 +2399,13 @@ EnrollImageSignatureToSigDB (
 
   Attr = EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_RUNTIME_ACCESS
          | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_TIME_BASED_AUTHENTICATED_WRITE_ACCESS;
-  Status = CreateTimeBasedPayload (&SigDBSize, (UINT8 **)&Data);
+  Status = GetCurrentTime (&Time);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "Fail to fetch valid time data: %r", Status));
+    goto ON_EXIT;
+  }
+
+  Status = CreateTimeBasedPayload (&SigDBSize, (UINT8 **)&Data, &Time);
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "Fail to create time-based data payload: %r", Status));
     goto ON_EXIT;
@@ -2405,7 +2544,7 @@ UpdateDeletePage (
   )
 {
   EFI_STATUS          Status;
-  UINT32              Index;
+  UINTN               Index;
   UINTN               CertCount;
   UINTN               GuidIndex;
   VOID                *StartOpCodeHandle;
@@ -2498,55 +2637,46 @@ UpdateDeletePage (
   GuidIndex    = 0;
 
   while ((ItemDataSize > 0) && (ItemDataSize >= CertList->SignatureListSize)) {
-    if (CompareGuid (&CertList->SignatureType, &gEfiCertRsa2048Guid)) {
-      Help = STRING_TOKEN (STR_CERT_TYPE_RSA2048_SHA256_GUID);
-    } else if (CompareGuid (&CertList->SignatureType, &gEfiCertX509Guid)) {
-      Help = STRING_TOKEN (STR_CERT_TYPE_PCKS7_GUID);
-    } else if (CompareGuid (&CertList->SignatureType, &gEfiCertSha1Guid)) {
-      Help = STRING_TOKEN (STR_CERT_TYPE_SHA1_GUID);
-    } else if (CompareGuid (&CertList->SignatureType, &gEfiCertSha256Guid)) {
-      Help = STRING_TOKEN (STR_CERT_TYPE_SHA256_GUID);
-    } else if (CompareGuid (&CertList->SignatureType, &gEfiCertX509Sha256Guid)) {
-      Help = STRING_TOKEN (STR_CERT_TYPE_X509_SHA256_GUID);
-    } else if (CompareGuid (&CertList->SignatureType, &gEfiCertX509Sha384Guid)) {
-      Help = STRING_TOKEN (STR_CERT_TYPE_X509_SHA384_GUID);
-    } else if (CompareGuid (&CertList->SignatureType, &gEfiCertX509Sha512Guid)) {
-      Help = STRING_TOKEN (STR_CERT_TYPE_X509_SHA512_GUID);
-    } else {
-      //
-      // The signature type is not supported in current implementation.
-      //
+    if (CompareGuid (&CertList->SignatureType, &gEfiCertRsa2048Guid) ||
+        CompareGuid (&CertList->SignatureType, &gEfiCertX509Guid) ||
+        CompareGuid (&CertList->SignatureType, &gEfiCertSha1Guid) ||
+        CompareGuid (&CertList->SignatureType, &gEfiCertSha256Guid) ||
+        CompareGuid (&CertList->SignatureType, &gEfiCertX509Sha256Guid) ||
+        CompareGuid (&CertList->SignatureType, &gEfiCertX509Sha384Guid) ||
+        CompareGuid (&CertList->SignatureType, &gEfiCertX509Sha512Guid)
+        )
+    {
+      CertCount = (CertList->SignatureListSize - sizeof (EFI_SIGNATURE_LIST) - CertList->SignatureHeaderSize) / CertList->SignatureSize;
+      for (Index = 0; Index < CertCount; Index++) {
+        Cert = (EFI_SIGNATURE_DATA *)((UINT8 *)CertList
+                                      + sizeof (EFI_SIGNATURE_LIST)
+                                      + CertList->SignatureHeaderSize
+                                      + Index * CertList->SignatureSize);
+        //
+        // Display GUID and help
+        //
+        GuidToString (&Cert->SignatureOwner, GuidStr, 100);
+        GuidID = HiiSetString (PrivateData->HiiHandle, 0, GuidStr, NULL);
+
+        Status = FormatHelpInfo (PrivateData, CertList, Cert, &Help);
+        if (!EFI_ERROR (Status)) {
+          HiiCreateCheckBoxOpCode (
+            StartOpCodeHandle,
+            (EFI_QUESTION_ID)(QuestionIdBase + GuidIndex++),
+            0,
+            0,
+            GuidID,
+            Help,
+            EFI_IFR_FLAG_CALLBACK,
+            0,
+            NULL
+            );
+        }
+      }
+
       ItemDataSize -= CertList->SignatureListSize;
       CertList      = (EFI_SIGNATURE_LIST *)((UINT8 *)CertList + CertList->SignatureListSize);
-      continue;
     }
-
-    CertCount = (CertList->SignatureListSize - sizeof (EFI_SIGNATURE_LIST) - CertList->SignatureHeaderSize) / CertList->SignatureSize;
-    for (Index = 0; Index < CertCount; Index++) {
-      Cert = (EFI_SIGNATURE_DATA *)((UINT8 *)CertList
-                                    + sizeof (EFI_SIGNATURE_LIST)
-                                    + CertList->SignatureHeaderSize
-                                    + Index * CertList->SignatureSize);
-      //
-      // Display GUID and help
-      //
-      GuidToString (&Cert->SignatureOwner, GuidStr, 100);
-      GuidID = HiiSetString (PrivateData->HiiHandle, 0, GuidStr, NULL);
-      HiiCreateCheckBoxOpCode (
-        StartOpCodeHandle,
-        (EFI_QUESTION_ID)(QuestionIdBase + GuidIndex++),
-        0,
-        0,
-        GuidID,
-        Help,
-        EFI_IFR_FLAG_CALLBACK,
-        0,
-        NULL
-        );
-    }
-
-    ItemDataSize -= CertList->SignatureListSize;
-    CertList      = (EFI_SIGNATURE_LIST *)((UINT8 *)CertList + CertList->SignatureListSize);
   }
 
 ON_EXIT:
@@ -2598,7 +2728,7 @@ DeleteKeyExchangeKey (
   UINT8               *Data;
   UINT8               *OldData;
   UINT32              Attr;
-  UINT32              Index;
+  UINTN               Index;
   EFI_SIGNATURE_LIST  *CertList;
   EFI_SIGNATURE_LIST  *NewCertList;
   EFI_SIGNATURE_DATA  *Cert;
@@ -2608,6 +2738,7 @@ DeleteKeyExchangeKey (
   UINT32              KekDataSize;
   UINTN               DeleteKekIndex;
   UINTN               GuidIndex;
+  EFI_TIME            Time;
 
   Data           = NULL;
   OldData        = NULL;
@@ -2726,7 +2857,13 @@ DeleteKeyExchangeKey (
 
   DataSize = Offset;
   if ((Attr & EFI_VARIABLE_TIME_BASED_AUTHENTICATED_WRITE_ACCESS) != 0) {
-    Status = CreateTimeBasedPayload (&DataSize, &OldData);
+    Status = GetCurrentTime (&Time);
+    if (EFI_ERROR (Status)) {
+      DEBUG ((DEBUG_ERROR, "Fail to fetch valid time data: %r", Status));
+      goto ON_EXIT;
+    }
+
+    Status = CreateTimeBasedPayload (&DataSize, &OldData, &Time);
     if (EFI_ERROR (Status)) {
       DEBUG ((DEBUG_ERROR, "Fail to create time-based data payload: %r", Status));
       goto ON_EXIT;
@@ -2795,7 +2932,7 @@ DeleteSignature (
   UINT8               *Data;
   UINT8               *OldData;
   UINT32              Attr;
-  UINT32              Index;
+  UINTN               Index;
   EFI_SIGNATURE_LIST  *CertList;
   EFI_SIGNATURE_LIST  *NewCertList;
   EFI_SIGNATURE_DATA  *Cert;
@@ -2804,6 +2941,7 @@ DeleteSignature (
   BOOLEAN             IsItemFound;
   UINT32              ItemDataSize;
   UINTN               GuidIndex;
+  EFI_TIME            Time;
 
   Data     = NULL;
   OldData  = NULL;
@@ -2930,7 +3068,13 @@ DeleteSignature (
 
   DataSize = Offset;
   if ((Attr & EFI_VARIABLE_TIME_BASED_AUTHENTICATED_WRITE_ACCESS) != 0) {
-    Status = CreateTimeBasedPayload (&DataSize, &OldData);
+    Status = GetCurrentTime (&Time);
+    if (EFI_ERROR (Status)) {
+      DEBUG ((DEBUG_ERROR, "Fail to fetch valid time data: %r", Status));
+      goto ON_EXIT;
+    }
+
+    Status = CreateTimeBasedPayload (&DataSize, &OldData, &Time);
     if (EFI_ERROR (Status)) {
       DEBUG ((DEBUG_ERROR, "Fail to create time-based data payload: %r", Status));
       goto ON_EXIT;
@@ -2999,6 +3143,7 @@ DeleteSignatureEx (
   UINTN               Offset;
   UINT8               *VariableData;
   UINT8               *NewVariableData;
+  EFI_TIME            Time;
 
   Status           = EFI_SUCCESS;
   VariableAttr     = 0;
@@ -3065,7 +3210,7 @@ DeleteSignatureEx (
     //
     //  Traverse to target EFI_SIGNATURE_LIST but others will be skipped.
     //
-    while ((RemainingSize > 0) && (RemainingSize >= ListWalker->SignatureListSize) && ListIndex < PrivateData->ListIndex) {
+    while ((RemainingSize > 0) && (RemainingSize >= (UINTN)ListWalker->SignatureListSize) && ListIndex < PrivateData->ListIndex) {
       CopyMem ((UINT8 *)NewVariableData + Offset, ListWalker, ListWalker->SignatureListSize);
       Offset += ListWalker->SignatureListSize;
 
@@ -3119,7 +3264,13 @@ DeleteSignatureEx (
   }
 
   if ((VariableAttr & EFI_VARIABLE_TIME_BASED_AUTHENTICATED_WRITE_ACCESS) != 0) {
-    Status = CreateTimeBasedPayload (&VariableDataSize, &NewVariableData);
+    Status = GetCurrentTime (&Time);
+    if (EFI_ERROR (Status)) {
+      DEBUG ((DEBUG_ERROR, "Fail to fetch valid time data: %r", Status));
+      goto ON_EXIT;
+    }
+
+    Status = CreateTimeBasedPayload (&VariableDataSize, &NewVariableData, &Time);
     if (EFI_ERROR (Status)) {
       DEBUG ((DEBUG_ERROR, "Fail to create time-based data payload: %r", Status));
       goto ON_EXIT;
@@ -3223,6 +3374,8 @@ SecureBootExtractConfigFromVariable (
   } else {
     ConfigData->FileEnrollType = UNKNOWN_FILE_TYPE;
   }
+
+  ConfigData->ListCount = Private->ListCount;
 
   //
   // If it is Physical Presence User, set the PhysicalPresent to true.
@@ -3364,9 +3517,19 @@ SecureBootExtractConfig (
     // followed by "&OFFSET=0&WIDTH=WWWWWWWWWWWWWWWW" followed by a Null-terminator
     //
     ConfigRequestHdr = HiiConstructConfigHdr (&gSecureBootConfigFormSetGuid, mSecureBootStorageName, PrivateData->DriverHandle);
-    Size             = (StrLen (ConfigRequestHdr) + 32 + 1) * sizeof (CHAR16);
-    ConfigRequest    = AllocateZeroPool (Size);
-    ASSERT (ConfigRequest != NULL);
+    if (ConfigRequestHdr == NULL) {
+      ASSERT (ConfigRequestHdr != NULL);
+      return EFI_OUT_OF_RESOURCES;
+    }
+
+    Size          = (StrLen (ConfigRequestHdr) + 32 + 1) * sizeof (CHAR16);
+    ConfigRequest = AllocateZeroPool (Size);
+    if (ConfigRequest == NULL) {
+      ASSERT (ConfigRequest != NULL);
+      FreePool (ConfigRequestHdr);
+      return EFI_OUT_OF_RESOURCES;
+    }
+
     AllocatedRequest = TRUE;
     UnicodeSPrint (ConfigRequest, Size, L"%s&OFFSET=0&WIDTH=%016LX", ConfigRequestHdr, (UINT64)BufferSize);
     FreePool (ConfigRequestHdr);
@@ -3645,7 +3808,7 @@ LoadSignatureList (
 
   RemainingSize = DataSize;
   ListWalker    = (EFI_SIGNATURE_LIST *)VariableData;
-  while ((RemainingSize > 0) && (RemainingSize >= ListWalker->SignatureListSize)) {
+  while ((RemainingSize > 0) && (RemainingSize >= (UINTN)ListWalker->SignatureListSize)) {
     if (CompareGuid (&ListWalker->SignatureType, &gEfiCertRsa2048Guid)) {
       ListType = STRING_TOKEN (STR_LIST_TYPE_RSA2048_SHA256);
     } else if (CompareGuid (&ListWalker->SignatureType, &gEfiCertX509Guid)) {
@@ -3654,6 +3817,10 @@ LoadSignatureList (
       ListType = STRING_TOKEN (STR_LIST_TYPE_SHA1);
     } else if (CompareGuid (&ListWalker->SignatureType, &gEfiCertSha256Guid)) {
       ListType = STRING_TOKEN (STR_LIST_TYPE_SHA256);
+    } else if (CompareGuid (&ListWalker->SignatureType, &gEfiCertSha384Guid)) {
+      ListType = STRING_TOKEN (STR_LIST_TYPE_SHA384);
+    } else if (CompareGuid (&ListWalker->SignatureType, &gEfiCertSha512Guid)) {
+      ListType = STRING_TOKEN (STR_LIST_TYPE_SHA512);
     } else if (CompareGuid (&ListWalker->SignatureType, &gEfiCertX509Sha256Guid)) {
       ListType = STRING_TOKEN (STR_LIST_TYPE_X509_SHA256);
     } else if (CompareGuid (&ListWalker->SignatureType, &gEfiCertX509Sha384Guid)) {
@@ -3901,6 +4068,12 @@ FormatHelpInfo (
   } else if (CompareGuid (&ListEntry->SignatureType, &gEfiCertSha256Guid)) {
     ListTypeId = STRING_TOKEN (STR_LIST_TYPE_SHA256);
     DataSize   = 32;
+  } else if (CompareGuid (&ListEntry->SignatureType, &gEfiCertSha384Guid)) {
+    ListTypeId = STRING_TOKEN (STR_LIST_TYPE_SHA384);
+    DataSize   = 48;
+  } else if (CompareGuid (&ListEntry->SignatureType, &gEfiCertSha512Guid)) {
+    ListTypeId = STRING_TOKEN (STR_LIST_TYPE_SHA512);
+    DataSize   = 64;
   } else if (CompareGuid (&ListEntry->SignatureType, &gEfiCertX509Sha256Guid)) {
     ListTypeId = STRING_TOKEN (STR_LIST_TYPE_X509_SHA256);
     DataSize   = 32;
@@ -4051,7 +4224,7 @@ LoadSignatureData (
   VOID                *EndOpCodeHandle;
   UINTN               DataSize;
   UINTN               RemainingSize;
-  UINT16              Index;
+  UINT64              Index;
   UINT8               *VariableData;
   CHAR16              VariableName[BUFFER_MAX_SIZE];
   CHAR16              NameBuffer[BUFFER_MAX_SIZE];
@@ -4135,7 +4308,7 @@ LoadSignatureData (
   //
   // Skip signature list.
   //
-  while ((RemainingSize > 0) && (RemainingSize >= ListWalker->SignatureListSize) && ListIndex-- > 0) {
+  while ((RemainingSize > 0) && (RemainingSize >= (UINTN)ListWalker->SignatureListSize) && ListIndex-- > 0) {
     RemainingSize -= ListWalker->SignatureListSize;
     ListWalker     = (EFI_SIGNATURE_LIST *)((UINT8 *)ListWalker + ListWalker->SignatureListSize);
   }
@@ -4389,12 +4562,13 @@ SecureBootCallback (
   EFI_HII_POPUP_PROTOCOL          *HiiPopup;
   EFI_HII_POPUP_SELECTION         UserSelection;
 
-  Status             = EFI_SUCCESS;
-  SecureBootEnable   = NULL;
-  SecureBootMode     = NULL;
-  SetupMode          = NULL;
-  File               = NULL;
-  EnrollKeyErrorCode = None_Error;
+  Status               = EFI_SUCCESS;
+  SecureBootEnable     = NULL;
+  SecureBootMode       = NULL;
+  SetupMode            = NULL;
+  File                 = NULL;
+  EnrollKeyErrorCode   = None_Error;
+  GetBrowserDataResult = FALSE;
 
   if ((This == NULL) || (Value == NULL) || (ActionRequest == NULL)) {
     return EFI_INVALID_PARAMETER;
@@ -4413,15 +4587,12 @@ SecureBootCallback (
     return EFI_OUT_OF_RESOURCES;
   }
 
-  GetBrowserDataResult = HiiGetBrowserData (&gSecureBootConfigFormSetGuid, mSecureBootStorageName, BufferSize, (UINT8 *)IfrNvData);
-
   if (Action == EFI_BROWSER_ACTION_FORM_OPEN) {
     if (QuestionId == KEY_SECURE_BOOT_MODE) {
       //
       // Update secure boot strings when opening this form
       //
-      Status = UpdateSecureBootString (Private);
-      SecureBootExtractConfigFromVariable (Private, IfrNvData);
+      Status                 = UpdateSecureBootString (Private);
       mIsEnterSecureBootForm = TRUE;
     } else {
       //
@@ -4435,23 +4606,22 @@ SecureBootCallback (
           (QuestionId == KEY_SECURE_BOOT_DBT_OPTION))
       {
         CloseEnrolledFile (Private->FileContext);
-      } else if (QuestionId == KEY_SECURE_BOOT_DELETE_ALL_LIST) {
-        //
-        // Update ListCount field in varstore
-        // Button "Delete All Signature List" is
-        // enable when ListCount is greater than 0.
-        //
-        IfrNvData->ListCount = Private->ListCount;
       }
     }
 
     goto EXIT;
   }
 
+  GetBrowserDataResult = HiiGetBrowserData (&gSecureBootConfigFormSetGuid, mSecureBootStorageName, BufferSize, (UINT8 *)IfrNvData);
+
   if (Action == EFI_BROWSER_ACTION_RETRIEVE) {
     Status = EFI_UNSUPPORTED;
     if (QuestionId == KEY_SECURE_BOOT_MODE) {
       if (mIsEnterSecureBootForm) {
+        if (GetBrowserDataResult) {
+          SecureBootExtractConfigFromVariable (Private, IfrNvData);
+        }
+
         Value->u8 = SECURE_BOOT_MODE_STANDARD;
         Status    = EFI_SUCCESS;
       }
@@ -4612,6 +4782,8 @@ SecureBootCallback (
                 L"Only Physical Presence User could delete PK in custom mode!",
                 NULL
                 );
+            } else {
+              SecureBootExtractConfigFromVariable (Private, IfrNvData);
             }
           }
         }
@@ -4675,6 +4847,7 @@ SecureBootCallback (
           SECUREBOOT_DELETE_SIGNATURE_LIST_FORM,
           OPTION_SIGNATURE_LIST_QUESTION_ID
           );
+        IfrNvData->ListCount = Private->ListCount;
         break;
 
       //
@@ -4699,6 +4872,7 @@ SecureBootCallback (
           SECUREBOOT_DELETE_SIGNATURE_LIST_FORM,
           OPTION_SIGNATURE_LIST_QUESTION_ID
           );
+        IfrNvData->ListCount = Private->ListCount;
         break;
 
       //
@@ -4723,6 +4897,7 @@ SecureBootCallback (
           SECUREBOOT_DELETE_SIGNATURE_LIST_FORM,
           OPTION_SIGNATURE_LIST_QUESTION_ID
           );
+        IfrNvData->ListCount = Private->ListCount;
         break;
 
       case SECUREBOOT_DELETE_SIGNATURE_FROM_DBT:
@@ -4802,6 +4977,8 @@ SecureBootCallback (
             L"Only supports DER-encoded X509 certificate, AUTH_2 format data & executable EFI image",
             NULL
             );
+        } else {
+          IfrNvData->ListCount = Private->ListCount;
         }
 
         break;
@@ -4853,6 +5030,8 @@ SecureBootCallback (
             PromptString,
             NULL
             );
+        } else {
+          SecureBootExtractConfigFromVariable (Private, IfrNvData);
         }
 
         break;

@@ -11,11 +11,11 @@
   and Appendix H, Sub-function Assignments.
 
   Copyright (c) 1999 - 2018, Intel Corporation. All rights reserved.<BR>
+  Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#ifndef _IPMI_NET_FN_TRANSPORT_H_
-#define _IPMI_NET_FN_TRANSPORT_H_
+#pragma once
 
 #pragma pack(1)
 //
@@ -60,6 +60,7 @@ typedef enum {
   IpmiLanReserved3,
   IpmiLanDestinationType,
   IpmiLanDestinationAddress,
+  IpmiLanVlanId         = 0x14,
   IpmiIpv4OrIpv6Support = 0x32,
   IpmiIpv4OrIpv6AddressEnable,
   IpmiIpv6HdrStatTrafficClass,
@@ -102,6 +103,14 @@ typedef enum {
   IpmiOem1,
   IpmiOem2
 } IPMI_LAN_DEST_TYPE_DEST_TYPE;
+
+//
+// Destination address format
+//
+typedef enum {
+  IpmiDestinationAddressVersion4,
+  IpmiDestinationAddressVersion6
+} IPMI_LAN_DEST_ADDRESS_VERSION;
 
 typedef union {
   struct {
@@ -178,6 +187,10 @@ typedef struct {
 } IPMI_LAN_ARP_INTERVAL;
 
 typedef struct {
+  UINT8    IpAddress[4];
+} IPMI_LAN_DEFAULT_GATEWAY;
+
+typedef struct {
   UINT8    Data[18];
 } IPMI_LAN_COMMUNITY_STRING;
 
@@ -226,6 +239,24 @@ typedef struct {
   IPMI_LAN_IP_ADDRESS          AlertingIpAddress;
   IPMI_LAN_MAC_ADDRESS         AlertingMacAddress;
 } IPMI_LAN_DEST_ADDRESS;
+
+typedef struct {
+  UINT8    VanIdLowByte;
+} IPMI_LAN_VLAN_ID_DATA1;
+
+typedef union {
+  struct {
+    UINT8    VanIdHighByte : 4;
+    UINT8    Reserved      : 3;
+    UINT8    Enabled       : 1;
+  } Bits;
+  UINT8    Uint8;
+} IPMI_LAN_VLAN_ID_DATA2;
+
+typedef struct {
+  IPMI_LAN_VLAN_ID_DATA1    Data1;
+  IPMI_LAN_VLAN_ID_DATA2    Data2;
+} IPMI_LAN_VLAN_ID;
 
 typedef union {
   IPMI_LAN_AUTH_TYPE                    IpmiLanAuthType;
@@ -881,4 +912,3 @@ typedef struct {
 } IPMI_GET_SOL_CONFIGURATION_PARAMETERS_RESPONSE;
 
 #pragma pack()
-#endif

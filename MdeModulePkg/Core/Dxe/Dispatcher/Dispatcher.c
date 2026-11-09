@@ -414,6 +414,7 @@ CoreDispatcher (
     //
     // If the dispatcher is running don't let it be restarted.
     //
+    PERF_FUNCTION_END ();
     return EFI_ALREADY_STARTED;
   }
 
@@ -428,6 +429,7 @@ CoreDispatcher (
              &DxeDispatchEvent
              );
   if (EFI_ERROR (Status)) {
+    PERF_FUNCTION_END ();
     return Status;
   }
 
@@ -773,7 +775,10 @@ FvIsBeingProcessed (
   }
 
   KnownHandle = AllocateZeroPool (sizeof (KNOWN_HANDLE));
-  ASSERT (KnownHandle != NULL);
+  if (KnownHandle == NULL) {
+    ASSERT (KnownHandle != NULL);
+    return NULL;
+  }
 
   KnownHandle->Signature = KNOWN_HANDLE_SIGNATURE;
   KnownHandle->Handle    = FvHandle;
@@ -850,6 +855,7 @@ CoreFvToDevicePath (
   @retval EFI_ALREADY_STARTED   The driver has already been started. Only one
                                 DriverName may be active in the system at any one
                                 time.
+  @retval EFI_OUT_OF_RESOURCES  If memory could not be allocated for the DriverEntry.
 
 **/
 EFI_STATUS
@@ -867,7 +873,11 @@ CoreAddToDriverList (
   // NULL or FALSE.
   //
   DriverEntry = AllocateZeroPool (sizeof (EFI_CORE_DRIVER_ENTRY));
-  ASSERT (DriverEntry != NULL);
+  if (DriverEntry == NULL) {
+    ASSERT (DriverEntry != NULL);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
   if (Type == EFI_FV_FILETYPE_FIRMWARE_VOLUME_IMAGE) {
     DriverEntry->IsFvImage = TRUE;
   }
@@ -891,37 +901,39 @@ CoreAddToDriverList (
 
 /**
   Check if a FV Image type file (EFI_FV_FILETYPE_FIRMWARE_VOLUME_IMAGE) is
-  described by a EFI_HOB_FIRMWARE_VOLUME2 Hob.
+  described by a EFI_HOB_FIRMWARE_VOLUME2 or an extracted EFI_HOB_FIRMWARE_VOLUME3 Hob.
 
   @param  FvNameGuid            The FV image guid specified.
   @param  DriverName            The driver guid specified.
 
-  @retval TRUE                  This file is found in a EFI_HOB_FIRMWARE_VOLUME2
-                                Hob.
+  @retval TRUE                  This file is found in a EFI_HOB_FIRMWARE_VOLUME2 or
+                                an extracted EFI_HOB_FIRMWARE_VOLUME3 Hob.
   @retval FALSE                 Not found.
 
 **/
+static
 BOOLEAN
-FvFoundInHobFv2 (
+FvFoundInExtractedFvHob (
   IN  CONST EFI_GUID  *FvNameGuid,
   IN  CONST EFI_GUID  *DriverName
   )
 {
-  EFI_PEI_HOB_POINTERS  HobFv2;
+  EFI_PEI_HOB_POINTERS  Hob;
 
-  HobFv2.Raw = GetHobList ();
-
-  while ((HobFv2.Raw = GetNextHob (EFI_HOB_TYPE_FV2, HobFv2.Raw)) != NULL) {
-    //
-    // Compare parent FvNameGuid and FileGuid both.
-    //
-    if (CompareGuid (DriverName, &HobFv2.FirmwareVolume2->FileName) &&
-        CompareGuid (FvNameGuid, &HobFv2.FirmwareVolume2->FvName))
-    {
-      return TRUE;
+  for (Hob.Raw = GetHobList (); !END_OF_HOB_LIST (Hob); Hob.Raw = GET_NEXT_HOB (Hob)) {
+    if (GET_HOB_TYPE (Hob) == EFI_HOB_TYPE_FV2) {
+      if (CompareGuid (DriverName, &Hob.FirmwareVolume2->FileName) &&
+          CompareGuid (FvNameGuid, &Hob.FirmwareVolume2->FvName))
+      {
+        return TRUE;
+      }
+    } else if ((GET_HOB_TYPE (Hob) == EFI_HOB_TYPE_FV3) && Hob.FirmwareVolume3->ExtractedFv) {
+      if (CompareGuid (DriverName, &Hob.FirmwareVolume3->FileName) &&
+          CompareGuid (FvNameGuid, &Hob.FirmwareVolume3->FvName))
+      {
+        return TRUE;
+      }
     }
-
-    HobFv2.Raw = GET_NEXT_HOB (HobFv2);
   }
 
   return FALSE;
@@ -1050,13 +1062,15 @@ CoreProcessFvImageFile (
       //
       if (gSecurity != NULL) {
         FvFileDevicePath = CoreFvToDevicePath (Fv, FvHandle, FileName);
-        Status           = gSecurity->FileAuthenticationState (
-                                        gSecurity,
-                                        AuthenticationStatus,
-                                        FvFileDevicePath
-                                        );
         if (FvFileDevicePath != NULL) {
+          Status = gSecurity->FileAuthenticationState (
+                                gSecurity,
+                                AuthenticationStatus,
+                                FvFileDevicePath
+                                );
           FreePool (FvFileDevicePath);
+        } else {
+          Status = EFI_OUT_OF_RESOURCES;
         }
 
         if (Status != EFI_SUCCESS) {
@@ -1095,7 +1109,7 @@ CoreProcessFvImageFile (
         DEBUG ((
           DEBUG_INFO,
           "%a() FV at 0x%x, FvAlignment required is 0x%x\n",
-          __FUNCTION__,
+          __func__,
           FvHeader,
           FvAlignment
           ));
@@ -1322,7 +1336,7 @@ CoreFwVolEventProtocolNotify (
             // Check if this EFI_FV_FILETYPE_FIRMWARE_VOLUME_IMAGE file has already
             // been extracted.
             //
-            if (FvFoundInHobFv2 (&KnownHandle->FvNameGuid, &NameGuid)) {
+            if (FvFoundInExtractedFvHob (&KnownHandle->FvNameGuid, &NameGuid)) {
               continue;
             }
 

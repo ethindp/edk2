@@ -242,7 +242,7 @@ LoadVariablesFromFile (
   }
 
   if ((Position != FileSize) || (ShellStatus != SHELL_SUCCESS)) {
-    ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DMPSTORE_LOAD_BAD_FILE), gShellDebug1HiiHandle, L"dmpstore");
+    ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DMPSTORE_LOAD_BAD_FILE), gShellDebug1HiiHandle, L"dmpstore");
     if (Position != FileSize) {
       ShellStatus = SHELL_VOLUME_CORRUPTED;
     }
@@ -260,10 +260,7 @@ LoadVariablesFromFile (
         )
     {
       Attributes = GetAttrType (Variable->Attributes);
-      ShellPrintHiiEx (
-        -1,
-        -1,
-        NULL,
+      ShellPrintHiiDefaultEx (
         STRING_TOKEN (STR_DMPSTORE_HEADER_LINE),
         gShellDebug1HiiHandle,
         Attributes,
@@ -282,7 +279,7 @@ LoadVariablesFromFile (
                       Variable->Data
                       );
       if (EFI_ERROR (Status)) {
-        ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DMPSTORE_LOAD_GEN_FAIL), gShellDebug1HiiHandle, L"dmpstore", Variable->Name, Status);
+        ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DMPSTORE_LOAD_GEN_FAIL), gShellDebug1HiiHandle, L"dmpstore", Variable->Name, Status);
       }
     }
   }
@@ -448,7 +445,11 @@ CascadeProcessVariables (
     StrnCatGrow (&FoundVarName, &NameSize, PrevName, 0);
   } else {
     FoundVarName = AllocateZeroPool (sizeof (CHAR16));
-    NameSize     = sizeof (CHAR16);
+    if (FoundVarName == NULL) {
+      return (SHELL_OUT_OF_RESOURCES);
+    }
+
+    NameSize = sizeof (CHAR16);
   }
 
   Status = gRT->GetNextVariableName (&NameSize, FoundVarName, &FoundVarGuid);
@@ -523,10 +524,7 @@ CascadeProcessVariables (
         if (StandardFormatOutput) {
           HexString = AllocatePool ((DataSize * 2 + 1) * sizeof (CHAR16));
           if (HexString != NULL) {
-            ShellPrintHiiEx (
-              -1,
-              -1,
-              NULL,
+            ShellPrintHiiDefaultEx (
               STRING_TOKEN (STR_DMPSTORE_VAR_SFO),
               gShellDebug1HiiHandle,
               FoundVarName,
@@ -547,10 +545,7 @@ CascadeProcessVariables (
         } else {
           Status = gEfiShellProtocol->GetGuidName (&FoundVarGuid, &GuidName);
           if (EFI_ERROR (Status)) {
-            ShellPrintHiiEx (
-              -1,
-              -1,
-              NULL,
+            ShellPrintHiiDefaultEx (
               STRING_TOKEN (STR_DMPSTORE_HEADER_LINE),
               gShellDebug1HiiHandle,
               AttrString,
@@ -559,10 +554,7 @@ CascadeProcessVariables (
               DataSize
               );
           } else {
-            ShellPrintHiiEx (
-              -1,
-              -1,
-              NULL,
+            ShellPrintHiiDefaultEx (
               STRING_TOKEN (STR_DMPSTORE_HEADER_LINE2),
               gShellDebug1HiiHandle,
               AttrString,
@@ -580,10 +572,7 @@ CascadeProcessVariables (
     } else if (Type == DmpStoreSave) {
       if (!EFI_ERROR (Status) && (DataBuffer != NULL) && (FoundVarName != NULL)) {
         AttrString = GetAttrType (Atts);
-        ShellPrintHiiEx (
-          -1,
-          -1,
-          NULL,
+        ShellPrintHiiDefaultEx (
           STRING_TOKEN (STR_DMPSTORE_HEADER_LINE),
           gShellDebug1HiiHandle,
           AttrString,
@@ -608,10 +597,7 @@ CascadeProcessVariables (
       SetStatus = gRT->SetVariable (FoundVarName, &FoundVarGuid, Atts, 0, NULL);
       if (StandardFormatOutput) {
         if (SetStatus == EFI_SUCCESS) {
-          ShellPrintHiiEx (
-            -1,
-            -1,
-            NULL,
+          ShellPrintHiiDefaultEx (
             STRING_TOKEN (STR_DMPSTORE_NO_VAR_FOUND_NG_SFO),
             gShellDebug1HiiHandle,
             FoundVarName,
@@ -619,10 +605,7 @@ CascadeProcessVariables (
             );
         }
       } else {
-        ShellPrintHiiEx (
-          -1,
-          -1,
-          NULL,
+        ShellPrintHiiDefaultEx (
           STRING_TOKEN (STR_DMPSTORE_DELETE_LINE),
           gShellDebug1HiiHandle,
           &FoundVarGuid,
@@ -681,7 +664,7 @@ ProcessVariables (
   ZeroMem (&FoundVarGuid, sizeof (EFI_GUID));
 
   if (StandardFormatOutput) {
-    ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_SFO_HEADER), gShellDebug1HiiHandle, L"dmpstore");
+    ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_SFO_HEADER), gShellDebug1HiiHandle, L"dmpstore");
   }
 
   if (Type == DmpStoreLoad) {
@@ -692,27 +675,27 @@ ProcessVariables (
 
   if (!Found) {
     if (ShellStatus == SHELL_OUT_OF_RESOURCES) {
-      ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_OUT_MEM), gShellDebug1HiiHandle, L"dmpstore");
+      ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_OUT_MEM), gShellDebug1HiiHandle, L"dmpstore");
       return (ShellStatus);
     } else if ((Name != NULL) && (Guid == NULL)) {
       if (StandardFormatOutput) {
-        ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DMPSTORE_NO_VAR_FOUND_N_SFO), gShellDebug1HiiHandle, Name);
+        ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DMPSTORE_NO_VAR_FOUND_N_SFO), gShellDebug1HiiHandle, Name);
       } else {
-        ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DMPSTORE_NO_VAR_FOUND_N), gShellDebug1HiiHandle, L"dmpstore", Name);
+        ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DMPSTORE_NO_VAR_FOUND_N), gShellDebug1HiiHandle, L"dmpstore", Name);
       }
     } else if ((Name != NULL) && (Guid != NULL)) {
-      ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DMPSTORE_NO_VAR_FOUND_GN), gShellDebug1HiiHandle, L"dmpstore", Guid, Name);
+      ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DMPSTORE_NO_VAR_FOUND_GN), gShellDebug1HiiHandle, L"dmpstore", Guid, Name);
     } else if ((Name == NULL) && (Guid == NULL)) {
       if (StandardFormatOutput) {
-        ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DMPSTORE_NO_VAR_FOUND_SFO), gShellDebug1HiiHandle);
+        ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DMPSTORE_NO_VAR_FOUND_SFO), gShellDebug1HiiHandle);
       } else {
-        ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DMPSTORE_NO_VAR_FOUND), gShellDebug1HiiHandle, L"dmpstore");
+        ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DMPSTORE_NO_VAR_FOUND), gShellDebug1HiiHandle, L"dmpstore");
       }
     } else if ((Name == NULL) && (Guid != NULL)) {
       if (StandardFormatOutput) {
-        ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DMPSTORE_NO_VAR_FOUND_G_SFO), gShellDebug1HiiHandle, Guid);
+        ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DMPSTORE_NO_VAR_FOUND_G_SFO), gShellDebug1HiiHandle, Guid);
       } else {
-        ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DMPSTORE_NO_VAR_FOUND_G), gShellDebug1HiiHandle, L"dmpstore", Guid);
+        ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DMPSTORE_NO_VAR_FOUND_G), gShellDebug1HiiHandle, L"dmpstore", Guid);
       }
     }
 
@@ -720,6 +703,185 @@ ProcessVariables (
   }
 
   return (ShellStatus);
+}
+
+/** Main function of the 'DmpStore' command.
+
+  @param[in] Package    List of input parameter for the command.
+**/
+STATIC
+SHELL_STATUS
+MainCmdDmpStore (
+  LIST_ENTRY  *Package
+  )
+{
+  EFI_STATUS         Status;
+  RETURN_STATUS      RStatus;
+  SHELL_STATUS       ShellStatus;
+  CONST CHAR16       *GuidStr;
+  CONST CHAR16       *File;
+  EFI_GUID           *Guid;
+  EFI_GUID           GuidData;
+  CONST CHAR16       *Name;
+  DMP_STORE_TYPE     Type;
+  SHELL_FILE_HANDLE  FileHandle;
+  EFI_FILE_INFO      *FileInfo;
+  BOOLEAN            StandardFormatOutput;
+
+  ShellStatus          = SHELL_SUCCESS;
+  FileHandle           = NULL;
+  File                 = NULL;
+  Type                 = DmpStoreDisplay;
+  StandardFormatOutput = FALSE;
+
+  if (ShellCommandLineGetCount (Package) > 2) {
+    ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_TOO_MANY), gShellDebug1HiiHandle, L"dmpstore");
+    return SHELL_INVALID_PARAMETER;
+  } else if (ShellCommandLineGetFlag (Package, L"-all") && ShellCommandLineGetFlag (Package, L"-guid")) {
+    ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_PARAM_CONFLICT), gShellDebug1HiiHandle, L"dmpstore", L"-all", L"-guid");
+    return SHELL_INVALID_PARAMETER;
+  } else if (ShellCommandLineGetFlag (Package, L"-s") && ShellCommandLineGetFlag (Package, L"-l")) {
+    ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_PARAM_CONFLICT), gShellDebug1HiiHandle, L"dmpstore", L"-l", L"-s");
+    return SHELL_INVALID_PARAMETER;
+  } else if ((ShellCommandLineGetFlag (Package, L"-s") || ShellCommandLineGetFlag (Package, L"-l")) && ShellCommandLineGetFlag (Package, L"-d")) {
+    ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_PARAM_CONFLICT), gShellDebug1HiiHandle, L"dmpstore", L"-l or -s", L"-d");
+    return SHELL_INVALID_PARAMETER;
+  } else if ((ShellCommandLineGetFlag (Package, L"-s") || ShellCommandLineGetFlag (Package, L"-l")) && ShellCommandLineGetFlag (Package, L"-sfo")) {
+    ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_PARAM_CONFLICT), gShellDebug1HiiHandle, L"dmpstore", L"-l or -s", L"-sfo");
+    return SHELL_INVALID_PARAMETER;
+  }
+
+  //
+  // Determine the GUID to search for based on -all and -guid parameters
+  //
+  if (!ShellCommandLineGetFlag (Package, L"-all")) {
+    GuidStr = ShellCommandLineGetValue (Package, L"-guid");
+    if (GuidStr != NULL) {
+      RStatus = StrToGuid (GuidStr, &GuidData);
+      if (RETURN_ERROR (RStatus) || (GuidStr[GUID_STRING_LENGTH] != L'\0')) {
+        ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_PARAM_INV), gShellDebug1HiiHandle, L"dmpstore", GuidStr);
+        ShellStatus = SHELL_INVALID_PARAMETER;
+      }
+
+      Guid = &GuidData;
+    } else {
+      Guid = &gEfiGlobalVariableGuid;
+    }
+  } else {
+    Guid = NULL;
+  }
+
+  //
+  // Get the Name of the variable to find
+  //
+  Name = ShellCommandLineGetRawValue (Package, 1);
+
+  if (ShellStatus != SHELL_SUCCESS) {
+    return ShellStatus;
+  }
+
+  if (ShellCommandLineGetFlag (Package, L"-s")) {
+    Type = DmpStoreSave;
+    File = ShellCommandLineGetValue (Package, L"-s");
+    if (File == NULL) {
+      ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_NO_VALUE), gShellDebug1HiiHandle, L"dmpstore", L"-s");
+      ShellStatus = SHELL_INVALID_PARAMETER;
+    } else {
+      Status = ShellOpenFileByName (File, &FileHandle, EFI_FILE_MODE_WRITE | EFI_FILE_MODE_READ, 0);
+      if (!EFI_ERROR (Status)) {
+        //
+        // Delete existing file, but do not delete existing directory
+        //
+        FileInfo = ShellGetFileInfo (FileHandle);
+        if (FileInfo == NULL) {
+          ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_FILE_OPEN_FAIL), gShellDebug1HiiHandle, L"dmpstore", File);
+          Status = EFI_DEVICE_ERROR;
+        } else {
+          if ((FileInfo->Attribute & EFI_FILE_DIRECTORY) == EFI_FILE_DIRECTORY) {
+            ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_FILE_IS_DIRECTORY), gShellDebug1HiiHandle, L"dmpstore", File);
+            Status = EFI_INVALID_PARAMETER;
+          } else {
+            Status = ShellDeleteFile (&FileHandle);
+            if (EFI_ERROR (Status)) {
+              ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_FILE_DELETE_FAIL), gShellDebug1HiiHandle, L"dmpstore", File);
+            }
+          }
+
+          FreePool (FileInfo);
+        }
+      } else if (Status == EFI_NOT_FOUND) {
+        //
+        // Good when file doesn't exist
+        //
+        Status = EFI_SUCCESS;
+      } else {
+        //
+        // Otherwise it's bad.
+        //
+        ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_FILE_OPEN_FAIL), gShellDebug1HiiHandle, L"dmpstore", File);
+      }
+
+      if (!EFI_ERROR (Status)) {
+        Status = ShellOpenFileByName (File, &FileHandle, EFI_FILE_MODE_CREATE | EFI_FILE_MODE_WRITE | EFI_FILE_MODE_READ, 0);
+        if (EFI_ERROR (Status)) {
+          ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_FILE_OPEN_FAIL), gShellDebug1HiiHandle, L"dmpstore", File);
+        }
+      }
+
+      if (EFI_ERROR (Status)) {
+        ShellStatus = SHELL_INVALID_PARAMETER;
+      }
+    }
+  } else if (ShellCommandLineGetFlag (Package, L"-l")) {
+    Type = DmpStoreLoad;
+    File = ShellCommandLineGetValue (Package, L"-l");
+    if (File == NULL) {
+      ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_NO_VALUE), gShellDebug1HiiHandle, L"dmpstore", L"-l");
+      ShellStatus = SHELL_INVALID_PARAMETER;
+    } else {
+      Status = ShellOpenFileByName (File, &FileHandle, EFI_FILE_MODE_READ, 0);
+      if (EFI_ERROR (Status)) {
+        ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_FILE_OPEN_FAIL), gShellDebug1HiiHandle, L"dmpstore", File);
+        ShellStatus = SHELL_INVALID_PARAMETER;
+      } else {
+        FileInfo = ShellGetFileInfo (FileHandle);
+        if (FileInfo == NULL) {
+          ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_FILE_OPEN_FAIL), gShellDebug1HiiHandle, L"dmpstore", File);
+          ShellStatus = SHELL_DEVICE_ERROR;
+        } else {
+          if ((FileInfo->Attribute & EFI_FILE_DIRECTORY) == EFI_FILE_DIRECTORY) {
+            ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_FILE_IS_DIRECTORY), gShellDebug1HiiHandle, L"dmpstore", File);
+            ShellStatus = SHELL_INVALID_PARAMETER;
+          }
+
+          FreePool (FileInfo);
+        }
+      }
+    }
+  } else if (ShellCommandLineGetFlag (Package, L"-d")) {
+    Type = DmpStoreDelete;
+  }
+
+  if (ShellCommandLineGetFlag (Package, L"-sfo")) {
+    StandardFormatOutput = TRUE;
+  }
+
+  if (ShellStatus != SHELL_SUCCESS) {
+    return ShellStatus;
+  }
+
+  if (Type == DmpStoreSave) {
+    ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DMPSTORE_SAVE), gShellDebug1HiiHandle, File);
+  } else if (Type == DmpStoreLoad) {
+    ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DMPSTORE_LOAD), gShellDebug1HiiHandle, File);
+  }
+
+  ShellStatus = ProcessVariables (Name, Guid, Type, FileHandle, StandardFormatOutput);
+  if ((Type == DmpStoreLoad) || (Type == DmpStoreSave)) {
+    ShellCloseFile (&FileHandle);
+  }
+
+  return ShellStatus;
 }
 
 STATIC CONST SHELL_PARAM_ITEM  ParamList[] = {
@@ -745,185 +907,29 @@ ShellCommandRunDmpStore (
   IN EFI_SYSTEM_TABLE  *SystemTable
   )
 {
-  EFI_STATUS         Status;
-  RETURN_STATUS      RStatus;
-  LIST_ENTRY         *Package;
-  CHAR16             *ProblemParam;
-  SHELL_STATUS       ShellStatus;
-  CONST CHAR16       *GuidStr;
-  CONST CHAR16       *File;
-  EFI_GUID           *Guid;
-  EFI_GUID           GuidData;
-  CONST CHAR16       *Name;
-  DMP_STORE_TYPE     Type;
-  SHELL_FILE_HANDLE  FileHandle;
-  EFI_FILE_INFO      *FileInfo;
-  BOOLEAN            StandardFormatOutput;
+  EFI_STATUS    Status;
+  LIST_ENTRY    *Package;
+  CHAR16        *ProblemParam;
+  SHELL_STATUS  ShellStatus;
 
-  ShellStatus          = SHELL_SUCCESS;
-  Package              = NULL;
-  FileHandle           = NULL;
-  File                 = NULL;
-  Type                 = DmpStoreDisplay;
-  StandardFormatOutput = FALSE;
+  ShellStatus = SHELL_SUCCESS;
 
   Status = ShellCommandLineParse (ParamList, &Package, &ProblemParam, TRUE);
   if (EFI_ERROR (Status)) {
     if ((Status == EFI_VOLUME_CORRUPTED) && (ProblemParam != NULL)) {
-      ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_PROBLEM), gShellDebug1HiiHandle, L"dmpstore", ProblemParam);
+      ShellPrintHiiDefaultEx (STRING_TOKEN (STR_GEN_PROBLEM), gShellDebug1HiiHandle, L"dmpstore", ProblemParam);
       FreePool (ProblemParam);
       ShellStatus = SHELL_INVALID_PARAMETER;
     } else {
       ASSERT (FALSE);
     }
-  } else {
-    if (ShellCommandLineGetCount (Package) > 2) {
-      ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_TOO_MANY), gShellDebug1HiiHandle, L"dmpstore");
-      ShellStatus = SHELL_INVALID_PARAMETER;
-    } else if (ShellCommandLineGetFlag (Package, L"-all") && ShellCommandLineGetFlag (Package, L"-guid")) {
-      ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_PARAM_CONFLICT), gShellDebug1HiiHandle, L"dmpstore", L"-all", L"-guid");
-      ShellStatus = SHELL_INVALID_PARAMETER;
-    } else if (ShellCommandLineGetFlag (Package, L"-s") && ShellCommandLineGetFlag (Package, L"-l")) {
-      ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_PARAM_CONFLICT), gShellDebug1HiiHandle, L"dmpstore", L"-l", L"-s");
-      ShellStatus = SHELL_INVALID_PARAMETER;
-    } else if ((ShellCommandLineGetFlag (Package, L"-s") || ShellCommandLineGetFlag (Package, L"-l")) && ShellCommandLineGetFlag (Package, L"-d")) {
-      ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_PARAM_CONFLICT), gShellDebug1HiiHandle, L"dmpstore", L"-l or -s", L"-d");
-      ShellStatus = SHELL_INVALID_PARAMETER;
-    } else if ((ShellCommandLineGetFlag (Package, L"-s") || ShellCommandLineGetFlag (Package, L"-l")) && ShellCommandLineGetFlag (Package, L"-sfo")) {
-      ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_PARAM_CONFLICT), gShellDebug1HiiHandle, L"dmpstore", L"-l or -s", L"-sfo");
-      ShellStatus = SHELL_INVALID_PARAMETER;
-    } else {
-      //
-      // Determine the GUID to search for based on -all and -guid parameters
-      //
-      if (!ShellCommandLineGetFlag (Package, L"-all")) {
-        GuidStr = ShellCommandLineGetValue (Package, L"-guid");
-        if (GuidStr != NULL) {
-          RStatus = StrToGuid (GuidStr, &GuidData);
-          if (RETURN_ERROR (RStatus) || (GuidStr[GUID_STRING_LENGTH] != L'\0')) {
-            ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_PARAM_INV), gShellDebug1HiiHandle, L"dmpstore", GuidStr);
-            ShellStatus = SHELL_INVALID_PARAMETER;
-          }
 
-          Guid = &GuidData;
-        } else {
-          Guid = &gEfiGlobalVariableGuid;
-        }
-      } else {
-        Guid = NULL;
-      }
-
-      //
-      // Get the Name of the variable to find
-      //
-      Name = ShellCommandLineGetRawValue (Package, 1);
-
-      if (ShellStatus == SHELL_SUCCESS) {
-        if (ShellCommandLineGetFlag (Package, L"-s")) {
-          Type = DmpStoreSave;
-          File = ShellCommandLineGetValue (Package, L"-s");
-          if (File == NULL) {
-            ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_NO_VALUE), gShellDebug1HiiHandle, L"dmpstore", L"-s");
-            ShellStatus = SHELL_INVALID_PARAMETER;
-          } else {
-            Status = ShellOpenFileByName (File, &FileHandle, EFI_FILE_MODE_WRITE | EFI_FILE_MODE_READ, 0);
-            if (!EFI_ERROR (Status)) {
-              //
-              // Delete existing file, but do not delete existing directory
-              //
-              FileInfo = ShellGetFileInfo (FileHandle);
-              if (FileInfo == NULL) {
-                ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_FILE_OPEN_FAIL), gShellDebug1HiiHandle, L"dmpstore", File);
-                Status = EFI_DEVICE_ERROR;
-              } else {
-                if ((FileInfo->Attribute & EFI_FILE_DIRECTORY) == EFI_FILE_DIRECTORY) {
-                  ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_FILE_IS_DIRECTORY), gShellDebug1HiiHandle, L"dmpstore", File);
-                  Status = EFI_INVALID_PARAMETER;
-                } else {
-                  Status = ShellDeleteFile (&FileHandle);
-                  if (EFI_ERROR (Status)) {
-                    ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_FILE_DELETE_FAIL), gShellDebug1HiiHandle, L"dmpstore", File);
-                  }
-                }
-
-                FreePool (FileInfo);
-              }
-            } else if (Status == EFI_NOT_FOUND) {
-              //
-              // Good when file doesn't exist
-              //
-              Status = EFI_SUCCESS;
-            } else {
-              //
-              // Otherwise it's bad.
-              //
-              ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_FILE_OPEN_FAIL), gShellDebug1HiiHandle, L"dmpstore", File);
-            }
-
-            if (!EFI_ERROR (Status)) {
-              Status = ShellOpenFileByName (File, &FileHandle, EFI_FILE_MODE_CREATE | EFI_FILE_MODE_WRITE | EFI_FILE_MODE_READ, 0);
-              if (EFI_ERROR (Status)) {
-                ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_FILE_OPEN_FAIL), gShellDebug1HiiHandle, L"dmpstore", File);
-              }
-            }
-
-            if (EFI_ERROR (Status)) {
-              ShellStatus = SHELL_INVALID_PARAMETER;
-            }
-          }
-        } else if (ShellCommandLineGetFlag (Package, L"-l")) {
-          Type = DmpStoreLoad;
-          File = ShellCommandLineGetValue (Package, L"-l");
-          if (File == NULL) {
-            ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_NO_VALUE), gShellDebug1HiiHandle, L"dmpstore", L"-l");
-            ShellStatus = SHELL_INVALID_PARAMETER;
-          } else {
-            Status = ShellOpenFileByName (File, &FileHandle, EFI_FILE_MODE_READ, 0);
-            if (EFI_ERROR (Status)) {
-              ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_FILE_OPEN_FAIL), gShellDebug1HiiHandle, L"dmpstore", File);
-              ShellStatus = SHELL_INVALID_PARAMETER;
-            } else {
-              FileInfo = ShellGetFileInfo (FileHandle);
-              if (FileInfo == NULL) {
-                ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_FILE_OPEN_FAIL), gShellDebug1HiiHandle, L"dmpstore", File);
-                ShellStatus = SHELL_DEVICE_ERROR;
-              } else {
-                if ((FileInfo->Attribute & EFI_FILE_DIRECTORY) == EFI_FILE_DIRECTORY) {
-                  ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_GEN_FILE_IS_DIRECTORY), gShellDebug1HiiHandle, L"dmpstore", File);
-                  ShellStatus = SHELL_INVALID_PARAMETER;
-                }
-
-                FreePool (FileInfo);
-              }
-            }
-          }
-        } else if (ShellCommandLineGetFlag (Package, L"-d")) {
-          Type = DmpStoreDelete;
-        }
-
-        if (ShellCommandLineGetFlag (Package, L"-sfo")) {
-          StandardFormatOutput = TRUE;
-        }
-      }
-
-      if (ShellStatus == SHELL_SUCCESS) {
-        if (Type == DmpStoreSave) {
-          ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DMPSTORE_SAVE), gShellDebug1HiiHandle, File);
-        } else if (Type == DmpStoreLoad) {
-          ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DMPSTORE_LOAD), gShellDebug1HiiHandle, File);
-        }
-
-        ShellStatus = ProcessVariables (Name, Guid, Type, FileHandle, StandardFormatOutput);
-        if ((Type == DmpStoreLoad) || (Type == DmpStoreSave)) {
-          ShellCloseFile (&FileHandle);
-        }
-      }
-    }
+    return ShellStatus;
   }
 
-  if (Package != NULL) {
-    ShellCommandLineFreeVarList (Package);
-  }
+  ShellStatus = MainCmdDmpStore (Package);
+
+  ShellCommandLineFreeVarList (Package);
 
   return ShellStatus;
 }

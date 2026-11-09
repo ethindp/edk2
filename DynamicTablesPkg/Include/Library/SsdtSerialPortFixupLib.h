@@ -6,8 +6,7 @@
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#ifndef SSDT_SERIAL_PORT_LIB_H_
-#define SSDT_SERIAL_PORT_LIB_H_
+#pragma once
 
 /** Build a SSDT table describing the input serial port.
 
@@ -29,11 +28,11 @@
 EFI_STATUS
 EFIAPI
 BuildSsdtSerialPortTable (
-  IN  CONST CM_STD_OBJ_ACPI_TABLE_INFO   *AcpiTableInfo,
-  IN  CONST CM_ARM_SERIAL_PORT_INFO      *SerialPortInfo,
-  IN  CONST CHAR8                        *Name,
-  IN  CONST UINT64                       Uid,
-  OUT       EFI_ACPI_DESCRIPTION_HEADER  **Table
+  IN  CONST CM_STD_OBJ_ACPI_TABLE_INFO       *AcpiTableInfo,
+  IN  CONST CM_ARCH_COMMON_SERIAL_PORT_INFO  *SerialPortInfo,
+  IN  CONST CHAR8                            *Name,
+  IN  CONST UINT64                           Uid,
+  OUT       EFI_ACPI_DESCRIPTION_HEADER      **Table
   );
 
 /** Free an SSDT table previously created by
@@ -52,7 +51,7 @@ FreeSsdtSerialPortTable (
 
 /** Validate the Serial Port Information.
 
-  @param [in]  SerialPortInfoTable    Table of CM_ARM_SERIAL_PORT_INFO.
+  @param [in]  SerialPortInfoTable    Table of CM_ARCH_COMMON_SERIAL_PORT_INFO.
   @param [in]  SerialPortCount        Count of SerialPort in the table.
 
   @retval EFI_SUCCESS             Success.
@@ -61,8 +60,19 @@ FreeSsdtSerialPortTable (
 EFI_STATUS
 EFIAPI
 ValidateSerialPortInfo (
-  IN  CONST CM_ARM_SERIAL_PORT_INFO  *SerialPortInfoTable,
-  IN        UINT32                   SerialPortCount
+  IN  CONST CM_ARCH_COMMON_SERIAL_PORT_INFO  *SerialPortInfoTable,
+  IN        UINT32                           SerialPortCount
   );
 
-#endif // SSDT_SERIAL_PORT_LIB_H_
+/** Validate the Serial Port Architecture Information.
+
+  @param [in]  SerialPortInfoTable    Table of CM_ARCH_COMMON_SERIAL_PORT_INFO.
+
+  @retval EFI_SUCCESS             Success.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+**/
+EFI_STATUS
+EFIAPI
+ArchValidateSerialPortInfo (
+  IN  CONST CM_ARCH_COMMON_SERIAL_PORT_INFO  *SerialPortInfo
+  );

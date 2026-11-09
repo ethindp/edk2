@@ -1,13 +1,12 @@
 /** @file
   Common header file for CPU Exception Handler Library.
 
-  Copyright (c) 2012 - 2019, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2012 - 2022, Intel Corporation. All rights reserved.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _CPU_EXCEPTION_COMMON_H_
-#define _CPU_EXCEPTION_COMMON_H_
+#pragma once
 
 #include <Ppi/VectorHandoffInfo.h>
 #include <Protocol/Cpu.h>
@@ -20,9 +19,7 @@
 #include <Library/SynchronizationLib.h>
 #include <Library/CpuExceptionHandlerLib.h>
 
-#define  CPU_EXCEPTION_NUM    32
-#define  CPU_INTERRUPT_NUM    256
-#define  HOOKAFTER_STUB_SIZE  16
+#define  HOOKAFTER_STUB_SIZE  18
 
 //
 // Exception Error Code of Page-Fault Exception
@@ -290,18 +287,22 @@ CommonExceptionHandlerWorker (
   );
 
 /**
-  Setup separate stack for specific exceptions.
+  Setup separate stacks for certain exception handlers.
 
-  @param[in] StackSwitchData      Pointer to data required for setuping up
-                                  stack switch.
+  @param[in]       Buffer        Point to buffer used to separate exception stack.
+  @param[in, out]  BufferSize    On input, it indicates the byte size of Buffer.
+                                 If the size is not enough, the return status will
+                                 be EFI_BUFFER_TOO_SMALL, and output BufferSize
+                                 will be the size it needs.
 
-  @retval EFI_SUCCESS             The exceptions have been successfully
-                                  initialized with new stack.
-  @retval EFI_INVALID_PARAMETER   StackSwitchData contains invalid content.
+  @retval EFI_SUCCESS             The stacks are assigned successfully.
+  @retval EFI_BUFFER_TOO_SMALL    This BufferSize is too small.
+  @retval EFI_UNSUPPORTED         This function is not supported.
 **/
 EFI_STATUS
 ArchSetupExceptionStack (
-  IN CPU_EXCEPTION_INIT_DATA  *StackSwitchData
+  IN     VOID   *Buffer,
+  IN OUT UINTN  *BufferSize
   );
 
 /**
@@ -316,5 +317,3 @@ EFIAPI
 AsmGetTssTemplateMap (
   OUT EXCEPTION_HANDLER_TEMPLATE_MAP  *AddressMap
   );
-
-#endif

@@ -8,10 +8,11 @@
 
 #include <Uefi.h>
 #include <IndustryStandard/Acpi.h>
-#include <libfdt.h>
 #include <Library/BaseLib.h>
+#include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
 #include <Library/DevicePathLib.h>
+#include <Library/FdtLib.h>
 #include <Library/HiiLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiBootServicesTableLib.h>
@@ -116,24 +117,24 @@ RemoveDtStdoutPath (
     DEBUG ((
       DEBUG_INFO,
       "%a: could not retrieve DT blob - %r\n",
-      __FUNCTION__,
+      __func__,
       Status
       ));
     return;
   }
 
-  Node = fdt_path_offset (Dtb, "/chosen");
+  Node = FdtPathOffset (Dtb, "/chosen");
   if (Node < 0) {
     return;
   }
 
-  Error = fdt_delprop (Dtb, Node, "stdout-path");
+  Error = FdtDelProp (Dtb, Node, "stdout-path");
   if (Error) {
     DEBUG ((
       DEBUG_INFO,
       "%a: Failed to delete 'stdout-path' property: %a\n",
-      __FUNCTION__,
-      fdt_strerror (Error)
+      __func__,
+      FdtStrerror (Error)
       ));
   }
 }
@@ -190,7 +191,7 @@ RemoveSpcrTable (
       DEBUG ((
         DEBUG_WARN,
         "%a: failed to uninstall SPCR table - %r\n",
-        __FUNCTION__,
+        __func__,
         Status
         ));
     }
@@ -224,7 +225,7 @@ OnReadyToBoot (
     DEBUG ((
       DEBUG_ERROR,
       "%a: variable '%s' could not be read - bailing!\n",
-      __FUNCTION__,
+      __func__,
       CONSOLE_PREF_VARIABLE_NAME
       ));
     return;
@@ -234,7 +235,7 @@ OnReadyToBoot (
     DEBUG ((
       DEBUG_INFO,
       "%a: serial console preferred - doing nothing\n",
-      __FUNCTION__
+      __func__
       ));
     return;
   }
@@ -247,7 +248,7 @@ OnReadyToBoot (
     DEBUG ((
       DEBUG_INFO,
       "%a: no GOP instances found - doing nothing (%r)\n",
-      __FUNCTION__,
+      __func__,
       Status
       ));
     return;
@@ -296,7 +297,7 @@ ConsolePrefDxeEntryPoint (
     DEBUG ((
       DEBUG_INFO,
       "%a: no console preference found, defaulting to graphical\n",
-      __FUNCTION__
+      __func__
       ));
     ConsolePref.Console = CONSOLE_PREF_GRAPHICAL;
   }
@@ -308,7 +309,7 @@ ConsolePrefDxeEntryPoint (
     DEBUG ((
       DEBUG_WARN,
       "%a: invalid value for %s, defaulting to graphical\n",
-      __FUNCTION__,
+      __func__,
       CONSOLE_PREF_VARIABLE_NAME
       ));
     ConsolePref.Console = CONSOLE_PREF_GRAPHICAL;
@@ -332,7 +333,7 @@ ConsolePrefDxeEntryPoint (
       DEBUG ((
         DEBUG_ERROR,
         "%a: gRT->SetVariable () failed - %r\n",
-        __FUNCTION__,
+        __func__,
         Status
         ));
       return Status;

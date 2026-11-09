@@ -6,8 +6,7 @@
 
 **/
 
-#ifndef __ATA_ATAPI_PASS_THRU_H__
-#define __ATA_ATAPI_PASS_THRU_H__
+#pragma once
 
 #include <Uefi.h>
 
@@ -147,8 +146,6 @@ struct _ATA_NONBLOCK_TASK {
 //
 #define ATA_ATAPI_TIMEOUT   EFI_TIMER_PERIOD_SECONDS(3)
 #define ATA_SPINUP_TIMEOUT  EFI_TIMER_PERIOD_SECONDS(10)
-
-#define IS_ALIGNED(addr, size)  (((UINTN) (addr) & (size - 1)) == 0)
 
 #define ATA_PASS_THRU_PRIVATE_DATA_FROM_THIS(a) \
   CR (a, \
@@ -1295,5 +1292,3 @@ AtaPioDataInOut (
   IN     UINT64                 Timeout,
   IN     ATA_NONBLOCK_TASK      *Task
   );
-
-#endif

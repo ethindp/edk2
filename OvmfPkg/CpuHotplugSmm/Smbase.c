@@ -10,7 +10,9 @@
 #include <Library/BaseLib.h>                  // CpuPause()
 #include <Library/BaseMemoryLib.h>            // CopyMem()
 #include <Library/DebugLib.h>                 // DEBUG()
+#include <Library/HobLib.h>                   // GetFirstGuidHob()
 #include <Library/LocalApicLib.h>             // SendInitSipiSipi()
+#include <Library/PlatformInitLib.h>          // EFI_HOB_PLATFORM_INFO
 #include <Library/SynchronizationLib.h>       // InterlockedCompareExchange64()
 #include <Register/Intel/SmramSaveStateMap.h> // SMM_DEFAULT_SMBASE
 
@@ -62,7 +64,7 @@ SmbaseAllocatePostSmmPen (
     DEBUG ((
       DEBUG_ERROR,
       "%a: mPostSmmPenSize=%u: %r\n",
-      __FUNCTION__,
+      __func__,
       mPostSmmPenSize,
       Status
       ));
@@ -77,11 +79,11 @@ SmbaseAllocatePostSmmPen (
                             &Address
                             );
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "%a: AllocatePages(): %r\n", __FUNCTION__, Status));
+    DEBUG ((DEBUG_ERROR, "%a: AllocatePages(): %r\n", __func__, Status));
     return Status;
   }
 
-  DEBUG ((DEBUG_INFO, "%a: Post-SMM Pen at 0x%Lx\n", __FUNCTION__, Address));
+  DEBUG ((DEBUG_INFO, "%a: Post-SMM Pen at 0x%Lx\n", __func__, Address));
   *PenAddress = (UINT32)Address;
   return EFI_SUCCESS;
 }
@@ -132,7 +134,10 @@ SmbaseReleasePostSmmPen (
 
   Note that this effects an "SMRAM to SMRAM" copy.
 
-  Additionally, shut the APIC ID gate in FIRST_SMI_HANDLER_CONTEXT.
+  Additionally, shut the APIC ID gate in FIRST_SMI_HANDLER_CONTEXT, and prepare
+  for configuring MSR_IA32_FEATURE_CONTROL. (The latter depends on a GUID HOB,
+  which does not live in SMRAM; however, if we can't trust the HOB list at this
+  stage, we're doomed anyway.)
 
   This function may only be called from the entry point function of the driver,
   and only after PcdQ35SmramAtDefaultSmbase has been determined to be TRUE.
@@ -143,6 +148,7 @@ SmbaseInstallFirstSmiHandler (
   )
 {
   FIRST_SMI_HANDLER_CONTEXT  *Context;
+  EFI_HOB_GUID_TYPE          *GuidHob;
 
   CopyMem (
     (VOID *)(UINTN)(SMM_DEFAULT_SMBASE + SMM_HANDLER_OFFSET),
@@ -152,6 +158,22 @@ SmbaseInstallFirstSmiHandler (
 
   Context             = (VOID *)(UINTN)SMM_DEFAULT_SMBASE;
   Context->ApicIdGate = MAX_UINT64;
+
+  Context->FeatureControl = 0;
+  GuidHob                 = GetFirstGuidHob (&gUefiOvmfPkgPlatformInfoGuid);
+  if (GuidHob != NULL) {
+    EFI_HOB_PLATFORM_INFO  *Info;
+
+    Info = GET_GUID_HOB_DATA (GuidHob);
+    if (Info->FeatureControl) {
+      Context->FeatureControlHighValue = (UINT32)RShiftU64 (
+                                                   Info->FeatureControlValue,
+                                                   32
+                                                   );
+      Context->FeatureControlLowValue = (UINT32)Info->FeatureControlValue;
+      Context->FeatureControl         = 1;
+    }
+  }
 }
 
 /**
@@ -211,7 +233,7 @@ SmbaseRelocate (
     DEBUG ((
       DEBUG_ERROR,
       "%a: ApicId=" FMT_APIC_ID " Smbase=0x%Lx: %r\n",
-      __FUNCTION__,
+      __func__,
       ApicId,
       (UINT64)Smbase,
       Status
@@ -289,7 +311,7 @@ SmbaseRelocate (
     DEBUG ((
       DEBUG_ERROR,
       "%a: ApicId=" FMT_APIC_ID " ApicIdGate=0x%Lx: %r\n",
-      __FUNCTION__,
+      __func__,
       ApicId,
       ExchangeResult,
       Status

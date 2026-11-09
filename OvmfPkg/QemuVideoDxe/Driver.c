@@ -466,15 +466,6 @@ QemuVideoControllerDriverStart (
     goto UninstallGop;
   }
 
- #if defined MDE_CPU_IA32 || defined MDE_CPU_X64
-  if ((Private->Variant == QEMU_VIDEO_BOCHS_MMIO) ||
-      (Private->Variant == QEMU_VIDEO_BOCHS))
-  {
-    InstallVbeShim (Card->Name, Private->GraphicsOutput.Mode->FrameBufferBase);
-  }
-
- #endif
-
   gBS->RestoreTPL (OldTpl);
   return EFI_SUCCESS;
 
@@ -984,6 +975,34 @@ VgaOutb (
   }
 }
 
+STATIC
+UINT8
+VgaInb (
+  QEMU_VIDEO_PRIVATE_DATA  *Private,
+  UINTN                    Reg
+  )
+{
+  EFI_STATUS  Status;
+  UINT8       Data;
+
+  if (Private->Variant == QEMU_VIDEO_BOCHS_MMIO) {
+    Data   = 0;
+    Status = Private->PciIo->Mem.Read (
+                                   Private->PciIo,
+                                   EfiPciIoWidthUint8,
+                                   PCI_BAR_IDX2,
+                                   0x400 - 0x3c0 + Reg,
+                                   1,
+                                   &Data
+                                   );
+    ASSERT_EFI_ERROR (Status);
+  } else {
+    Data = inb (Private, Reg);
+  }
+
+  return Data;
+}
+
 VOID
 InitializeBochsGraphicsMode (
   QEMU_VIDEO_PRIVATE_DATA  *Private,
@@ -998,7 +1017,11 @@ InitializeBochsGraphicsMode (
     ModeData->ColorDepth
     ));
 
-  /* unblank */
+  /* set color mode */
+  VgaOutb (Private, MISC_OUTPUT_REGISTER, 0x01);
+
+  /* reset flip flop + unblank */
+  VgaInb (Private, INPUT_STATUS_1_REGISTER);
   VgaOutb (Private, ATT_ADDRESS_REGISTER, 0x20);
 
   BochsWrite (Private, VBE_DISPI_INDEX_ENABLE, 0);

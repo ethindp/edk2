@@ -95,6 +95,13 @@ TerminalConInReset (
       );
   }
 
+  if (!EFI_ERROR (Status)) {
+    Status = TerminalDevice->SerialIo->SetControl (TerminalDevice->SerialIo, EFI_SERIAL_DATA_TERMINAL_READY|EFI_SERIAL_REQUEST_TO_SEND);
+    if (Status == EFI_UNSUPPORTED) {
+      Status = EFI_SUCCESS;
+    }
+  }
+
   return Status;
 }
 
@@ -109,6 +116,8 @@ TerminalConInReset (
   @retval EFI_SUCCESS         The keystroke information is returned successfully.
   @retval EFI_NOT_READY       There is no keystroke data available.
   @retval EFI_DEVICE_ERROR    The dependent serial device encounters error.
+  @retval EFI_UNSUPPORTED     The device does not support the ability to read
+                              keystroke data.
 
 **/
 EFI_STATUS
@@ -140,9 +149,9 @@ TerminalConInReadKeyStroke (
 /**
   Check if the key already has been registered.
 
-  If both RegsiteredData and InputData is NULL, then ASSERT().
+  If both RegisteredData and InputData is NULL, then ASSERT().
 
-  @param  RegsiteredData           A pointer to a buffer that is filled in with the
+  @param  RegisteredData           A pointer to a buffer that is filled in with the
                                    keystroke state data for the key that was
                                    registered.
   @param  InputData                A pointer to a buffer that is filled in with the
@@ -155,14 +164,27 @@ TerminalConInReadKeyStroke (
 **/
 BOOLEAN
 IsKeyRegistered (
-  IN EFI_KEY_DATA  *RegsiteredData,
+  IN EFI_KEY_DATA  *RegisteredData,
   IN EFI_KEY_DATA  *InputData
   )
 {
-  ASSERT (RegsiteredData != NULL && InputData != NULL);
+  UINT32  ShiftState;
+  UINT32  InputShiftState;
 
-  if ((RegsiteredData->Key.ScanCode    != InputData->Key.ScanCode) ||
-      (RegsiteredData->Key.UnicodeChar != InputData->Key.UnicodeChar))
+  ASSERT (RegisteredData != NULL && InputData != NULL);
+
+  if ((RegisteredData->Key.ScanCode    != InputData->Key.ScanCode) ||
+      (RegisteredData->Key.UnicodeChar != InputData->Key.UnicodeChar))
+  {
+    return FALSE;
+  }
+
+  /* Do not take EFI_SHIFT_STATE_VALID flag into account when comparing shift states */
+  ShiftState      = RegisteredData->KeyState.KeyShiftState | EFI_SHIFT_STATE_VALID;
+  InputShiftState = InputData->KeyState.KeyShiftState | EFI_SHIFT_STATE_VALID;
+
+  if ((ShiftState != InputShiftState) ||
+      (RegisteredData->KeyState.KeyToggleState != InputData->KeyState.KeyToggleState))
   {
     return FALSE;
   }
@@ -237,6 +259,8 @@ TerminalConInResetEx (
   @retval EFI_DEVICE_ERROR         The keystroke information was not returned due
                                    to hardware errors.
   @retval EFI_INVALID_PARAMETER    KeyData is NULL.
+  @retval EFI_UNSUPPORTED          The device does not support the ability to read
+                                   keystroke data.
 
 **/
 EFI_STATUS
@@ -326,6 +350,7 @@ TerminalConInRegisterKeyNotify (
   LIST_ENTRY                     *Link;
   LIST_ENTRY                     *NotifyList;
   TERMINAL_CONSOLE_IN_EX_NOTIFY  *CurrentNotify;
+  UINT32                         ShiftState;
 
   if ((KeyData == NULL) || (NotifyHandle == NULL) || (KeyNotificationFunction == NULL)) {
     return EFI_INVALID_PARAMETER;
@@ -350,6 +375,29 @@ TerminalConInRegisterKeyNotify (
         return EFI_SUCCESS;
       }
     }
+  }
+
+  //
+  // Some components might set only EFI_SHIFT_STATE_VALID flag in KeyShiftState.
+  // Treat such shift state as zero.
+  //
+  ShiftState = KeyData->KeyState.KeyShiftState & ~EFI_SHIFT_STATE_VALID;
+  if ((ShiftState != 0) || (KeyData->KeyState.KeyToggleState != 0)) {
+    //
+    // Shift state and toggle state are not transferred via serial lines, so
+    // the notification functions for the keys with nonzero KeyShiftState or
+    // KeyToggleState will never trigger with this implementation of SimpleTextInEx
+    // protocol.
+    //
+    DEBUG ((
+      DEBUG_VERBOSE,
+      "%a: Attempt to register notifier for the key 0x%04x (scan code 0x%04x) with shift state 0x%08x and toggle state 0x%02x.\n",
+      __func__,
+      KeyData->Key.UnicodeChar,
+      KeyData->Key.ScanCode,
+      KeyData->KeyState.KeyShiftState,
+      KeyData->KeyState.KeyToggleState
+      ));
   }
 
   //
@@ -749,7 +797,8 @@ RawFiFoRemoveOneKey (
     return FALSE;
   }
 
-  *Output = TerminalDevice->RawFiFo->Data[Head];
+  *Output                             = TerminalDevice->RawFiFo->Data[Head];
+  TerminalDevice->RawFiFo->Data[Head] = 0;
 
   TerminalDevice->RawFiFo->Head = (UINT8)((Head + 1) % (RAW_FIFO_MAX_NUMBER + 1));
 
@@ -870,6 +919,7 @@ EfiKeyFiFoForNotifyRemoveOneKey (
   }
 
   CopyMem (Output, &EfiKeyFiFo->Data[Head], sizeof (EFI_INPUT_KEY));
+  ZeroMem (&EfiKeyFiFo->Data[Head], sizeof (EFI_INPUT_KEY));
 
   EfiKeyFiFo->Head = (UINT8)((Head + 1) % (FIFO_MAX_NUMBER + 1));
 
@@ -1021,6 +1071,7 @@ EfiKeyFiFoRemoveOneKey (
   }
 
   CopyMem (Output, &TerminalDevice->EfiKeyFiFo->Data[Head], sizeof (EFI_INPUT_KEY));
+  ZeroMem (&TerminalDevice->EfiKeyFiFo->Data[Head], sizeof (EFI_INPUT_KEY));
 
   TerminalDevice->EfiKeyFiFo->Head = (UINT8)((Head + 1) % (FIFO_MAX_NUMBER + 1));
 
@@ -1131,7 +1182,8 @@ UnicodeFiFoRemoveOneKey (
   Head = TerminalDevice->UnicodeFiFo->Head;
   ASSERT (Head < FIFO_MAX_NUMBER + 1);
 
-  *Output = TerminalDevice->UnicodeFiFo->Data[Head];
+  *Output                                 = TerminalDevice->UnicodeFiFo->Data[Head];
+  TerminalDevice->UnicodeFiFo->Data[Head] = 0;
 
   TerminalDevice->UnicodeFiFo->Head = (UINT8)((Head + 1) % (FIFO_MAX_NUMBER + 1));
 }
@@ -1309,8 +1361,8 @@ UnicodeToEfiKeyFlushState (
 Putty function key map:
   +=========+======+===========+=============+=============+=============+=========+
   |         | EFI  |           |             |             |             |         |
-  |         | Scan |           |             |  Normal     |             |         |
-  |   KEY   | Code |  VT100+   | Xterm R6    |  VT400      | Linux       | SCO     |
+  |         | Scan |  VT100+   |             |  Normal     |             |         |
+  |   KEY   | Code |  VTUTF8   | Xterm R6    |  VT400      | Linux       | SCO     |
   +=========+======+===========+=============+=============+=============+=========+
   | F1      | 0x0B | ESC O P   | ESC O P     | ESC [ 1 1 ~ | ESC [ [ A   | ESC [ M |
   | F2      | 0x0C | ESC O Q   | ESC O Q     | ESC [ 1 2 ~ | ESC [ [ B   | ESC [ N |
@@ -1387,7 +1439,8 @@ UnicodeToEfiKey (
         if ((UnicodeChar == 'O') && ((TerminalDevice->TerminalType == TerminalTypeVt100) ||
                                      (TerminalDevice->TerminalType == TerminalTypeTtyTerm) ||
                                      (TerminalDevice->TerminalType == TerminalTypeXtermR6) ||
-                                     (TerminalDevice->TerminalType == TerminalTypeVt100Plus)))
+                                     (TerminalDevice->TerminalType == TerminalTypeVt100Plus) ||
+                                     (TerminalDevice->TerminalType == TerminalTypeVtUtf8)))
         {
           TerminalDevice->InputState |= INPUT_STATE_O;
           TerminalDevice->ResetState  = RESET_STATE_DEFAULT;
@@ -1561,7 +1614,9 @@ UnicodeToEfiKey (
               Key.ScanCode = SCAN_END;
               break;
           }
-        } else if (TerminalDevice->TerminalType == TerminalTypeVt100Plus) {
+        } else if ((TerminalDevice->TerminalType == TerminalTypeVt100Plus) ||
+                   (TerminalDevice->TerminalType == TerminalTypeVtUtf8))
+        {
           switch (UnicodeChar) {
             case 'P':
               Key.ScanCode = SCAN_F1;
@@ -2105,7 +2160,14 @@ UnicodeToEfiKey (
     }
 
     if (UnicodeChar == DEL) {
-      if (TerminalDevice->TerminalType == TerminalTypeTtyTerm) {
+      //
+      // Modern terminal emulators (xterm, gnome-terminal, etc.) send DEL (0x7f)
+      // for Backspace. Both TtyTerm and VtUtf8 should interpret this as
+      // CHAR_BACKSPACE for proper Backspace functionality in serial console mode.
+      //
+      if ((TerminalDevice->TerminalType == TerminalTypeTtyTerm) ||
+          (TerminalDevice->TerminalType == TerminalTypeVtUtf8))
+      {
         Key.ScanCode    = SCAN_NULL;
         Key.UnicodeChar = CHAR_BACKSPACE;
       } else {

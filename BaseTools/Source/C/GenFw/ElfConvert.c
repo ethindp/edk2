@@ -7,10 +7,10 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#include "WinNtInclude.h"
-
 #ifndef __GNUC__
+#define RUNTIME_FUNCTION  _WINNT_DUP_RUNTIME_FUNCTION
 #include <windows.h>
+#undef RUNTIME_FUNCTION
 #include <io.h>
 #endif
 #include <stdio.h>
@@ -210,6 +210,11 @@ ConvertElf (
   if (!ElfFunctions.WriteSections (SECTION_HII)) {
     return FALSE;
   }
+  if (mBuildIdFlag) {
+    if (!ElfFunctions.WriteSections (SECTION_BUILD_ID)) {
+      return FALSE;
+    }
+  }
 
   //
   // Translate and write relocations.
@@ -222,6 +227,14 @@ ConvertElf (
   //
   VerboseMsg ("Write debug info.");
   ElfFunctions.WriteDebug ();
+
+  //
+  // For PRM Driver to Write export info.
+  //
+  if (mExportFlag) {
+    VerboseMsg ("Write export info.");
+    ElfFunctions.WriteExport ();
+  }
 
   //
   // Make sure image size is correct before returning the new image.

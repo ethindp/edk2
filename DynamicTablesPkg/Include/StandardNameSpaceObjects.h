@@ -1,6 +1,6 @@
 /** @file
 
-  Copyright (c) 2017 - 2019, ARM Limited. All rights reserved.
+  Copyright (c) 2017 - 2026, Arm Limited. All rights reserved.
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -10,11 +10,11 @@
     - Std or STD - Standard
 **/
 
-#ifndef STANDARD_NAMESPACE_OBJECTS_H_
-#define STANDARD_NAMESPACE_OBJECTS_H_
+#pragma once
 
 #include <AcpiTableGenerator.h>
 #include <SmbiosTableGenerator.h>
+#include <AbstractToken.h>
 
 #pragma pack(1)
 
@@ -27,9 +27,17 @@
     to identify a Configuration Manager object.
 
   This can be used to differentiate between instances of
-  objects of the same types. The identification scheme is
-  implementation defined and is defined by the Configuration
-  Manager.
+  objects of the same types. When bit 0 is clear, the
+  identification scheme is implementation defined and is
+  defined by the Configuration Manager.
+
+  Tokens are also used by table generators to look up
+  previously generated tables. To aid with this, the concept
+  of an abstract token exists, allowing generators to
+  define arbitrary tokens to identify generated tables.
+  When bit 1 is set, the token is an abstract token and
+  refers to generated tables. The format of an abstract
+  token is shown below.
 
   Typically the token is used to identify a specific instance
   from a set of objects in a call to the GetObject()/SetObject(),
@@ -39,6 +47,20 @@
         not identify any object.
 **/
 typedef UINTN CM_OBJECT_TOKEN;
+
+/**
+  A type representing a SMBIOS structure/table type.
+
+  Types 0 through 127 (7Fh) are reserved for and defined by the
+  SMBIOS specification.
+  Types 128 through 256 (80h to FFh) are available for system and
+  OEM-specific information.
+
+  Note: This Dynamic SMBIOS table generation implementation defines
+  TableType FFh as a NULL table which is used by the Dynamic
+  SMBIOS table dispatcher to terminate the dependency sequence.
+*/
+typedef UINT8 SMBIOS_TABLE_TYPE;
 
 /** The ESTD_OBJECT_ID enum describes the Object IDs
     in the Standard Namespace.
@@ -105,6 +127,14 @@ typedef struct CmAStdObjAcpiTableInfo {
   /// Generators shall populate this information using the revision of the
   /// Configuration Manager (CM_STD_OBJ_CONFIGURATION_MANAGER_INFO.Revision).
   UINT32    OemRevision;
+
+  /// The minor revision of an ACPI table if required by the table.
+  /// Note: If this field is not populated (has value of Zero), then the
+  /// Generators shall populate this information based on the latest minor
+  /// revision of the table that is supported by the generator.
+  /// e.g. This field can be used to specify the minor revision to be set
+  /// for the FADT table.
+  UINT8     MinorRevision;
 } CM_STD_OBJ_ACPI_TABLE_INFO;
 
 /** A structure used to describe the SMBIOS table generators to be invoked.
@@ -119,6 +149,9 @@ typedef struct CmAStdObjAcpiTableInfo {
   to NULL.
 */
 typedef struct CmStdObjSmbiosTableInfo {
+  /// SMBIOS Structure/Table Type
+  SMBIOS_TABLE_TYPE            TableType;
+
   /// The SMBIOS Table Generator ID
   SMBIOS_TABLE_GENERATOR_ID    TableGeneratorId;
 
@@ -127,5 +160,3 @@ typedef struct CmStdObjSmbiosTableInfo {
 } CM_STD_OBJ_SMBIOS_TABLE_INFO;
 
 #pragma pack()
-
-#endif // STANDARD_NAMESPACE_OBJECTS_H_

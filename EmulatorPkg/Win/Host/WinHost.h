@@ -1,6 +1,6 @@
 /**@file
 
-Copyright (c) 2006 - 2018, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2006 - 2022, Intel Corporation. All rights reserved.<BR>
 (C) Copyright 2020 Hewlett Packard Enterprise Development LP<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -13,8 +13,7 @@ Abstract:
 
 **/
 
-#ifndef _HOST_H_
-#define _HOST_H_
+#pragma once
 
 #include <stdio.h>
 #include <time.h>
@@ -26,6 +25,7 @@ Abstract:
 #include <Guid/FileSystemInfo.h>
 #include <Guid/FileSystemVolumeLabelInfo.h>
 #include <Ppi/EmuThunk.h>
+#include <Ppi/Reset2.h>
 #include <Protocol/EmuThunk.h>
 #include <Protocol/SimpleFileSystem.h>
 
@@ -210,5 +210,3 @@ extern EMU_IO_THUNK_PROTOCOL  mWinNtWndThunkIo;
 extern EMU_IO_THUNK_PROTOCOL  mWinNtFileSystemThunkIo;
 extern EMU_IO_THUNK_PROTOCOL  mWinNtBlockIoThunkIo;
 extern EMU_IO_THUNK_PROTOCOL  mWinNtSnpThunkIo;
-
-#endif

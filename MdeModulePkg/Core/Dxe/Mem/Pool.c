@@ -213,7 +213,7 @@ CoreInternalAllocatePool (
   // If it's not a valid type, fail it
   //
   if (((PoolType >= EfiMaxMemoryType) && (PoolType < MEMORY_TYPE_OEM_RESERVED_MIN)) ||
-      (PoolType == EfiConventionalMemory) || (PoolType == EfiPersistentMemory))
+      (PoolType == EfiConventionalMemory) || (PoolType == EfiPersistentMemory) || (PoolType == EfiUnacceptedMemoryType))
   {
     return EFI_INVALID_PARAMETER;
   }
@@ -370,7 +370,7 @@ CoreAllocatePoolI (
 
   ASSERT_LOCKED (&mPoolMemoryLock);
 
-  if ((PoolType == EfiACPIReclaimMemory) ||
+  if ((PoolType == EfiReservedMemoryType) ||
       (PoolType == EfiACPIMemoryNVS) ||
       (PoolType == EfiRuntimeServicesCode) ||
       (PoolType == EfiRuntimeServicesData))
@@ -378,6 +378,17 @@ CoreAllocatePoolI (
     Granularity = RUNTIME_PAGE_ALLOCATION_GRANULARITY;
   } else {
     Granularity = DEFAULT_PAGE_ALLOCATION_GRANULARITY;
+  }
+
+  //
+  // The heap guard system does not support non-EFI_PAGE_SIZE alignments.
+  // Architectures that require larger RUNTIME_PAGE_ALLOCATION_GRANULARITY
+  // will have the runtime memory regions unguarded. OSes do not
+  // map guard pages anyway, so this is a minimal loss. Not guarding prevents
+  // alignment mismatches
+  //
+  if (Granularity != EFI_PAGE_SIZE) {
+    NeedGuard = FALSE;
   }
 
   //
@@ -416,6 +427,10 @@ CoreAllocatePoolI (
     NoPages  = EFI_SIZE_TO_PAGES (Size) + EFI_SIZE_TO_PAGES (Granularity) - 1;
     NoPages &= ~(UINTN)(EFI_SIZE_TO_PAGES (Granularity) - 1);
     Head     = CoreAllocatePoolPagesI (PoolType, NoPages, Granularity, NeedGuard);
+    if (Head == NULL) {
+      return NULL;
+    }
+
     if (NeedGuard) {
       Head = AdjustPoolHeadA ((EFI_PHYSICAL_ADDRESS)(UINTN)Head, NoPages, Size);
     }
@@ -753,7 +768,7 @@ CoreFreePoolI (
   Pool->Used -= Size;
   DEBUG ((DEBUG_POOL, "FreePool: %p (len %lx) %,ld\n", Head->Data, (UINT64)(Head->Size - POOL_OVERHEAD), (UINT64)Pool->Used));
 
-  if ((Head->Type == EfiACPIReclaimMemory) ||
+  if ((Head->Type == EfiReservedMemoryType) ||
       (Head->Type == EfiACPIMemoryNVS) ||
       (Head->Type == EfiRuntimeServicesCode) ||
       (Head->Type == EfiRuntimeServicesData))
@@ -783,7 +798,7 @@ CoreFreePoolI (
     NoPages  = EFI_SIZE_TO_PAGES (Size) + EFI_SIZE_TO_PAGES (Granularity) - 1;
     NoPages &= ~(UINTN)(EFI_SIZE_TO_PAGES (Granularity) - 1);
     if (IsGuarded) {
-      Head = AdjustPoolHeadF ((EFI_PHYSICAL_ADDRESS)(UINTN)Head);
+      Head = AdjustPoolHeadF ((EFI_PHYSICAL_ADDRESS)(UINTN)Head, NoPages, Size);
       CoreFreePoolPagesWithGuard (
         Pool->MemoryType,
         (EFI_PHYSICAL_ADDRESS)(UINTN)Head,

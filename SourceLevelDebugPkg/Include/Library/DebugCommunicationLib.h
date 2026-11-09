@@ -6,8 +6,7 @@
 
 **/
 
-#ifndef __DEBUG_COMMUNICATION_LIB_H__
-#define __DEBUG_COMMUNICATION_LIB_H__
+#pragma once
 
 typedef VOID *DEBUG_PORT_HANDLE;
 
@@ -71,7 +70,7 @@ DebugPortInitialize (
   );
 
 /**
-  Read data from debug device and save the datas in buffer.
+  Read data from debug device and save the data in a buffer.
 
   Reads NumberOfBytes data bytes from a debug device into the buffer
   specified by Buffer. The number of bytes actually read is returned.
@@ -139,5 +138,3 @@ EFIAPI
 DebugPortPollBuffer (
   IN DEBUG_PORT_HANDLE  Handle
   );
-
-#endif

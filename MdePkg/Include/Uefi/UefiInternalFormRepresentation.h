@@ -12,10 +12,12 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
+#pragma once
+
 #ifndef __UEFI_INTERNAL_FORMREPRESENTATION_H__
 #define __UEFI_INTERNAL_FORMREPRESENTATION_H__
 
-#include <Guid/HiiFormMapMethodGuid.h>
+  #include <Guid/HiiFormMapMethodGuid.h>
 
 ///
 /// The following types are currently defined:
@@ -33,7 +35,7 @@ typedef UINT16 EFI_DEFAULT_ID;
 
 typedef UINT32 EFI_HII_FONT_STYLE;
 
-#pragma pack(1)
+  #pragma pack(1)
 
 //
 // Definitions for Package Lists and Package Headers
@@ -1585,7 +1587,7 @@ typedef struct _EFI_IFR_MAP {
 } EFI_IFR_MAP;
 //
 // Definitions for Keyboard Package
-// Releated definitions are in Section of EFI_HII_DATABASE_PROTOCOL
+// Related definitions are in Section of EFI_HII_DATABASE_PROTOCOL
 //
 
 ///
@@ -1696,7 +1698,17 @@ typedef enum {
   EfiKeyF12,
   EfiKeyPrint,
   EfiKeySLck,
-  EfiKeyPause
+  EfiKeyPause,
+  EfiKeyIntl0,
+  EfiKeyIntl1,
+  EfiKeyIntl2,
+  EfiKeyIntl3,
+  EfiKeyIntl4,
+  EfiKeyIntl5,
+  EfiKeyIntl6,
+  EfiKeyIntl7,
+  EfiKeyIntl8,
+  EfiKeyIntl9
 } EFI_KEY;
 
 typedef struct {
@@ -2105,7 +2117,7 @@ typedef struct _EFI_HII_AIBT_SKIP2_BLOCK {
   UINT16    SkipCount;
 } EFI_HII_AIBT_SKIP2_BLOCK;
 
-#pragma pack()
+  #pragma pack()
 
 ///
 /// References to string tokens must use this macro to enable scanning for

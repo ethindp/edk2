@@ -8,8 +8,7 @@
 
 **/
 
-#ifndef _VIRTIO_RNG_DXE_H_
-#define _VIRTIO_RNG_DXE_H_
+#pragma once
 
 #include <Protocol/ComponentName.h>
 #include <Protocol/DriverBinding.h>
@@ -33,9 +32,8 @@ typedef struct {
   VRING                     Ring;           // VirtioRingInit       2
   EFI_RNG_PROTOCOL          Rng;            // VirtioRngInit        1
   VOID                      *RingMap;       // VirtioRingMap        2
+  BOOLEAN                   Ready;
 } VIRTIO_RNG_DEV;
 
 #define VIRTIO_ENTROPY_SOURCE_FROM_RNG(RngPointer) \
           CR (RngPointer, VIRTIO_RNG_DEV, Rng, VIRTIO_RNG_SIG)
-
-#endif

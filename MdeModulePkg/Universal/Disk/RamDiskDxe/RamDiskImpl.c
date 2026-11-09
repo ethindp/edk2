@@ -404,7 +404,8 @@ HiiCreateRamDisk (
           );
       } while (Key.UnicodeChar != CHAR_CARRIAGE_RETURN);
 
-      return EFI_DEVICE_ERROR;
+      Status = EFI_DEVICE_ERROR;
+      goto ErrorExit;
     }
   }
 
@@ -431,7 +432,7 @@ HiiCreateRamDisk (
         );
     } while (Key.UnicodeChar != CHAR_CARRIAGE_RETURN);
 
-    return Status;
+    goto ErrorExit;
   }
 
   //
@@ -442,6 +443,10 @@ HiiCreateRamDisk (
   PrivateData->CreateMethod = RamDiskCreateHii;
 
   return EFI_SUCCESS;
+
+ErrorExit:
+  gBS->FreePool (StartingAddr);
+  return Status;
 }
 
 /**
@@ -472,10 +477,16 @@ UpdateMainForm (
   // Init OpCode Handle
   //
   StartOpCodeHandle = HiiAllocateOpCodeHandle ();
-  ASSERT (StartOpCodeHandle != NULL);
+  if (StartOpCodeHandle == NULL) {
+    ASSERT (StartOpCodeHandle != NULL);
+    return;
+  }
 
   EndOpCodeHandle = HiiAllocateOpCodeHandle ();
-  ASSERT (EndOpCodeHandle != NULL);
+  if (EndOpCodeHandle == NULL) {
+    ASSERT (EndOpCodeHandle != NULL);
+    goto Exit;
+  }
 
   //
   // Create Hii Extend Label OpCode as the start opcode
@@ -547,8 +558,9 @@ UpdateMainForm (
     EndOpCodeHandle
     );
 
-  HiiFreeOpCodeHandle (StartOpCodeHandle);
   HiiFreeOpCodeHandle (EndOpCodeHandle);
+Exit:
+  HiiFreeOpCodeHandle (StartOpCodeHandle);
 }
 
 /**

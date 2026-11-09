@@ -1,6 +1,7 @@
 /** @file
   ProcessorSubClass.c
 
+  Copyright (c) 2022, Ampere Computing LLC. All rights reserved.
   Copyright (c) 2021, NUVIA Inc. All rights reserved.<BR>
   Copyright (c) 2015, Hisilicon Limited. All rights reserved.
   Copyright (c) 2015, Linaro Limited. All rights reserved.
@@ -11,10 +12,8 @@
 #include <Uefi.h>
 #include <Protocol/Smbios.h>
 #include <IndustryStandard/ArmCache.h>
-#include <IndustryStandard/ArmStdSmc.h>
 #include <IndustryStandard/SmBios.h>
 #include <Library/ArmLib.h>
-#include <Library/ArmSmcLib.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
@@ -67,12 +66,19 @@ SMBIOS_TABLE_TYPE4  mSmbiosProcessorTableTemplate = {
   ProcessorFamilyIndicatorFamily2, // ProcessorFamily
   2,                               // ProcessorManufacture
   {                           // ProcessorId
+ #ifdef MDE_CPU_AARCH64
+    0,                        // SocId
+    0,                        // SipId
+    0,                        // SipBankIndex
+    0                         // SocRevision
+ #else
     {                         // Signature
       0
     },
     {                         // FeatureFlags
       0
     }
+ #endif
   },
   3,                          // ProcessorVersion
   {                           // Voltage
@@ -96,7 +102,9 @@ SMBIOS_TABLE_TYPE4  mSmbiosProcessorTableTemplate = {
   ProcessorFamilyARM,         // ProcessorFamily2
   0,                          // CoreCount2
   0,                          // EnabledCoreCount2
-  0                           // ThreadCount2
+  0,                          // ThreadCount2
+  0,                          // ThreadEnabled
+  7                           // SocketType
 };
 
 /** Sets the HII variable `StringId` is `Pcd` isn't empty.
@@ -191,10 +199,10 @@ ConfigureCacheArchitectureInformation (
   OUT    SMBIOS_TABLE_TYPE7  *Type7Record
   )
 {
-  UINT8   Associativity;
-  UINT32  CacheSize32;
-  UINT16  CacheSize16;
-  UINT64  CacheSize64;
+  UINT8                Associativity;
+  SMBIOS_CACHE_SIZE_2  CacheSize32;
+  SMBIOS_CACHE_SIZE    CacheSize16;
+  UINT64               CacheSize64;
 
   if (!DataCache && !UnifiedCache) {
     Type7Record->SystemCacheType = CacheTypeInstruction;
@@ -222,19 +230,26 @@ ConfigureCacheArchitectureInformation (
 
   // Encode the cache size into the format SMBIOS wants
   if (CacheSize64 < MAX_INT16) {
-    CacheSize16 = CacheSize64;
-    CacheSize32 = CacheSize16;
+    CacheSize16.Size           = CacheSize64;
+    CacheSize16.Granularity64K = 0;
+    CacheSize32.Size           = CacheSize64;
+    CacheSize32.Granularity64K = 0;
   } else if ((CacheSize64 / 64) < MAX_INT16) {
-    CacheSize16 = (1 << 15) | (CacheSize64 / 64);
-    CacheSize32 = (1 << 31) | (CacheSize64 / 64);
+    CacheSize16.Size           = CacheSize64 / 64;
+    CacheSize16.Granularity64K = 1;
+    CacheSize32.Size           = CacheSize64 / 64;
+    CacheSize32.Granularity64K = 1;
   } else {
     if ((CacheSize64 / 1024) <= 2047) {
-      CacheSize32 = CacheSize64;
+      CacheSize32.Size           = CacheSize64;
+      CacheSize32.Granularity64K = 0;
     } else {
-      CacheSize32 = (1 << 31) | (CacheSize64 / 64);
+      CacheSize32.Size           = CacheSize64 / 64;
+      CacheSize32.Granularity64K = 1;
     }
 
-    CacheSize16 = -1;
+    CacheSize16.Size           = 0x7fff;
+    CacheSize16.Granularity64K = 1;
   }
 
   Type7Record->MaximumCacheSize  = CacheSize16;
@@ -480,12 +495,14 @@ AllocateType4AndSetProcessorInformationStrings (
   EFI_STRING_ID  SerialNumber;
   EFI_STRING_ID  AssetTag;
   EFI_STRING_ID  PartNumber;
+  EFI_STRING_ID  SocketType;
   EFI_STRING     ProcessorStr;
   EFI_STRING     ProcessorManuStr;
   EFI_STRING     ProcessorVersionStr;
   EFI_STRING     SerialNumberStr;
   EFI_STRING     AssetTagStr;
   EFI_STRING     PartNumberStr;
+  EFI_STRING     SocketTypeStr;
   CHAR8          *OptionalStrStart;
   CHAR8          *StrStart;
   UINTN          ProcessorStrLen;
@@ -494,6 +511,7 @@ AllocateType4AndSetProcessorInformationStrings (
   UINTN          SerialNumberStrLen;
   UINTN          AssetTagStrLen;
   UINTN          PartNumberStrLen;
+  UINTN          SocketTypeStrLen;
   UINTN          TotalSize;
   UINTN          StringBufferSize;
 
@@ -504,15 +522,16 @@ AllocateType4AndSetProcessorInformationStrings (
   SerialNumberStr     = NULL;
   AssetTagStr         = NULL;
   PartNumberStr       = NULL;
+  SocketTypeStr       = NULL;
 
   ProcessorManu    = STRING_TOKEN (STR_PROCESSOR_MANUFACTURE);
   ProcessorVersion = STRING_TOKEN (STR_PROCESSOR_VERSION);
   SerialNumber     = STRING_TOKEN (STR_PROCESSOR_SERIAL_NUMBER);
   AssetTag         = STRING_TOKEN (STR_PROCESSOR_ASSET_TAG);
   PartNumber       = STRING_TOKEN (STR_PROCESSOR_PART_NUMBER);
+  SocketType       = STRING_TOKEN (STR_PROCESSOR_SOCKET_TYPE);
 
   SET_HII_STRING_IF_PCD_NOT_EMPTY (PcdProcessorManufacturer, ProcessorManu);
-  SET_HII_STRING_IF_PCD_NOT_EMPTY (PcdProcessorVersion, ProcessorVersion);
   SET_HII_STRING_IF_PCD_NOT_EMPTY (PcdProcessorAssetTag, AssetTag);
 
   if (StrLen ((CHAR16 *)FixedPcdGetPtr (PcdProcessorSerialNumber)) > 0) {
@@ -525,6 +544,18 @@ AllocateType4AndSetProcessorInformationStrings (
     HiiSetString (mHiiHandle, PartNumber, (CHAR16 *)FixedPcdGetPtr (PcdProcessorPartNumber), NULL);
   } else {
     OemUpdateSmbiosInfo (mHiiHandle, PartNumber, ProcessorPartNumType04);
+  }
+
+  if (StrLen ((CHAR16 *)FixedPcdGetPtr (PcdProcessorVersion)) > 0) {
+    HiiSetString (mHiiHandle, ProcessorVersion, (CHAR16 *)FixedPcdGetPtr (PcdProcessorVersion), NULL);
+  } else {
+    OemUpdateSmbiosInfo (mHiiHandle, ProcessorVersion, ProcessorVersionType04);
+  }
+
+  if (StrLen ((CHAR16 *)FixedPcdGetPtr (PcdProcessorSocketType)) > 0) {
+    HiiSetString (mHiiHandle, SocketType, (CHAR16 *)FixedPcdGetPtr (PcdProcessorSocketType), NULL);
+  } else {
+    OemUpdateSmbiosInfo (mHiiHandle, SocketType, ProcessorSocketTypeType04);
   }
 
   // Processor Designation
@@ -561,13 +592,17 @@ AllocateType4AndSetProcessorInformationStrings (
   PartNumberStr    = HiiGetPackageString (&gEfiCallerIdGuid, PartNumber, NULL);
   PartNumberStrLen = StrLen (PartNumberStr);
 
+  SocketTypeStr    = HiiGetPackageString (&gEfiCallerIdGuid, SocketType, NULL);
+  SocketTypeStrLen = StrLen (SocketTypeStr);
+
   TotalSize = sizeof (SMBIOS_TABLE_TYPE4) +
               ProcessorStrLen        + 1 +
               ProcessorManuStrLen    + 1 +
               ProcessorVersionStrLen + 1 +
               SerialNumberStrLen     + 1 +
               AssetTagStrLen         + 1 +
-              PartNumberStrLen       + 1 + 1;
+              PartNumberStrLen       + 1 +
+              SocketTypeStrLen       + 1 + 1;
 
   *Type4Record = AllocateZeroPool (TotalSize);
   if (*Type4Record == NULL) {
@@ -619,6 +654,13 @@ AllocateType4AndSetProcessorInformationStrings (
     PartNumberStrLen + 1
     );
 
+  StrStart += PartNumberStrLen + 1;
+  UnicodeStrToAsciiStrS (
+    SocketTypeStr,
+    StrStart,
+    SocketTypeStrLen + 1
+    );
+
 Exit:
   FreePool (ProcessorStr);
   FreePool (ProcessorManuStr);
@@ -626,6 +668,7 @@ Exit:
   FreePool (SerialNumberStr);
   FreePool (AssetTagStr);
   FreePool (PartNumberStr);
+  FreePool (SocketTypeStr);
 
   return Status;
 }
@@ -703,11 +746,11 @@ AddSmbiosProcessorTypeTable (
   Type4Record->L1CacheHandle     = L1CacheHandle;
   Type4Record->L2CacheHandle     = L2CacheHandle;
   Type4Record->L3CacheHandle     = L3CacheHandle;
-  Type4Record->CoreCount         = MiscProcessorData.CoreCount;
+  Type4Record->CoreCount         = MIN (MiscProcessorData.CoreCount, MAX_UINT8);
   Type4Record->CoreCount2        = MiscProcessorData.CoreCount;
-  Type4Record->EnabledCoreCount  = MiscProcessorData.CoresEnabled;
+  Type4Record->EnabledCoreCount  = MIN (MiscProcessorData.CoresEnabled, MAX_UINT8);
   Type4Record->EnabledCoreCount2 = MiscProcessorData.CoresEnabled;
-  Type4Record->ThreadCount       = MiscProcessorData.ThreadCount;
+  Type4Record->ThreadCount       = MIN (MiscProcessorData.ThreadCount, MAX_UINT8);
   Type4Record->ThreadCount2      = MiscProcessorData.ThreadCount;
 
   Type4Record->CurrentSpeed  = GetCpuFrequency (ProcessorIndex);
@@ -735,7 +778,7 @@ AddSmbiosProcessorTypeTable (
     DEBUG ((
       DEBUG_ERROR,
       "[%a]:[%dL] Smbios Type04 Table Log Failed! %r \n",
-      __FUNCTION__,
+      __func__,
       DEBUG_LINE_NUMBER,
       Status
       ));

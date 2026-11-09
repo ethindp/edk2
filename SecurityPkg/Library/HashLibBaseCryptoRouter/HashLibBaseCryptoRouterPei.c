@@ -106,7 +106,10 @@ CheckSupportedHashMaskMismatch (
   HASH_INTERFACE_HOB  *HashInterfaceHobLast;
 
   HashInterfaceHobLast = InternalGetHashInterfaceHob (&gZeroGuid);
-  ASSERT (HashInterfaceHobLast != NULL);
+  if (HashInterfaceHobLast == NULL) {
+    ASSERT (HashInterfaceHobLast != NULL);
+    return;
+  }
 
   if ((HashInterfaceHobLast->SupportedHashMask != 0) &&
       (HashInterfaceHobCurrent->SupportedHashMask != HashInterfaceHobLast->SupportedHashMask))
@@ -139,6 +142,7 @@ HashStart (
   HASH_HANDLE         *HashCtx;
   UINTN               Index;
   UINT32              HashMask;
+  EFI_STATUS          Status;
 
   HashInterfaceHob = InternalGetHashInterfaceHob (&gEfiCallerIdGuid);
   if (HashInterfaceHob == NULL) {
@@ -152,12 +156,19 @@ HashStart (
   CheckSupportedHashMaskMismatch (HashInterfaceHob);
 
   HashCtx = AllocatePool (sizeof (*HashCtx) * HashInterfaceHob->HashInterfaceCount);
-  ASSERT (HashCtx != NULL);
+  if (HashCtx == NULL) {
+    ASSERT (HashCtx != NULL);
+    return EFI_OUT_OF_RESOURCES;
+  }
 
   for (Index = 0; Index < HashInterfaceHob->HashInterfaceCount; Index++) {
-    HashMask = Tpm2GetHashMaskFromAlgo (&HashInterfaceHob->HashInterface[Index].HashGuid);
+    HashMask = Tpm2GetHashMaskFromGuid (&HashInterfaceHob->HashInterface[Index].HashGuid);
     if ((HashMask & PcdGet32 (PcdTpm2HashMask)) != 0) {
-      HashInterfaceHob->HashInterface[Index].HashInit (&HashCtx[Index]);
+      Status = HashInterfaceHob->HashInterface[Index].HashInit (&HashCtx[Index]);
+      if (EFI_ERROR (Status)) {
+        FreePool (HashCtx);
+        return Status;
+      }
     }
   }
 
@@ -202,7 +213,7 @@ HashUpdate (
   HashCtx = (HASH_HANDLE *)HashHandle;
 
   for (Index = 0; Index < HashInterfaceHob->HashInterfaceCount; Index++) {
-    HashMask = Tpm2GetHashMaskFromAlgo (&HashInterfaceHob->HashInterface[Index].HashGuid);
+    HashMask = Tpm2GetHashMaskFromGuid (&HashInterfaceHob->HashInterface[Index].HashGuid);
     if ((HashMask & PcdGet32 (PcdTpm2HashMask)) != 0) {
       HashInterfaceHob->HashInterface[Index].HashUpdate (HashCtx[Index], DataToHash, DataToHashLen);
     }
@@ -254,7 +265,7 @@ HashCompleteAndExtend (
   ZeroMem (DigestList, sizeof (*DigestList));
 
   for (Index = 0; Index < HashInterfaceHob->HashInterfaceCount; Index++) {
-    HashMask = Tpm2GetHashMaskFromAlgo (&HashInterfaceHob->HashInterface[Index].HashGuid);
+    HashMask = Tpm2GetHashMaskFromGuid (&HashInterfaceHob->HashInterface[Index].HashGuid);
     if ((HashMask & PcdGet32 (PcdTpm2HashMask)) != 0) {
       HashInterfaceHob->HashInterface[Index].HashUpdate (HashCtx[Index], DataToHash, DataToHashLen);
       HashInterfaceHob->HashInterface[Index].HashFinal (HashCtx[Index], &Digest);
@@ -305,8 +316,16 @@ HashAndExtend (
 
   CheckSupportedHashMaskMismatch (HashInterfaceHob);
 
-  HashStart (&HashHandle);
-  HashUpdate (HashHandle, DataToHash, DataToHashLen);
+  Status = HashStart (&HashHandle);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Status = HashUpdate (HashHandle, DataToHash, DataToHashLen);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
   Status = HashCompleteAndExtend (HashHandle, PcrIndex, NULL, 0, DigestList);
 
   return Status;
@@ -336,7 +355,7 @@ RegisterHashInterfaceLib (
   //
   // Check allow
   //
-  HashMask     = Tpm2GetHashMaskFromAlgo (&HashInterface->HashGuid);
+  HashMask     = Tpm2GetHashMaskFromGuid (&HashInterface->HashGuid);
   Tpm2HashMask = PcdGet32 (PcdTpm2HashMask);
 
   if ((Tpm2HashMask != 0) &&

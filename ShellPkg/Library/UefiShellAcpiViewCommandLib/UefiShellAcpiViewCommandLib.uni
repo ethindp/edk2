@@ -1,6 +1,6 @@
 // /**
 //
-// Copyright (c) 2016 - 2020, Arm Limited. All rights reserved.<BR>
+// Copyright (c) 2016 - 2023, Arm Limited. All rights reserved.<BR>
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 //
 // Module Name:
@@ -80,6 +80,7 @@
 "     Extra A. Particular types:\r\n"
 "       AEST  - Arm Error Source Table\r\n"
 "       APIC  - Multiple APIC Description Table (MADT)\r\n"
+"       APMT  - Arm Performance Monitoring Unit Table\r\n"
 "       BGRT  - Boot Graphics Resource Table\r\n"
 "       DBG2  - Debug Port Table 2\r\n"
 "       DSDT  - Differentiated System Description Table\r\n"
@@ -88,7 +89,9 @@
 "       HMAT  - Heterogeneous Memory Attributes Table\r\n"
 "       IORT  - IO Remapping Table\r\n"
 "       MCFG  - Memory Mapped Config Space Base Address Description Table\r\n"
+"       MPAM  - Memory System Resource Partitioning and Monitoring Table\r\n"
 "       PPTT  - Processor Properties Topology Table\r\n"
+"       RIMT  - RISC-V IO Mapping Table\r\n"
 "       RSDP  - Root System Description Pointer\r\n"
 "       SLIT  - System Locality Information Table\r\n"
 "       SPCR  - Serial Port Console Redirection Table\r\n"

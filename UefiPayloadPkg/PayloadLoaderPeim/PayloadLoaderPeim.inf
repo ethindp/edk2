@@ -29,7 +29,6 @@
   ElfLib/ElfCommon.h
   ElfLib/Elf32.h
   ElfLib/Elf64.h
-  ElfLib/ElfLibInternal.h
   ElfLib/ElfLib.c
   ElfLib/Elf32Lib.c
   ElfLib/Elf64Lib.c
@@ -37,6 +36,7 @@
 [Packages]
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
+  PcAtChipsetPkg/PcAtChipsetPkg.dec
   UefiPayloadPkg/UefiPayloadPkg.dec
 
 [LibraryClasses]
@@ -51,9 +51,24 @@
 
 [Ppis]
   gEfiPeiLoadFilePpiGuid                 ## PRODUCES
+  gEfiEndOfPeiSignalPpiGuid              ## CONSUMES
+  gUplReadyToPayloadPpiGuid              ## PRODUCES
+
+[Pcd]
+  gPcAtChipsetPkgTokenSpaceGuid.PcdRtcIndexRegister
+  gPcAtChipsetPkgTokenSpaceGuid.PcdRtcTargetRegister
 
 [Guids]
   gUniversalPayloadExtraDataGuid         ## PRODUCES
+  gUniversalPayloadBaseGuid              ## PRODUCES
 
 [Depex]
   TRUE
+
+[BuildOptions]
+  MSFT:*_*_*_CC_FLAGS = /wd4244
+  GCC:*_*_IA32_CC_FLAGS    = -Wno-error=pointer-to-int-cast -Wno-error=int-to-pointer-cast
+  GCC:*_*_X64_CC_FLAGS     = -Wno-error=pointer-to-int-cast -Wno-error=int-to-pointer-cast
+  GCC:*_*_AARCH64_CC_FLAGS = -Wno-error=pointer-to-int-cast -Wno-error=int-to-pointer-cast
+  GCC:*_*_RISCV64_CC_FLAGS = -Wno-error=pointer-to-int-cast -Wno-error=int-to-pointer-cast
+  GCC:*_*_LOONGARCH64_CC_FLAGS = -Wno-error=pointer-to-int-cast -Wno-error=int-to-pointer-cast

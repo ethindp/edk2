@@ -77,7 +77,7 @@ IScsiDhcpExtractRootPath (
       Fields[FieldIndex].Str = &TmpStr[Index];
     }
 
-    while ((TmpStr[Index] != ISCSI_ROOT_PATH_FIELD_DELIMITER) && (Index < Length)) {
+    while ((Index < Length) && (TmpStr[Index] != ISCSI_ROOT_PATH_FIELD_DELIMITER)) {
       Index++;
     }
 
@@ -128,7 +128,7 @@ IScsiDhcpExtractRootPath (
     }
 
     CopyMem (&ConfigNvData->TargetUrl, Field->Str, Field->Len);
-    ConfigNvData->TargetUrl[Field->Len + 1] = '\0';
+    ConfigNvData->TargetUrl[Field->Len] = '\0';
   } else {
     ConfigNvData->DnsMode = FALSE;
     ZeroMem (ConfigNvData->TargetUrl, sizeof (ConfigNvData->TargetUrl));

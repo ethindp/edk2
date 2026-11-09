@@ -8,8 +8,7 @@
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#ifndef _SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_H_
-#define _SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_H_
+#pragma once
 
 #include <IndustryStandard/Acpi.h>
 
@@ -23,6 +22,7 @@
 ///
 #define EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_REVISION  0x02
 
+#define EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_REVISION_4  0x04
 ///
 /// Serial Port Console Redirection Table Format
 ///
@@ -49,6 +49,37 @@ typedef struct {
   UINT8                                     PciSegment;
   UINT32                                    Reserved3;
 } EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE;
+
+///
+/// Serial Port Console Redirection Table Format Revision 4
+///
+typedef struct {
+  EFI_ACPI_DESCRIPTION_HEADER               Header;
+  UINT8                                     InterfaceType;
+  UINT8                                     Reserved1[3];
+  EFI_ACPI_5_0_GENERIC_ADDRESS_STRUCTURE    BaseAddress;
+  UINT8                                     InterruptType;
+  UINT8                                     Irq;
+  UINT32                                    GlobalSystemInterrupt;
+  UINT8                                     BaudRate;
+  UINT8                                     Parity;
+  UINT8                                     StopBits;
+  UINT8                                     FlowControl;
+  UINT8                                     TerminalType;
+  UINT8                                     Reserved2;
+  UINT16                                    PciDeviceId;
+  UINT16                                    PciVendorId;
+  UINT8                                     PciBusNumber;
+  UINT8                                     PciDeviceNumber;
+  UINT8                                     PciFunctionNumber;
+  UINT32                                    PciFlags;
+  UINT8                                     PciSegment;
+  UINT32                                    UartClockFrequency;
+  UINT32                                    PreciseBaudRate;
+  UINT16                                    NameSpaceStrLength;
+  UINT16                                    NameSpaceStrOffset;
+  CHAR8                                     NameSpaceString[0];
+} EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_4;
 
 #pragma pack()
 
@@ -128,10 +159,15 @@ typedef struct {
 /// ARMH GIC interrupt (Global System Interrupt)
 ///
 #define EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_INTERRUPT_TYPE_GIC  0x8
+///
+/// RISC-V PLIC/APLIC interrupt (Global System Interrupt)
+///
+#define EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_INTERRUPT_TYPE_RISCV  0x10
 
 //
 // Baud Rate
 //
+#define EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_BAUD_RATE_AS_IS   0
 #define EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_BAUD_RATE_9600    3
 #define EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_BAUD_RATE_19200   4
 #define EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_BAUD_RATE_57600   6
@@ -171,5 +207,3 @@ typedef struct {
 #define EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_TERMINAL_TYPE_VT100_PLUS  1
 #define EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_TERMINAL_TYPE_VT_UTF8     2
 #define EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_TERMINAL_TYPE_ANSI        3
-
-#endif

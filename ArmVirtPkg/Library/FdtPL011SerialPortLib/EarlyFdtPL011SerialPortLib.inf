@@ -20,18 +20,20 @@
   EarlyFdtPL011SerialPortLib.c
 
 [LibraryClasses]
+  ArmCcaLib
   PL011UartLib
   PcdLib
-  FdtLib
+  FdtSerialPortAddressLib
 
 [Packages]
   MdePkg/MdePkg.dec
-  EmbeddedPkg/EmbeddedPkg.dec
+  MdeModulePkg/MdeModulePkg.dec
   ArmPlatformPkg/ArmPlatformPkg.dec
   ArmVirtPkg/ArmVirtPkg.dec
+  OvmfPkg/OvmfPkg.dec
 
 [Pcd]
-  gArmVirtTokenSpaceGuid.PcdDeviceTreeInitialBaseAddress
+  gUefiOvmfPkgTokenSpaceGuid.PcdDeviceTreeInitialBaseAddress
 
 [FixedPcd]
   gEfiMdePkgTokenSpaceGuid.PcdUartDefaultBaudRate

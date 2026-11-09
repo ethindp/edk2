@@ -82,6 +82,7 @@
   gEfiRamDiskProtocolGuid                         ## SOMETIMES_CONSUMES
   gEfiHiiConfigAccessProtocolGuid                 ## BY_START
   gEfiHttpBootCallbackProtocolGuid                ## SOMETIMES_PRODUCES
+  gEdkiiHttpCallbackProtocolGuid                  ## SOMETIMES_PRODUCES
   gEfiAdapterInformationProtocolGuid              ## SOMETIMES_CONSUMES
 
 [Guids]
@@ -95,8 +96,12 @@
   gEfiAdapterInfoUndiIpv6SupportGuid             ## SOMETIMES_CONSUMES ## GUID
 
 [Pcd]
-  gEfiNetworkPkgTokenSpaceGuid.PcdAllowHttpConnections       ## CONSUMES
-  gEfiNetworkPkgTokenSpaceGuid.PcdHttpIoTimeout              ## CONSUMES
+  gEfiNetworkPkgTokenSpaceGuid.PcdAllowHttpConnections           ## CONSUMES
+  gEfiNetworkPkgTokenSpaceGuid.PcdHttpIoTimeout                  ## CONSUMES
+  gEfiNetworkPkgTokenSpaceGuid.PcdMaxHttpResumeRetries           ## CONSUMES
+  gEfiNetworkPkgTokenSpaceGuid.PcdHttpDelayBetweenResumeRetries  ## CONSUMES
+  gEfiNetworkPkgTokenSpaceGuid.PcdIPv4HttpSupport                ## CONSUMES
+  gEfiNetworkPkgTokenSpaceGuid.PcdIPv6HttpSupport                ## CONSUMES
 
 [UserExtensions.TianoCore."ExtraFiles"]
   HttpBootDxeExtra.uni

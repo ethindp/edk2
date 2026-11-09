@@ -57,6 +57,7 @@ UINT8    *mBootPerformanceTable;
 UINTN    mBootPerformanceTableSize;
 BOOLEAN  mPeiPhase = FALSE;
 BOOLEAN  mDxePhase = FALSE;
+UINT64   mResetEnd = 0;
 
 PERF_SUMMARY_DATA   SummaryData       = { 0 }; ///< Create the SummaryData structure and init. to ZERO.
 MEASUREMENT_RECORD  *mMeasurementList = NULL;
@@ -102,20 +103,17 @@ DumpStatistics (
 
   StringPtr        = HiiGetString (mDpHiiHandle, STRING_TOKEN (STR_DP_SECTION_STATISTICS), NULL);
   StringPtrUnknown = HiiGetString (mDpHiiHandle, STRING_TOKEN (STR_ALIT_UNKNOWN), NULL);
-  ShellPrintHiiEx (
-    -1,
-    -1,
-    NULL,
+  ShellPrintHiiDefaultEx (
     STRING_TOKEN (STR_DP_SECTION_HEADER),
     mDpHiiHandle,
     (StringPtr == NULL) ? StringPtrUnknown : StringPtr
     );
-  ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_STATS_NUMTRACE), mDpHiiHandle, SummaryData.NumTrace);
-  ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_STATS_NUMINCOMPLETE), mDpHiiHandle, SummaryData.NumIncomplete);
-  ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_STATS_NUMPHASES), mDpHiiHandle, SummaryData.NumSummary);
-  ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_STATS_NUMHANDLES), mDpHiiHandle, SummaryData.NumHandles, SummaryData.NumTrace - SummaryData.NumHandles);
-  ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_STATS_NUMPEIMS), mDpHiiHandle, SummaryData.NumPEIMs);
-  ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_STATS_NUMGLOBALS), mDpHiiHandle, SummaryData.NumGlobal);
+  ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_STATS_NUMTRACE), mDpHiiHandle, SummaryData.NumTrace);
+  ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_STATS_NUMINCOMPLETE), mDpHiiHandle, SummaryData.NumIncomplete);
+  ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_STATS_NUMPHASES), mDpHiiHandle, SummaryData.NumSummary);
+  ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_STATS_NUMHANDLES), mDpHiiHandle, SummaryData.NumHandles, SummaryData.NumTrace - SummaryData.NumHandles);
+  ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_STATS_NUMPEIMS), mDpHiiHandle, SummaryData.NumPEIMs);
+  ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_STATS_NUMGLOBALS), mDpHiiHandle, SummaryData.NumGlobal);
   SHELL_FREE_NON_NULL (StringPtr);
   SHELL_FREE_NON_NULL (StringPtrUnknown);
 }
@@ -128,17 +126,22 @@ EFI_STATUS
 GetBootPerformanceTable (
   )
 {
+  EFI_STATUS                  Status;
   FIRMWARE_PERFORMANCE_TABLE  *FirmwarePerformanceTable;
 
   FirmwarePerformanceTable = (FIRMWARE_PERFORMANCE_TABLE *)EfiLocateFirstAcpiTable (
                                                              EFI_ACPI_5_0_FIRMWARE_PERFORMANCE_DATA_TABLE_SIGNATURE
                                                              );
   if (FirmwarePerformanceTable == NULL) {
-    ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_GET_ACPI_FPDT_FAIL), mDpHiiHandle);
-    return EFI_NOT_FOUND;
+    Status = EfiGetSystemConfigurationTable (&gEdkiiFpdtExtendedFirmwarePerformanceGuid, (VOID **)&mBootPerformanceTable);
+    if (EFI_ERROR (Status)) {
+      ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_GET_ACPI_FPDT_FAIL), mDpHiiHandle);
+      return EFI_NOT_FOUND;
+    }
+  } else {
+    mBootPerformanceTable = (UINT8 *)(UINTN)FirmwarePerformanceTable->BootPointerRecord.BootPerformanceTablePointer;
   }
 
-  mBootPerformanceTable     = (UINT8 *)(UINTN)FirmwarePerformanceTable->BootPointerRecord.BootPerformanceTablePointer;
   mBootPerformanceTableSize = ((BOOT_PERFORMANCE_TABLE *)mBootPerformanceTable)->Header.Length;
 
   return EFI_SUCCESS;
@@ -198,7 +201,7 @@ BuildCachedGuidHandleTable (
 
   Status = gBS->LocateHandleBuffer (AllHandles, NULL, NULL, &HandleCount, &HandleBuffer);
   if (EFI_ERROR (Status)) {
-    ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_HANDLES_ERROR), mDpHiiHandle, Status);
+    ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_HANDLES_ERROR), mDpHiiHandle, Status);
     return Status;
   }
 
@@ -542,6 +545,8 @@ BuildMeasurementList (
 {
   EFI_ACPI_5_0_FPDT_PERFORMANCE_RECORD_HEADER  *RecordHeader;
   UINT8                                        *PerformanceTablePtr;
+  UINT8                                        *BasicBootTablePtr;
+  UINT64                                       ResetEnd;
   UINT16                                       StartProgressId;
   UINTN                                        TableLength;
   UINT8                                        *StartRecordEvent;
@@ -550,6 +555,17 @@ BuildMeasurementList (
   mMeasurementList = AllocateZeroPool (mBootPerformanceTableSize);
   if (mMeasurementList == NULL) {
     return EFI_OUT_OF_RESOURCES;
+  }
+
+  //
+  // Update the ResetEnd which was logged at the beginning of firmware image execution
+  //
+  TableLength       = sizeof (EFI_ACPI_5_0_FPDT_PERFORMANCE_TABLE_HEADER);
+  BasicBootTablePtr = (mBootPerformanceTable + TableLength);
+  ResetEnd          = ((EFI_ACPI_5_0_FPDT_FIRMWARE_BASIC_BOOT_RECORD *)BasicBootTablePtr)->ResetEnd;
+
+  if (ResetEnd > 0) {
+    mResetEnd = ResetEnd;
   }
 
   TableLength         = sizeof (BOOT_PERFORMANCE_TABLE);
@@ -695,10 +711,10 @@ RunDp (
   //
   Status = ShellCommandLineParse (ParamList, &ParamPackage, NULL, TRUE);
   if (EFI_ERROR (Status)) {
-    ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_INVALID_ARG), mDpHiiHandle);
+    ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_INVALID_ARG), mDpHiiHandle);
     return SHELL_INVALID_PARAMETER;
   } else if (ShellCommandLineGetCount (ParamPackage) > 1) {
-    ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_TOO_MANY), mDpHiiHandle);
+    ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_TOO_MANY), mDpHiiHandle);
     return SHELL_INVALID_PARAMETER;
   }
 
@@ -714,7 +730,7 @@ RunDp (
   CumulativeMode = ShellCommandLineGetFlag (ParamPackage, L"-c");
 
   if (AllMode && RawMode) {
-    ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_CONFLICT_ARG), mDpHiiHandle, L"-A", L"-R");
+    ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_CONFLICT_ARG), mDpHiiHandle, L"-A", L"-R");
     return SHELL_INVALID_PARAMETER;
   }
 
@@ -722,22 +738,22 @@ RunDp (
   if (ShellCommandLineGetFlag (ParamPackage, L"-n")) {
     CmdLineArg = ShellCommandLineGetValue (ParamPackage, L"-n");
     if (CmdLineArg == NULL) {
-      ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_TOO_FEW), mDpHiiHandle);
+      ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_TOO_FEW), mDpHiiHandle);
       return SHELL_INVALID_PARAMETER;
     } else {
       if (!(RawMode || AllMode)) {
-        ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_NO_RAW_ALL), mDpHiiHandle);
+        ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_NO_RAW_ALL), mDpHiiHandle);
         return SHELL_INVALID_PARAMETER;
       }
 
       Status = ShellConvertStringToUint64 (CmdLineArg, &Intermediate, FALSE, TRUE);
       if (EFI_ERROR (Status)) {
-        ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_INVALID_NUM_ARG), mDpHiiHandle, L"-n");
+        ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_INVALID_NUM_ARG), mDpHiiHandle, L"-n");
         return SHELL_INVALID_PARAMETER;
       } else {
         Number2Display = (UINTN)Intermediate;
         if ((Number2Display == 0) || (Number2Display > MAXIMUM_DISPLAYCOUNT)) {
-          ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_INVALID_RANGE), mDpHiiHandle, L"-n", 0, MAXIMUM_DISPLAYCOUNT);
+          ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_INVALID_RANGE), mDpHiiHandle, L"-n", 0, MAXIMUM_DISPLAYCOUNT);
           return SHELL_INVALID_PARAMETER;
         }
       }
@@ -749,12 +765,12 @@ RunDp (
   if (ShellCommandLineGetFlag (ParamPackage, L"-t")) {
     CmdLineArg = ShellCommandLineGetValue (ParamPackage, L"-t");
     if (CmdLineArg == NULL) {
-      ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_TOO_FEW), mDpHiiHandle);
+      ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_TOO_FEW), mDpHiiHandle);
       return SHELL_INVALID_PARAMETER;
     } else {
       Status = ShellConvertStringToUint64 (CmdLineArg, &Intermediate, FALSE, TRUE);
       if (EFI_ERROR (Status)) {
-        ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_INVALID_NUM_ARG), mDpHiiHandle, L"-t");
+        ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_INVALID_NUM_ARG), mDpHiiHandle, L"-t");
         return SHELL_INVALID_PARAMETER;
       } else {
         mInterestThreshold = Intermediate;
@@ -767,7 +783,7 @@ RunDp (
   if (ShellCommandLineGetFlag (ParamPackage, L"-c")) {
     CustomCumulativeToken = ShellCommandLineGetValue (ParamPackage, L"-c");
     if (CustomCumulativeToken == NULL) {
-      ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_TOO_FEW), mDpHiiHandle);
+      ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_TOO_FEW), mDpHiiHandle);
       return SHELL_INVALID_PARAMETER;
     } else {
       CustomCumulativeData = AllocateZeroPool (sizeof (PERF_CUM_DATA));
@@ -843,7 +859,7 @@ RunDp (
   //
   Status = EfiGetSystemConfigurationTable (&gPerformanceProtocolGuid, (VOID **)&PerformanceProperty);
   if (EFI_ERROR (Status) || (PerformanceProperty == NULL)) {
-    ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_PERF_PROPERTY_NOT_FOUND), mDpHiiHandle);
+    ShellPrintHiiDefaultEx (STRING_TOKEN (STR_PERF_PROPERTY_NOT_FOUND), mDpHiiHandle);
     goto Done;
   }
 
@@ -856,10 +872,10 @@ RunDp (
   // Print header
   //
   // print DP's build version
-  ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_BUILD_REVISION), mDpHiiHandle, DP_MAJOR_VERSION, DP_MINOR_VERSION);
+  ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_BUILD_REVISION), mDpHiiHandle, DP_MAJOR_VERSION, DP_MINOR_VERSION);
 
   // print performance timer characteristics
-  ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_KHZ), mDpHiiHandle, TimerInfo.Frequency);
+  ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_KHZ), mDpHiiHandle, TimerInfo.Frequency);
 
   if (VerboseMode && !RawMode) {
     StringPtr = HiiGetString (
@@ -869,17 +885,14 @@ RunDp (
                   );
     ASSERT (StringPtr != NULL);
     // Print Timer count range and direction
-    ShellPrintHiiEx (
-      -1,
-      -1,
-      NULL,
+    ShellPrintHiiDefaultEx (
       STRING_TOKEN (STR_DP_TIMER_PROPERTIES),
       mDpHiiHandle,
       StringPtr,
       TimerInfo.StartCount,
       TimerInfo.EndCount
       );
-    ShellPrintHiiEx (-1, -1, NULL, STRING_TOKEN (STR_DP_VERBOSE_THRESHOLD), mDpHiiHandle, mInterestThreshold);
+    ShellPrintHiiDefaultEx (STRING_TOKEN (STR_DP_VERBOSE_THRESHOLD), mDpHiiHandle, mInterestThreshold);
   }
 
   /****************************************************************************

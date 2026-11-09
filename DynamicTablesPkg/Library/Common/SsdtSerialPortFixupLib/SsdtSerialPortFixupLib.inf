@@ -18,16 +18,31 @@
   SsdtSerialPortFixupLib.c
   SsdtSerialPortTemplate.asl
 
-[Packages]
+[Sources.AARCH64]
+  Arm/ArmSsdtSerialPortFixupLib.c
+
+[Sources.IA32, Sources.X64]
+  X64/X64SsdtSerialPortFixupLib.c
+
+[Sources.RISCV64]
+  RiscV/RiscVSsdtSerialPortFixupLib.c
+
+[Packages.common]
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
   EmbeddedPkg/EmbeddedPkg.dec
   DynamicTablesPkg/DynamicTablesPkg.dec
 
+[Packages.AARCH64]
+  ArmPkg/ArmPkg.dec
+
 [LibraryClasses]
   AcpiHelperLib
   AmlLib
   BaseLib
+
+[LibraryClasses.AARCH64]
+  ArmLib
 
 [Pcd]
   gEdkiiDynamicTablesPkgTokenSpaceGuid.PcdNonBsaCompliant16550SerialHid

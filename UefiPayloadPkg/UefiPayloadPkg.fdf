@@ -4,6 +4,7 @@
 # Provides drivers and definitions to create uefi payload for bootloaders.
 #
 # Copyright (c) 2014 - 2020, Intel Corporation. All rights reserved.<BR>
+# Copyright (c) 2024, Google LLC.
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 #
 ##
@@ -17,8 +18,8 @@ DEFINE FD_SIZE     = 0x00850000
 DEFINE NUM_BLOCKS  = 0x850
 !else
 
-DEFINE FD_SIZE     = 0x00590000
-DEFINE NUM_BLOCKS  = 0x590
+DEFINE FD_SIZE     = 0x00700000
+DEFINE NUM_BLOCKS  = 0x700
 !endif
 
 ################################################################################
@@ -59,8 +60,62 @@ INF UefiPayloadPkg/UefiPayloadEntry/UefiPayloadEntry.inf
 FILE FV_IMAGE = 4E35FD93-9C72-4c15-8C4B-E77F1DB2D793 {
     SECTION FV_IMAGE = DXEFV
 }
+!if $(UNIVERSAL_PAYLOAD) == TRUE
+!if $(NETWORK_DRIVER_ENABLE) == TRUE
+################################################################################
+[FV.NETWORKFV]
+FvNameGuid         = 3CF5CB69-C439-4B84-AF11-8167B22D7221
+BlockSize          = $(FD_BLOCK_SIZE)
+FvForceRebase      = FALSE
+FvAlignment        = 16
+ERASE_POLARITY     = 1
+MEMORY_MAPPED      = TRUE
+STICKY_WRITE       = TRUE
+LOCK_CAP           = TRUE
+LOCK_STATUS        = TRUE
+WRITE_DISABLED_CAP = TRUE
+WRITE_ENABLED_CAP  = TRUE
+WRITE_STATUS       = TRUE
+WRITE_LOCK_CAP     = TRUE
+WRITE_LOCK_STATUS  = TRUE
+READ_DISABLED_CAP  = TRUE
+READ_ENABLED_CAP   = TRUE
+READ_STATUS        = TRUE
+READ_LOCK_CAP      = TRUE
+READ_LOCK_STATUS   = TRUE
+
+#
+# UEFI network modules
+#
+!include NetworkPkg/Network.fdf.inc
+!endif
 
 ################################################################################
+[FV.BDSFV]
+FvNameGuid         = CA5590AF-9558-4822-B5EA-BE2E876CD3EC
+BlockSize          = $(FD_BLOCK_SIZE)
+FvForceRebase      = FALSE
+FvAlignment        = 16
+ERASE_POLARITY     = 1
+MEMORY_MAPPED      = TRUE
+STICKY_WRITE       = TRUE
+LOCK_CAP           = TRUE
+LOCK_STATUS        = TRUE
+WRITE_DISABLED_CAP = TRUE
+WRITE_ENABLED_CAP  = TRUE
+WRITE_STATUS       = TRUE
+WRITE_LOCK_CAP     = TRUE
+WRITE_LOCK_STATUS  = TRUE
+READ_DISABLED_CAP  = TRUE
+READ_ENABLED_CAP   = TRUE
+READ_STATUS        = TRUE
+READ_LOCK_CAP      = TRUE
+READ_LOCK_STATUS   = TRUE
+
+INF MdeModulePkg/Universal/BdsDxe/BdsDxe.inf
+INF RuleOverride = UI MdeModulePkg/Application/UiApp/UiApp.inf
+INF MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuApp.inf
+!endif
 
 [FV.DXEFV]
 FvNameGuid         = 8063C21A-8E58-4576-95CE-089E87975D23
@@ -99,24 +154,52 @@ INF MdeModulePkg/Universal/PCD/Dxe/Pcd.inf
 INF MdeModulePkg/Universal/ReportStatusCodeRouter/RuntimeDxe/ReportStatusCodeRouterRuntimeDxe.inf
 INF MdeModulePkg/Universal/StatusCodeHandler/RuntimeDxe/StatusCodeHandlerRuntimeDxe.inf
 
-!if $(SECURITY_STUB_ENABLE) == TRUE
-INF MdeModulePkg/Universal/SecurityStubDxe/SecurityStubDxe.inf
+!if "X64" IN "$(ARCH)"
+  INF UefiCpuPkg/CpuDxe/CpuDxe.inf
+  INF MdeModulePkg/Universal/Metronome/Metronome.inf
+  INF PcAtChipsetPkg/PcatRealTimeClockRuntimeDxe/PcatRealTimeClockRuntimeDxe.inf
+
+  !if $(CRYPTO_PROTOCOL_SUPPORT) == TRUE
+    !if $(CRYPTO_DRIVER_EXTERNAL_SUPPORT) == FALSE
+      INF CryptoPkg/Driver/CryptoDxe.inf
+    !endif
+  !endif
+
+  !if $(TIMER_SUPPORT) == "HPET"
+    INF PcAtChipsetPkg/HpetTimerDxe/HpetTimerDxe.inf
+  !elseif $(TIMER_SUPPORT) == "LAPIC"
+    INF OvmfPkg/LocalApicTimerDxe/LocalApicTimerDxe.inf
+  !endif
+!elseif "AARCH64" IN "$(ARCH)"
+  INF ArmPkg/Drivers/CpuDxe/CpuDxe.inf
+  INF ArmPkg/Drivers/ArmGicDxe/ArmGicDxe.inf
+  INF ArmPkg/Drivers/TimerDxe/TimerDxe.inf
+
+  INF EmbeddedPkg/RealTimeClockRuntimeDxe/RealTimeClockRuntimeDxe.inf
+  INF EmbeddedPkg/MetronomeDxe/MetronomeDxe.inf
+  INF OvmfPkg/PlatformHasAcpiDtDxe/PlatformHasAcpiDtDxe.inf
+  INF UefiCpuPkg/CpuMmio2Dxe/CpuMmio2Dxe.inf
+  INF OvmfPkg/Virtio10Dxe/Virtio10.inf
+  INF OvmfPkg/VirtioPciDeviceDxe/VirtioPciDeviceDxe.inf
+  INF OvmfPkg/VirtioBlkDxe/VirtioBlk.inf
+  INF OvmfPkg/VirtioGpuDxe/VirtioGpu.inf
+
+  INF OvmfPkg/QemuRamfbDxe/QemuRamfbDxe.inf
+  INF OvmfPkg/PlatformDxe/Platform.inf
 !endif
-INF UefiCpuPkg/CpuDxe/CpuDxe.inf
-INF MdeModulePkg/Universal/BdsDxe/BdsDxe.inf
-INF RuleOverride = UI MdeModulePkg/Application/UiApp/UiApp.inf
-INF MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuApp.inf
-INF PcAtChipsetPkg/HpetTimerDxe/HpetTimerDxe.inf
-INF MdeModulePkg/Universal/Metronome/Metronome.inf
-INF MdeModulePkg/Universal/WatchdogTimerDxe/WatchdogTimer.inf
+
+!if $(SECURITY_STUB_ENABLE) == TRUE
+  INF MdeModulePkg/Universal/SecurityStubDxe/SecurityStubDxe.inf
+!endif
+
 INF MdeModulePkg/Core/RuntimeDxe/RuntimeDxe.inf
 INF MdeModulePkg/Universal/CapsuleRuntimeDxe/CapsuleRuntimeDxe.inf
 INF MdeModulePkg/Universal/MonotonicCounterRuntimeDxe/MonotonicCounterRuntimeDxe.inf
+INF MdeModulePkg/Universal/WatchdogTimerDxe/WatchdogTimer.inf
 
 !if $(DISABLE_RESET_SYSTEM) == FALSE
 INF MdeModulePkg/Universal/ResetSystemRuntimeDxe/ResetSystemRuntimeDxe.inf
 !endif
-INF PcAtChipsetPkg/PcatRealTimeClockRuntimeDxe/PcatRealTimeClockRuntimeDxe.inf
 !if $(PERFORMANCE_MEASUREMENT_ENABLE)
   INF MdeModulePkg/Universal/Acpi/FirmwarePerformanceDataTableDxe/FirmwarePerformanceDxe.inf
 !endif
@@ -140,6 +223,10 @@ INF PcAtChipsetPkg/PcatRealTimeClockRuntimeDxe/PcatRealTimeClockRuntimeDxe.inf
 
 !if $(VARIABLE_SUPPORT) == "EMU"
   INF MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
+!elseif $(VARIABLE_SUPPORT) == "SMMSTORE"
+  INF UefiPayloadPkg/SmmStoreFvb/SmmStoreFvbRuntimeDxe.inf
+  INF MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteDxe.inf
+  INF MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
 !elseif $(VARIABLE_SUPPORT) == "SPI"
   INF UefiPayloadPkg/FvbRuntimeDxe/FvbSmm.inf
   INF MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteSmm.inf
@@ -147,9 +234,19 @@ INF PcAtChipsetPkg/PcatRealTimeClockRuntimeDxe/PcatRealTimeClockRuntimeDxe.inf
   INF MdeModulePkg/Universal/Variable/RuntimeDxe/VariableSmmRuntimeDxe.inf
 !endif
 
+!if $(UNIVERSAL_PAYLOAD) == FALSE
+  !if $(SECURE_BOOT_ENABLE) == TRUE
+    INF SecurityPkg/VariableAuthenticated/SecureBootConfigDxe/SecureBootConfigDxe.inf
+  !endif
+!endif
+
 INF UefiCpuPkg/CpuIo2Dxe/CpuIo2Dxe.inf
 INF MdeModulePkg/Universal/DevicePathDxe/DevicePathDxe.inf
-INF MdeModulePkg/Universal/MemoryTest/NullMemoryTestDxe/NullMemoryTestDxe.inf
+!if $(MEMORY_TEST) == "GENERIC"
+INF  MdeModulePkg/Universal/MemoryTest/GenericMemoryTestDxe/GenericMemoryTestDxe.inf
+!elseif $(MEMORY_TEST) == "NULL"
+INF  MdeModulePkg/Universal/MemoryTest/NullMemoryTestDxe/NullMemoryTestDxe.inf
+!endif
 INF MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
 INF MdeModulePkg/Universal/SetupBrowserDxe/SetupBrowserDxe.inf
 INF MdeModulePkg/Universal/DisplayEngineDxe/DisplayEngineDxe.inf
@@ -158,6 +255,10 @@ INF MdeModulePkg/Universal/EbcDxe/EbcDxe.inf
 INF UefiPayloadPkg/BlSupportDxe/BlSupportDxe.inf
 
 INF MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf
+!if $(BOOTSPLASH_IMAGE)
+INF MdeModulePkg/Logo/LogoDxe.inf
+!endif
+
 #
 # PCI Support
 #
@@ -176,7 +277,9 @@ INF OvmfPkg/SioBusDxe/SioBusDxe.inf
 !if $(PS2_KEYBOARD_ENABLE) == TRUE
 INF MdeModulePkg/Bus/Isa/Ps2KeyboardDxe/Ps2KeyboardDxe.inf
 !endif
+!if $(PS2_MOUSE_ENABLE) == TRUE
 INF MdeModulePkg/Bus/Isa/Ps2MouseDxe/Ps2MouseDxe.inf
+!endif
 
 #
 # Console Support
@@ -189,18 +292,26 @@ INF MdeModulePkg/Universal/Console/TerminalDxe/TerminalDxe.inf
 !endif
 INF UefiPayloadPkg/GraphicsOutputDxe/GraphicsOutputDxe.inf
 
+!if $(LOAD_OPTION_ROMS) == TRUE
+INF UefiPayloadPkg/PciPlatformDxe/PciPlatformDxe.inf
+!endif
+
 #
 # SCSI/ATA/IDE/DISK Support
 #
 INF MdeModulePkg/Universal/Disk/DiskIoDxe/DiskIoDxe.inf
 INF MdeModulePkg/Universal/Disk/PartitionDxe/PartitionDxe.inf
 INF MdeModulePkg/Universal/Disk/UnicodeCollation/EnglishDxe/EnglishDxe.inf
+!if $(ATA_ENABLE) == TRUE
 INF MdeModulePkg/Bus/Pci/SataControllerDxe/SataControllerDxe.inf
 INF MdeModulePkg/Bus/Ata/AtaBusDxe/AtaBusDxe.inf
+!endif
 INF MdeModulePkg/Bus/Ata/AtaAtapiPassThru/AtaAtapiPassThru.inf
 INF MdeModulePkg/Bus/Scsi/ScsiBusDxe/ScsiBusDxe.inf
 INF MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDiskDxe.inf
+!if $(NVME_ENABLE) == TRUE
 INF MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.inf
+!endif
 !if $(RAM_DISK_ENABLE) == TRUE
 INF MdeModulePkg/Universal/Disk/RamDiskDxe/RamDiskDxe.inf
 !endif
@@ -209,9 +320,11 @@ INF FatPkg/EnhancedFatDxe/Fat.inf
 #
 # SD/eMMC Support
 #
+!if $(SD_ENABLE) == TRUE
 INF MdeModulePkg/Bus/Pci/SdMmcPciHcDxe/SdMmcPciHcDxe.inf
 INF MdeModulePkg/Bus/Sd/EmmcDxe/EmmcDxe.inf
 INF MdeModulePkg/Bus/Sd/SdDxe/SdDxe.inf
+!endif
 
 #
 # Usb Support
@@ -228,12 +341,21 @@ INF MdeModulePkg/Bus/Usb/UsbMouseDxe/UsbMouseDxe.inf
 # ACPI Support
 #
 INF  MdeModulePkg/Universal/Acpi/AcpiTableDxe/AcpiTableDxe.inf
+!if $(BOOTSPLASH_IMAGE)
+INF  MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatformDxe.inf
+INF  MdeModulePkg/Universal/Acpi/BootGraphicsResourceTableDxe/BootGraphicsResourceTableDxe.inf
+!endif
 
+!if $(UNIVERSAL_PAYLOAD) == FALSE
+INF MdeModulePkg/Universal/BdsDxe/BdsDxe.inf
+INF RuleOverride = UI MdeModulePkg/Application/UiApp/UiApp.inf
+INF MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuApp.inf
 #
 # UEFI network modules
 #
 !if $(NETWORK_DRIVER_ENABLE) == TRUE
   !include NetworkPkg/Network.fdf.inc
+!endif
 !endif
 
 #
@@ -241,8 +363,46 @@ INF  MdeModulePkg/Universal/Acpi/AcpiTableDxe/AcpiTableDxe.inf
 #
 !if $(SHELL_TYPE) == BUILD_SHELL
 INF ShellPkg/DynamicCommand/TftpDynamicCommand/TftpDynamicCommand.inf
+!if $(PERFORMANCE_MEASUREMENT_ENABLE) == TRUE
 INF ShellPkg/DynamicCommand/DpDynamicCommand/DpDynamicCommand.inf
+!endif
 INF ShellPkg/Application/Shell/Shell.inf
+!endif
+
+#
+# Capsules
+#
+!if $(CAPSULE_SUPPORT) == TRUE
+INF MdeModulePkg/Universal/EsrtDxe/EsrtDxe.inf
+!endif
+
+!if $(UNIVERSAL_PAYLOAD) == TRUE
+!if $(SECURE_BOOT_ENABLE) == TRUE
+
+[FV.SECFV]
+FvNameGuid         = 2700E2F3-19D2-4E2D-9F13-BC891B9FC62C
+BlockSize          = $(FD_BLOCK_SIZE)
+FvForceRebase      = FALSE
+FvAlignment        = 16
+ERASE_POLARITY     = 1
+MEMORY_MAPPED      = TRUE
+STICKY_WRITE       = TRUE
+LOCK_CAP           = TRUE
+LOCK_STATUS        = TRUE
+WRITE_DISABLED_CAP = TRUE
+WRITE_ENABLED_CAP  = TRUE
+WRITE_STATUS       = TRUE
+WRITE_LOCK_CAP     = TRUE
+WRITE_LOCK_STATUS  = TRUE
+READ_DISABLED_CAP  = TRUE
+READ_ENABLED_CAP   = TRUE
+READ_STATUS        = TRUE
+READ_LOCK_CAP      = TRUE
+READ_LOCK_STATUS   = TRUE
+
+INF SecurityPkg/VariableAuthenticated/SecureBootConfigDxe/SecureBootConfigDxe.inf
+
+!endif
 !endif
 
 

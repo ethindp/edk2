@@ -6,8 +6,7 @@
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#ifndef AML_NODE_H_
-#define AML_NODE_H_
+#pragma once
 
 #include <AmlNodeDefines.h>
 #include <IndustryStandard/Acpi.h>
@@ -37,6 +36,7 @@ AmlCreateRootNode (
   @param  [in]  AmlByteEncoding   Byte encoding entry.
   @param  [in]  PkgLength         PkgLength of the node if the AmlByteEncoding
                                   has the PkgLen attribute.
+                                  Must be less than 2^28.
                                   0 otherwise.
   @param  [out] NewObjectNodePtr  If success, contains the created
                                   AML_OBJECT_NODE.
@@ -214,5 +214,3 @@ EFIAPI
 AmlNodeGetName (
   IN  CONST AML_OBJECT_NODE  *ObjectNode
   );
-
-#endif // AML_NODE_H_

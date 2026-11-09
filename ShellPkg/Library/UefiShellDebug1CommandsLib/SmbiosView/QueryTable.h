@@ -7,8 +7,7 @@
 
 **/
 
-#ifndef _SMBIOS_QUERY_TABLE_H_
-#define _SMBIOS_QUERY_TABLE_H_
+#pragma once
 
 #include <IndustryStandard/SmBios.h>
 
@@ -416,6 +415,42 @@ DisplaySlotCharacteristics2 (
   );
 
 /**
+  Display System Slots (Type 9) Information.
+
+  @param[in] Width      The key of the structure.
+  @param[in] Option     The optional information.
+**/
+VOID
+DisplaySystemSlotInformation (
+  IN UINT8  Width,
+  IN UINT8  Option
+  );
+
+/**
+  Display System Slots (Type 9) Physical Width.
+
+  @param[in] Width      The key of the structure.
+  @param[in] Option     The optional information.
+**/
+VOID
+DisplaySystemSlotPhysicalWidth (
+  IN UINT8  Width,
+  IN UINT8  Option
+  );
+
+/**
+  Display System Slots (Type 9) slot height.
+
+  @param[in] Length     The key of the structure.
+  @param[in] Option     The optional information.
+**/
+VOID
+DisplaySystemSlotHeight (
+  IN UINT8  Length,
+  IN UINT8  Option
+  );
+
+/**
   Display On Board Devices Information (Type 10) types.
 
   @param[in] Type       The key of the structure.
@@ -810,5 +845,3 @@ DisplayMCHostInterfaceType (
   IN UINT8  Key,
   IN UINT8  Option
   );
-
-#endif

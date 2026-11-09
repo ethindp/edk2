@@ -69,11 +69,11 @@ def GuidStringToGuidStructureString(Guid):
 def CheckGuidRegFormat(GuidValue):
     ## Regular expression used to find out register format of GUID
     #
-    RegFormatGuidPattern = re.compile("^\s*([0-9a-fA-F]){8}-"
+    RegFormatGuidPattern = re.compile(r"^\s*([0-9a-fA-F]){8}-"
                                        "([0-9a-fA-F]){4}-"
                                        "([0-9a-fA-F]){4}-"
                                        "([0-9a-fA-F]){4}-"
-                                       "([0-9a-fA-F]){12}\s*$")
+                                       r"([0-9a-fA-F]){12}\s*$")
 
     if RegFormatGuidPattern.match(GuidValue):
         return True
@@ -495,41 +495,6 @@ def IsAllModuleList(ModuleList):
     else:
         return True
 
-## Dictionary that use comment(GenericComment, TailComment) as value,
-# if a new comment which key already in the dic is inserted, then the
-# comment will be merged.
-# Key is (Statement, SupArch), when TailComment is added, it will ident
-# according to Statement
-#
-class MergeCommentDict(dict):
-    ## []= operator
-    #
-    def __setitem__(self, Key, CommentVal):
-        GenericComment, TailComment = CommentVal
-        if Key in self:
-            OrigVal1, OrigVal2 = dict.__getitem__(self, Key)
-            Statement = Key[0]
-            dict.__setitem__(self, Key, (OrigVal1 + GenericComment, OrigVal2 \
-                                         + len(Statement) * ' ' + TailComment))
-        else:
-            dict.__setitem__(self, Key, (GenericComment, TailComment))
-
-    ## =[] operator
-    #
-    def __getitem__(self, Key):
-        return dict.__getitem__(self, Key)
-
-
-## GenDummyHelpTextObj
-#
-# @retval HelpTxt:   Generated dummy help text object
-#
-def GenDummyHelpTextObj():
-    HelpTxt = TextObject()
-    HelpTxt.SetLang(TAB_LANGUAGE_EN_US)
-    HelpTxt.SetString(' ')
-    return HelpTxt
-
 ## ConvertVersionToDecimal, the minor version should be within 0 - 99
 # <HexVersion>          ::=  "0x" <Major> <Minor>
 # <Major>               ::=  (a-fA-F0-9){4}
@@ -837,8 +802,8 @@ def GetLibInstanceInfo(String, WorkSpace, LineNo):
                          ST.ERR_FILE_OPEN_FAILURE,
                          File=FullFileName)
 
-        ReFileGuidPattern = re.compile("^\s*FILE_GUID\s*=.*$")
-        ReVerStringPattern = re.compile("^\s*VERSION_STRING\s*=.*$")
+        ReFileGuidPattern = re.compile(r"^\s*FILE_GUID\s*=.*$")
+        ReVerStringPattern = re.compile(r"^\s*VERSION_STRING\s*=.*$")
 
         FileLinesList = ProcessLineExtender(FileLinesList)
 
@@ -978,7 +943,7 @@ def ValidateUNIFilePath(Path):
     #
     # Check if the file name is valid according to the DEC and INF specification
     #
-    Pattern = '[a-zA-Z0-9_][a-zA-Z0-9_\-\.]*'
+    Pattern = r'[a-zA-Z0-9_][a-zA-Z0-9_\-\.]*'
     FileName = Path.replace(Suffix, '')
     InvalidCh = re.sub(Pattern, '', FileName)
     if InvalidCh:

@@ -2,15 +2,15 @@
   This file defines the SPI I/O Protocol.
 
   Copyright (c) 2017, Intel Corporation. All rights reserved.<BR>
+  Copyright (C) 2024 Advanced Micro Devices, Inc. All rights reserved.
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
   @par Revision Reference:
-    This Protocol was introduced in UEFI PI Specification 1.6.
+    This Protocol was introduced in UEFI PI Specification 1.8 A.
 
 **/
 
-#ifndef __SPI_IO_PROTOCOL_H__
-#define __SPI_IO_PROTOCOL_H__
+#pragma once
 
 #include <Protocol/LegacySpiController.h>
 #include <Protocol/SpiConfiguration.h>
@@ -93,7 +93,7 @@ typedef enum {
                                   significant N bits.
   @param[in]  ReadBytes         The length of the ReadBuffer in bytes.
                                 Specify zero for write-only operations.
-  @param[out] ReadBuffer        The buffer to receeive data from the SPI chip
+  @param[out] ReadBuffer        The buffer to receive data from the SPI chip
                                 during the transaction. Specify NULL for write
                                 only operations.
                                 * Frame sizes 1-8 bits: UINT8 (one byte) per
@@ -152,9 +152,9 @@ EFI_STATUS
   @retval EFI_SUCCESS            The SPI peripheral was updated successfully
   @retval EFI_INVALID_PARAMETER  The SpiPeripheral value is NULL,
                                  or the SpiPeripheral->SpiBus is NULL,
-                                 or the SpiP eripheral - >SpiBus pointing at
+                                 or the SpiPeripheral->SpiBus pointing at
                                  wrong bus,
-                                 or the SpiP eripheral - >SpiPart is NULL
+                                 or the SpiPeripheral->SpiPart is NULL
 
 **/
 typedef EFI_STATUS
@@ -224,6 +224,15 @@ typedef struct _EFI_SPI_BUS_TRANSACTION {
 } EFI_SPI_BUS_TRANSACTION;
 
 ///
+/// Definitions of SPI I/O Attributes.
+///
+#define SPI_IO_SUPPORTS_2_BIT_DATA_BUS_WIDTH   BIT0
+#define SPI_IO_SUPPORTS_4_BIT_DATA_BUS_WIDTH   BIT1
+#define SPI_IO_SUPPORTS_8_BIT_DATA_BUS_WIDTH   BIT2
+#define SPI_IO_TRANSFER_SIZE_INCLUDES_OPCODE   BIT3
+#define SPI_IO_TRANSFER_SIZE_INCLUDES_ADDRESS  BIT4
+
+///
 /// Support managed SPI data transactions between the SPI controller and a SPI
 /// chip.
 ///
@@ -250,7 +259,7 @@ struct _EFI_SPI_IO_PROTOCOL {
   UINT32    FrameSizeSupportMask;
 
   ///
-  /// Maximum transfer size in bytes: 1 - Oxffffffff
+  /// Maximum transfer size in bytes: 1 - 0xffffffff
   ///
   UINT32    MaximumTransferBytes;
 
@@ -282,5 +291,3 @@ struct _EFI_SPI_IO_PROTOCOL {
   ///
   EFI_SPI_IO_PROTOCOL_UPDATE_SPI_PERIPHERAL    UpdateSpiPeripheral;
 };
-
-#endif // __SPI_IO_PROTOCOL_H__

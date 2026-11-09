@@ -15,12 +15,11 @@
   VERSION_STRING                 = 1.0
   LIBRARY_CLASS                  = CpuLib
 
-#
-#  VALID_ARCHITECTURES           = IA32 X64 EBC ARM AARCH64 RISCV64
-#
-
 [Sources]
   BaseCpuLibNull.c
+
+[Sources.IA32, Sources.X64]
+  X86BaseCpuLibNull.c
 
 [Packages]
   MdePkg/MdePkg.dec

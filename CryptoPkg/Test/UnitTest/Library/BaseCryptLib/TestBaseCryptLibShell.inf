@@ -36,6 +36,17 @@
   Pkcs7EkuTests.c
   OaepEncryptTests.c
   RsaPssTests.c
+  HkdfTests.c
+  AeadAesGcmTests.c
+  BnTests.c
+  EcTests.c
+  EdDsaTests.c
+  MlDsaTests.c
+  SlhDsaTests.c
+  X509Tests.c
+  Pkcs7AttachedContentTest.c
+  Pkcs7EncryptTests.c
+  Pkcs7DecryptTests.c
 
 [Packages]
   MdePkg/MdePkg.dec

@@ -6,8 +6,7 @@
 
 **/
 
-#ifndef __HANDLE_PARSING_LIB__
-#define __HANDLE_PARSING_LIB__
+#pragma once
 
 #include <Uefi.h>
 
@@ -20,7 +19,7 @@
   @param[in] TheName    The Guid's name
   @param[in] Lang       RFC4646 language code list or NULL
 
-  @retval EFI_SUCCESS           The operation was sucessful
+  @retval EFI_SUCCESS           The operation was successful
   @retval EFI_ACCESS_DENIED     There was a duplicate
   @retval EFI_OUT_OF_RESOURCES  A memory allocation failed
 **/
@@ -398,5 +397,3 @@ GetAllMappingGuids (
   OUT EFI_GUID  *Guids,
   IN OUT UINTN  *Count
   );
-
-#endif // __HANDLE_PARSING_LIB__

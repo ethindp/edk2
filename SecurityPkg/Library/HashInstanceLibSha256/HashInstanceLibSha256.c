@@ -10,7 +10,6 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <PiPei.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
-#include <Library/Tpm2CommandLib.h>
 #include <Library/DebugLib.h>
 #include <Library/BaseCryptLib.h>
 #include <Library/MemoryAllocationLib.h>
@@ -56,7 +55,10 @@ Sha256HashInit (
 
   CtxSize   = Sha256GetContextSize ();
   Sha256Ctx = AllocatePool (CtxSize);
-  ASSERT (Sha256Ctx != NULL);
+  if (Sha256Ctx == NULL) {
+    ASSERT (Sha256Ctx != NULL);
+    return EFI_OUT_OF_RESOURCES;
+  }
 
   Sha256Init (Sha256Ctx);
 

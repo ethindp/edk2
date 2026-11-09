@@ -7,8 +7,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _VARIABLE_H_
-#define _VARIABLE_H_
+#pragma once
 
 #include <PiDxe.h>
 #include <Protocol/VariableWrite.h>
@@ -31,6 +30,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Library/MemoryAllocationLib.h>
 #include <Library/AuthVariableLib.h>
 #include <Library/VarCheckLib.h>
+#include <Library/VariableFlashInfoLib.h>
+#include <Library/SafeIntLib.h>
 #include <Guid/GlobalVariable.h>
 #include <Guid/EventGroup.h>
 #include <Guid/VariableFormat.h>
@@ -39,11 +40,6 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Guid/VarErrorFlag.h>
 
 #include "PrivilegePolymorphic.h"
-
-#define NV_STORAGE_VARIABLE_BASE  (EFI_PHYSICAL_ADDRESS)\
-                                   (PcdGet64 (PcdFlashNvStorageVariableBase64) != 0 ? \
-                                    PcdGet64 (PcdFlashNvStorageVariableBase64) : \
-                                    PcdGet32 (PcdFlashNvStorageVariableBase))
 
 #define EFI_VARIABLE_ATTRIBUTES_MASK  (EFI_VARIABLE_NON_VOLATILE |\
                                       EFI_VARIABLE_BOOTSERVICE_ACCESS | \
@@ -372,6 +368,16 @@ VariableCommonInitialize (
   );
 
 /**
+  Uninitialize variable store area, freeing all resources allocated by
+  VariableCommonInitialize().
+
+**/
+VOID
+VariableCommonUninitialize (
+  VOID
+  );
+
+/**
   This function reclaims variable storage if free size is below the threshold.
 
 **/
@@ -449,10 +455,19 @@ GetFvbInfoByAddress (
   @param Data                       The buffer to return the contents of the variable. May be NULL
                                     with a zero DataSize in order to determine the size buffer needed.
 
-  @return EFI_INVALID_PARAMETER     Invalid parameter.
-  @return EFI_SUCCESS               Find the specified variable.
-  @return EFI_NOT_FOUND             Not found.
-  @return EFI_BUFFER_TO_SMALL       DataSize is too small for the result.
+  @retval EFI_SUCCESS            The function completed successfully.
+  @retval EFI_NOT_FOUND          The variable was not found.
+  @retval EFI_BUFFER_TOO_SMALL   The DataSize is too small for the result.
+  @retval EFI_INVALID_PARAMETER  VariableName is NULL.
+  @retval EFI_INVALID_PARAMETER  VendorGuid is NULL.
+  @retval EFI_INVALID_PARAMETER  DataSize is NULL.
+  @retval EFI_INVALID_PARAMETER  The DataSize is not too small and Data is NULL.
+  @retval EFI_DEVICE_ERROR       The variable could not be retrieved due to a hardware error.
+  @retval EFI_SECURITY_VIOLATION The variable could not be retrieved due to an authentication failure.
+  @retval EFI_UNSUPPORTED        After ExitBootServices() has been called, this return code may be returned
+                                 if no variable storage is supported. The platform should describe this
+                                 runtime service as unsupported at runtime via an EFI_RT_PROPERTIES_TABLE
+                                 configuration table.
 
 **/
 EFI_STATUS
@@ -488,6 +503,11 @@ VariableServiceGetVariable (
                                     GUID of an existing variable.
   @retval EFI_INVALID_PARAMETER     Null-terminator is not found in the first VariableNameSize bytes of
                                     the input VariableName buffer.
+  @retval EFI_DEVICE_ERROR          The variable could not be retrieved due to a hardware error.
+  @retval EFI_UNSUPPORTED           After ExitBootServices() has been called, this return code may be returned
+                                    if no variable storage is supported. The platform should describe this
+                                    runtime service as unsupported at runtime via an EFI_RT_PROPERTIES_TABLE
+                                    configuration table.
 
 **/
 EFI_STATUS
@@ -516,11 +536,19 @@ VariableServiceGetNextVariableName (
                                           data, this value contains the required size.
   @param Data                             Data pointer.
 
-  @return EFI_INVALID_PARAMETER           Invalid parameter.
-  @return EFI_SUCCESS                     Set successfully.
-  @return EFI_OUT_OF_RESOURCES            Resource not enough to set variable.
-  @return EFI_NOT_FOUND                   Not found.
-  @return EFI_WRITE_PROTECTED             Variable is read-only.
+  @retval EFI_SUCCESS                     The function completed successfully.
+  @retval EFI_NOT_FOUND                   The variable was not found.
+  @retval EFI_BUFFER_TOO_SMALL            The DataSize is too small for the result.
+  @retval EFI_INVALID_PARAMETER           VariableName is NULL.
+  @retval EFI_INVALID_PARAMETER           VendorGuid is NULL.
+  @retval EFI_INVALID_PARAMETER           DataSize is NULL.
+  @retval EFI_INVALID_PARAMETER           The DataSize is not too small and Data is NULL.
+  @retval EFI_DEVICE_ERROR                The variable could not be retrieved due to a hardware error.
+  @retval EFI_SECURITY_VIOLATION          The variable could not be retrieved due to an authentication failure.
+  @retval EFI_UNSUPPORTED                 After ExitBootServices() has been called, this return code may be returned
+                                          if no variable storage is supported. The platform should describe this
+                                          runtime service as unsupported at runtime via an EFI_RT_PROPERTIES_TABLE
+                                          configuration table.
 
 **/
 EFI_STATUS
@@ -822,5 +850,3 @@ EFIAPI
 VariableExLibAtRuntime (
   VOID
   );
-
-#endif

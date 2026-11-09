@@ -17,8 +17,7 @@
 
 **/
 
-#ifndef __EFI_FIRMWARE_MANAGEMENT_PROTOCOL_H__
-#define __EFI_FIRMWARE_MANAGEMENT_PROTOCOL_H__
+#pragma once
 
 #define EFI_FIRMWARE_MANAGEMENT_PROTOCOL_GUID \
   { \
@@ -30,20 +29,21 @@ typedef struct _EFI_FIRMWARE_MANAGEMENT_PROTOCOL EFI_FIRMWARE_MANAGEMENT_PROTOCO
 ///
 /// Dependency Expression Opcode
 ///
-#define EFI_FMP_DEP_PUSH_GUID     0x00
-#define EFI_FMP_DEP_PUSH_VERSION  0x01
-#define EFI_FMP_DEP_VERSION_STR   0x02
-#define EFI_FMP_DEP_AND           0x03
-#define EFI_FMP_DEP_OR            0x04
-#define EFI_FMP_DEP_NOT           0x05
-#define EFI_FMP_DEP_TRUE          0x06
-#define EFI_FMP_DEP_FALSE         0x07
-#define EFI_FMP_DEP_EQ            0x08
-#define EFI_FMP_DEP_GT            0x09
-#define EFI_FMP_DEP_GTE           0x0A
-#define EFI_FMP_DEP_LT            0x0B
-#define EFI_FMP_DEP_LTE           0x0C
-#define EFI_FMP_DEP_END           0x0D
+#define EFI_FMP_DEP_PUSH_GUID       0x00
+#define EFI_FMP_DEP_PUSH_VERSION    0x01
+#define EFI_FMP_DEP_VERSION_STR     0x02
+#define EFI_FMP_DEP_AND             0x03
+#define EFI_FMP_DEP_OR              0x04
+#define EFI_FMP_DEP_NOT             0x05
+#define EFI_FMP_DEP_TRUE            0x06
+#define EFI_FMP_DEP_FALSE           0x07
+#define EFI_FMP_DEP_EQ              0x08
+#define EFI_FMP_DEP_GT              0x09
+#define EFI_FMP_DEP_GTE             0x0A
+#define EFI_FMP_DEP_LT              0x0B
+#define EFI_FMP_DEP_LTE             0x0C
+#define EFI_FMP_DEP_END             0x0D
+#define EFI_FMP_DEP_DECLARE_LENGTH  0x0E
 
 ///
 /// Image Attribute - Dependency
@@ -350,7 +350,10 @@ EFI_STATUS
   @retval EFI_INVALID_PARAMETER  The Image was NULL.
   @retval EFI_NOT_FOUND          The current image is not copied to the buffer.
   @retval EFI_UNSUPPORTED        The operation is not supported.
-  @retval EFI_SECURITY_VIOLATION The operation could not be performed due to an authentication failure.
+  @retval EFI_SECURITY_VIOLATION The operation could not be completed due to an image corruption.
+                                 If the image is able to be read, the Image buffer will be updated
+                                 with the retrieved image contents.
+  @retval EFI_DEVICE_ERROR       The image could not be read.
 
 **/
 typedef
@@ -554,5 +557,3 @@ struct _EFI_FIRMWARE_MANAGEMENT_PROTOCOL {
 };
 
 extern EFI_GUID  gEfiFirmwareManagementProtocolGuid;
-
-#endif

@@ -432,6 +432,8 @@ ParseOfwNode (
   OUT     BOOLEAN      *IsFinal
   )
 {
+  BOOLEAN  AcceptSlash = FALSE;
+
   //
   // A leading slash is expected. End of string is tolerated.
   //
@@ -464,6 +466,21 @@ ParseOfwNode (
     return RETURN_INVALID_PARAMETER;
   }
 
+  if (SubstringEq (OfwNode->DriverName, "rom")) {
+    //
+    // bug compatibility hack
+    //
+    // qemu passes fw_cfg filenames as rom unit address.
+    // The filenames have slashes:
+    //      /rom@genroms/linuxboot_dma.bin
+    //
+    // Alow slashes in the unit address to avoid the parser trip up,
+    // so we can successfully parse the following lines (the rom
+    // entries themself are ignored).
+    //
+    AcceptSlash = TRUE;
+  }
+
   //
   // unit-address
   //
@@ -475,7 +492,7 @@ ParseOfwNode (
 
   OfwNode->UnitAddress.Ptr = *Ptr;
   OfwNode->UnitAddress.Len = 0;
-  while (IsPrintNotDelim (**Ptr)) {
+  while (IsPrintNotDelim (**Ptr) || (AcceptSlash && **Ptr == '/')) {
     ++*Ptr;
     ++OfwNode->UnitAddress.Len;
   }
@@ -526,7 +543,7 @@ ParseOfwNode (
   DEBUG ((
     DEBUG_VERBOSE,
     "%a: DriverName=\"%.*a\" UnitAddress=\"%.*a\" DeviceArguments=\"%.*a\"\n",
-    __FUNCTION__,
+    __func__,
     OfwNode->DriverName.Len,
     OfwNode->DriverName.Ptr,
     OfwNode->UnitAddress.Len,
@@ -962,14 +979,16 @@ TranslatePciOfwNodes (
                 TargetLun[1]
                 );
   } else if ((NumNodes >= FirstNonBridge + 2) &&
-             SubstringEq (OfwNode[FirstNonBridge + 0].DriverName, "pci8086,5845") &&
+             (SubstringEq (OfwNode[FirstNonBridge + 0].DriverName, "pci8086,5845") ||
+              SubstringEq (OfwNode[FirstNonBridge + 0].DriverName, "pci1b36,0010")) &&
              SubstringEq (OfwNode[FirstNonBridge + 1].DriverName, "namespace")
              )
   {
     //
     // OpenFirmware device path (NVMe device):
     //
-    //   /pci@i0cf8/pci8086,5845@6[,1]/namespace@1,0
+    //   /pci@i0cf8/pci8086,5845@6[,1]/namespace@1,0  (legacy QEMU NVMe)
+    //   /pci@i0cf8/pci1b36,0010@3[,0]/namespace@2,0  (standard QEMU NVMe)
     //        ^                  ^  ^            ^ ^
     //        |                  |  |            | Extended Unique Identifier
     //        |                  |  |            | (EUI-64), big endian interp.
@@ -1460,7 +1479,7 @@ TranslateOfwPath (
   }
 
   if (Status == RETURN_NOT_FOUND) {
-    DEBUG ((DEBUG_VERBOSE, "%a: no more nodes\n", __FUNCTION__));
+    DEBUG ((DEBUG_VERBOSE, "%a: no more nodes\n", __func__));
     return RETURN_NOT_FOUND;
   }
 
@@ -1479,7 +1498,7 @@ TranslateOfwPath (
       break;
 
     case RETURN_INVALID_PARAMETER:
-      DEBUG ((DEBUG_VERBOSE, "%a: parse error\n", __FUNCTION__));
+      DEBUG ((DEBUG_VERBOSE, "%a: parse error\n", __func__));
       return RETURN_INVALID_PARAMETER;
 
     default:
@@ -1495,22 +1514,22 @@ TranslateOfwPath (
              );
   switch (Status) {
     case RETURN_SUCCESS:
-      DEBUG ((DEBUG_VERBOSE, "%a: success: \"%s\"\n", __FUNCTION__, Translated));
+      DEBUG ((DEBUG_VERBOSE, "%a: success: \"%s\"\n", __func__, Translated));
       break;
 
     case RETURN_BUFFER_TOO_SMALL:
-      DEBUG ((DEBUG_VERBOSE, "%a: buffer too small\n", __FUNCTION__));
+      DEBUG ((DEBUG_VERBOSE, "%a: buffer too small\n", __func__));
       break;
 
     case RETURN_UNSUPPORTED:
-      DEBUG ((DEBUG_VERBOSE, "%a: unsupported\n", __FUNCTION__));
+      DEBUG ((DEBUG_VERBOSE, "%a: unsupported\n", __func__));
       break;
 
     case RETURN_PROTOCOL_ERROR:
       DEBUG ((
         DEBUG_VERBOSE,
         "%a: logic error / system state mismatch\n",
-        __FUNCTION__
+        __func__
         ));
       break;
 
@@ -1587,9 +1606,9 @@ ConnectDevicesFromQemu (
     goto FreeFwCfg;
   }
 
-  DEBUG ((DEBUG_VERBOSE, "%a: FwCfg:\n", __FUNCTION__));
+  DEBUG ((DEBUG_VERBOSE, "%a: FwCfg:\n", __func__));
   DEBUG ((DEBUG_VERBOSE, "%a\n", FwCfg));
-  DEBUG ((DEBUG_VERBOSE, "%a: FwCfg: <end>\n", __FUNCTION__));
+  DEBUG ((DEBUG_VERBOSE, "%a: FwCfg: <end>\n", __func__));
 
   if (FeaturePcdGet (PcdQemuBootOrderPciTranslation)) {
     EfiStatus = CreateExtraRootBusMap (&ExtraPciRoots);
@@ -1669,7 +1688,7 @@ ConnectDevicesFromQemu (
     DEBUG ((
       DEBUG_INFO,
       "%a: %Lu OpenFirmware device path(s) connected\n",
-      __FUNCTION__,
+      __func__,
       (UINT64)NumConnected
       ));
     Status = RETURN_SUCCESS;
@@ -1684,6 +1703,132 @@ FreeFwCfg:
   FreePool (FwCfg);
 
   return Status;
+}
+
+/**
+  Write qemu boot order to uefi variables.
+
+  Attempt to retrieve the "bootorder" fw_cfg file from QEMU. Translate
+  the OpenFirmware device paths therein to UEFI device path fragments.
+
+  On Success store the device path in VMMBootOrderNNNN variables.
+**/
+VOID
+EFIAPI
+StoreQemuBootOrder (
+  VOID
+  )
+{
+  RETURN_STATUS         Status;
+  FIRMWARE_CONFIG_ITEM  FwCfgItem;
+  UINTN                 FwCfgSize;
+  CHAR8                 *FwCfg;
+  EFI_STATUS            EfiStatus;
+  EXTRA_ROOT_BUS_MAP    *ExtraPciRoots;
+  CONST CHAR8           *FwCfgPtr;
+  UINTN                 TranslatedSize;
+  CHAR16                Translated[TRANSLATION_OUTPUT_SIZE];
+  UINTN                 VariableIndex = 0;
+  CHAR16                VariableName[20];
+
+  Status = QemuFwCfgFindFile ("bootorder", &FwCfgItem, &FwCfgSize);
+  if (RETURN_ERROR (Status)) {
+    return;
+  }
+
+  if (FwCfgSize == 0) {
+    return;
+  }
+
+  FwCfg = AllocatePool (FwCfgSize);
+  if (FwCfg == NULL) {
+    return;
+  }
+
+  QemuFwCfgSelectItem (FwCfgItem);
+  QemuFwCfgReadBytes (FwCfgSize, FwCfg);
+  if (FwCfg[FwCfgSize - 1] != '\0') {
+    Status = RETURN_INVALID_PARAMETER;
+    goto FreeFwCfg;
+  }
+
+  DEBUG ((DEBUG_VERBOSE, "%a: FwCfg:\n", __func__));
+  DEBUG ((DEBUG_VERBOSE, "%a\n", FwCfg));
+  DEBUG ((DEBUG_VERBOSE, "%a: FwCfg: <end>\n", __func__));
+
+  if (FeaturePcdGet (PcdQemuBootOrderPciTranslation)) {
+    EfiStatus = CreateExtraRootBusMap (&ExtraPciRoots);
+    if (EFI_ERROR (EfiStatus)) {
+      Status = (RETURN_STATUS)EfiStatus;
+      goto FreeFwCfg;
+    }
+  } else {
+    ExtraPciRoots = NULL;
+  }
+
+  //
+  // Translate each OpenFirmware path to a UEFI devpath prefix.
+  //
+  FwCfgPtr       = FwCfg;
+  TranslatedSize = ARRAY_SIZE (Translated);
+  Status         = TranslateOfwPath (
+                     &FwCfgPtr,
+                     ExtraPciRoots,
+                     Translated,
+                     &TranslatedSize
+                     );
+  while (Status == EFI_SUCCESS ||
+         Status == EFI_UNSUPPORTED)
+  {
+    if (Status == EFI_SUCCESS) {
+      EFI_DEVICE_PATH_PROTOCOL  *DevicePath;
+
+      //
+      // Convert the UEFI devpath prefix to binary representation.
+      //
+      ASSERT (Translated[TranslatedSize] == L'\0');
+      DevicePath = ConvertTextToDevicePath (Translated);
+      if (DevicePath == NULL) {
+        Status = RETURN_OUT_OF_RESOURCES;
+        goto FreeExtraPciRoots;
+      }
+
+      UnicodeSPrint (
+        VariableName,
+        sizeof (VariableName),
+        L"VMMBootOrder%04x",
+        VariableIndex++
+        );
+      DEBUG ((DEBUG_INFO, "%a: %s = %s\n", __func__, VariableName, Translated));
+      gRT->SetVariable (
+             VariableName,
+             &gVMMBootOrderGuid,
+             EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
+             GetDevicePathSize (DevicePath),
+             DevicePath
+             );
+      FreePool (DevicePath);
+    }
+
+    //
+    // Move to the next OFW devpath.
+    //
+    TranslatedSize = ARRAY_SIZE (Translated);
+    Status         = TranslateOfwPath (
+                       &FwCfgPtr,
+                       ExtraPciRoots,
+                       Translated,
+                       &TranslatedSize
+                       );
+  }
+
+FreeExtraPciRoots:
+  if (ExtraPciRoots != NULL) {
+    DestroyExtraRootBusMap (ExtraPciRoots);
+  }
+
+FreeFwCfg:
+  FreePool (FwCfg);
 }
 
 /**
@@ -1801,7 +1946,7 @@ Match (
     DEBUG ((
       DEBUG_VERBOSE,
       "%a: expanded relative device path \"%s\" for prefix matching\n",
-      __FUNCTION__,
+      __func__,
       Converted
       ));
     FreePool (Converted);
@@ -1815,7 +1960,7 @@ Match (
   DEBUG ((
     DEBUG_VERBOSE,
     "%a: against \"%s\": %a\n",
-    __FUNCTION__,
+    __func__,
     Converted,
     Result ? "match" : "no match"
     ));
@@ -1925,7 +2070,7 @@ BootOrderComplete (
             DEBUG ((
               DEBUG_VERBOSE,
               "%a: keeping \"%s\"\n",
-              __FUNCTION__,
+              __func__,
               Converted
               ));
           }
@@ -1933,7 +2078,7 @@ BootOrderComplete (
           DEBUG ((
             DEBUG_VERBOSE,
             "%a: dropping \"%s\"\n",
-            __FUNCTION__,
+            __func__,
             Converted
             ));
         }
@@ -2068,9 +2213,9 @@ SetBootOrderFromQemu (
     goto ErrorFreeFwCfg;
   }
 
-  DEBUG ((DEBUG_VERBOSE, "%a: FwCfg:\n", __FUNCTION__));
+  DEBUG ((DEBUG_VERBOSE, "%a: FwCfg:\n", __func__));
   DEBUG ((DEBUG_VERBOSE, "%a\n", FwCfg));
-  DEBUG ((DEBUG_VERBOSE, "%a: FwCfg: <end>\n", __FUNCTION__));
+  DEBUG ((DEBUG_VERBOSE, "%a: FwCfg: <end>\n", __func__));
   FwCfgPtr = FwCfg;
 
   BootOrder.Produced  = 0;
@@ -2189,13 +2334,13 @@ SetBootOrderFromQemu (
       DEBUG ((
         DEBUG_ERROR,
         "%a: setting BootOrder: %r\n",
-        __FUNCTION__,
+        __func__,
         Status
         ));
       goto ErrorFreeExtraPciRoots;
     }
 
-    DEBUG ((DEBUG_INFO, "%a: setting BootOrder: success\n", __FUNCTION__));
+    DEBUG ((DEBUG_INFO, "%a: setting BootOrder: success\n", __func__));
     PruneBootVariables (ActiveOption, ActiveCount);
   }
 
@@ -2233,6 +2378,11 @@ GetFrontPageTimeoutFromQemu (
 {
   FIRMWARE_CONFIG_ITEM  BootMenuWaitItem;
   UINTN                 BootMenuWaitSize;
+  UINT16                Timeout = PcdGet16 (PcdPlatformBootTimeOut);
+
+  if (!QemuFwCfgIsAvailable ()) {
+    return Timeout;
+  }
 
   QemuFwCfgSelectItem (QemuFwCfgItemBootMenu);
   if (QemuFwCfgRead16 () == 0) {
@@ -2257,9 +2407,6 @@ GetFrontPageTimeoutFromQemu (
     // return three seconds if the platform default would cause us to skip the
     // front page, and return the platform default otherwise.
     //
-    UINT16  Timeout;
-
-    Timeout = PcdGet16 (PcdPlatformBootTimeOut);
     if (Timeout == 0) {
       Timeout = 3;
     }

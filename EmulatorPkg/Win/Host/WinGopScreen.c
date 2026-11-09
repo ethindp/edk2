@@ -396,10 +396,10 @@ WinNtWndSize (
 // TODO:    Delta - add argument and description to function comment
 EFI_STATUS
 WinNtWndBlt (
-  IN  EMU_GRAPHICS_WINDOW_PROTOCOL    *GraphicsIo,
-  IN  EFI_UGA_PIXEL                   *BltBuffer OPTIONAL,
-  IN  EFI_UGA_BLT_OPERATION           BltOperation,
-  IN  EMU_GRAPHICS_WINDOWS__BLT_ARGS  *Args
+  IN  EMU_GRAPHICS_WINDOW_PROTOCOL       *GraphicsIo,
+  IN  EFI_GRAPHICS_OUTPUT_BLT_PIXEL      *BltBuffer OPTIONAL,
+  IN  EFI_GRAPHICS_OUTPUT_BLT_OPERATION  BltOperation,
+  IN  EMU_GRAPHICS_WINDOWS__BLT_ARGS     *Args
   )
 {
   RETURN_STATUS          RStatus;
@@ -808,6 +808,7 @@ WinNtGraphicsWindowOpen (
 
   GopPrivateCreateQ (Private, &Private->QueueForRead);
 
+  Private->Signature                          = GRAPHICS_PRIVATE_DATA_SIGNATURE;
   Private->GraphicsWindowIo.Size              = WinNtWndSize;
   Private->GraphicsWindowIo.CheckKey          = WinNtWndCheckKey;
   Private->GraphicsWindowIo.GetKey            = WinNtWndGetKey;

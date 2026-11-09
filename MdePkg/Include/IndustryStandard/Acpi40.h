@@ -1,14 +1,29 @@
 /** @file
   ACPI 4.0 definitions from the ACPI Specification Revision 4.0a April 5, 2010
 
-  Copyright (c) 2010 - 2018, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2010 - 2022, Intel Corporation. All rights reserved.<BR>
+  Copyright (C) 2025, Advanced Micro Devices, Inc. All rights reserved.
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#ifndef _ACPI_4_0_H_
-#define _ACPI_4_0_H_
+#pragma once
 
 #include <IndustryStandard/Acpi30.h>
+
+///
+/// _CSD Revision for ACPI 4.0
+///
+#define EFI_ACPI_4_0_AML_CSD_REVISION  0
+
+///
+/// _CSD NumEntries for ACPI 4.0
+///
+#define EFI_ACPI_4_0_AML_CSD_NUM_ENTRIES  6
+
+///
+/// _PSD Revision for ACPI 4.0
+///
+#define EFI_ACPI_4_0_AML_PSD_REVISION  0
 
 //
 // Ensure proper structure formats
@@ -690,6 +705,7 @@ typedef struct {
 // Boot Error Severity types
 //
 #define EFI_ACPI_4_0_ERROR_SEVERITY_CORRECTABLE  0x00
+#define EFI_ACPI_4_0_ERROR_SEVERITY_RECOVERABLE  0x00
 #define EFI_ACPI_4_0_ERROR_SEVERITY_FATAL        0x01
 #define EFI_ACPI_4_0_ERROR_SEVERITY_CORRECTED    0x02
 #define EFI_ACPI_4_0_ERROR_SEVERITY_NONE         0x03
@@ -982,12 +998,12 @@ typedef struct {
 ///
 /// ERST Action Command Status
 ///
-#define EFI_ACPI_4_0_EINJ_STATUS_SUCCESS                 0x00
-#define EFI_ACPI_4_0_EINJ_STATUS_NOT_ENOUGH_SPACE        0x01
-#define EFI_ACPI_4_0_EINJ_STATUS_HARDWARE_NOT_AVAILABLE  0x02
-#define EFI_ACPI_4_0_EINJ_STATUS_FAILED                  0x03
-#define EFI_ACPI_4_0_EINJ_STATUS_RECORD_STORE_EMPTY      0x04
-#define EFI_ACPI_4_0_EINJ_STATUS_RECORD_NOT_FOUND        0x05
+#define EFI_ACPI_4_0_ERST_STATUS_SUCCESS                 0x00
+#define EFI_ACPI_4_0_ERST_STATUS_NOT_ENOUGH_SPACE        0x01
+#define EFI_ACPI_4_0_ERST_STATUS_HARDWARE_NOT_AVAILABLE  0x02
+#define EFI_ACPI_4_0_ERST_STATUS_FAILED                  0x03
+#define EFI_ACPI_4_0_ERST_STATUS_RECORD_STORE_EMPTY      0x04
+#define EFI_ACPI_4_0_ERST_STATUS_RECORD_NOT_FOUND        0x05
 
 ///
 /// ERST Serialization Instructions
@@ -1299,5 +1315,3 @@ typedef struct {
 #define EFI_ACPI_4_0_WATCHDOG_RESOURCE_TABLE_SIGNATURE  SIGNATURE_32('W', 'D', 'R', 'T')
 
 #pragma pack()
-
-#endif

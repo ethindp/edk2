@@ -9,16 +9,33 @@
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
+#include <PiPei.h>
 #include <Library/BaseLib.h>
-#include <Library/IoLib.h>
 #include <Library/DebugLib.h>
+#include <Library/HobLib.h>
+#include <Library/IoLib.h>
 #include <Library/QemuFwCfgLib.h>
-#include <Library/MemEncryptSevLib.h>
+#include <WorkArea.h>
 
 #include "QemuFwCfgLibInternal.h"
 
-STATIC BOOLEAN  mQemuFwCfgSupported = FALSE;
-STATIC BOOLEAN  mQemuFwCfgDmaSupported;
+/**
+  Check if it is Tdx guest
+
+  @retval    TRUE   It is Tdx guest
+  @retval    FALSE  It is not Tdx guest
+**/
+STATIC
+BOOLEAN
+QemuFwCfgIsCcGuest (
+  VOID
+  )
+{
+  CONFIDENTIAL_COMPUTING_WORK_AREA_HEADER  *CcWorkAreaHeader;
+
+  CcWorkAreaHeader = (CONFIDENTIAL_COMPUTING_WORK_AREA_HEADER *)FixedPcdGet32 (PcdOvmfWorkAreaBase);
+  return (CcWorkAreaHeader != NULL && CcWorkAreaHeader->GuestType != CcGuestTypeNonEncrypted);
+}
 
 /**
   Returns a boolean indicating if the firmware configuration interface
@@ -39,54 +56,85 @@ QemuFwCfgIsAvailable (
   return InternalQemuFwCfgIsAvailable ();
 }
 
+STATIC
+VOID
+QemuFwCfgProbe (
+  BOOLEAN  *Supported,
+  BOOLEAN  *DmaSupported
+  )
+{
+  UINT32   Signature;
+  UINT32   Revision;
+  BOOLEAN  CcGuest;
+
+  // Use direct Io* calls for probing to avoid recursion.
+  QemuFwCfgSelectItem (QemuFwCfgItemSignature);
+  if ( InternalQemuFwCfgCacheReading ()) {
+    InternalQemuFwCfgCacheReadBytes (sizeof Signature, &Signature);
+  } else {
+    IoReadFifo8 (FW_CFG_IO_DATA, sizeof Signature, &Signature);
+  }
+
+  QemuFwCfgSelectItem (QemuFwCfgItemInterfaceVersion);
+  if ( InternalQemuFwCfgCacheReading ()) {
+    InternalQemuFwCfgCacheReadBytes (sizeof Revision, &Revision);
+  } else {
+    IoReadFifo8 (FW_CFG_IO_DATA, sizeof Revision, &Revision);
+  }
+
+  CcGuest = QemuFwCfgIsCcGuest ();
+
+  *Supported    = FALSE;
+  *DmaSupported = FALSE;
+  if ((Signature == SIGNATURE_32 ('Q', 'E', 'M', 'U')) && (Revision >= 1)) {
+    *Supported = TRUE;
+    if ((Revision & FW_CFG_F_DMA) && !CcGuest) {
+      *DmaSupported = TRUE;
+    }
+  }
+
+  DEBUG ((
+    DEBUG_INFO,
+    "%a: Supported %d, DMA %d\n",
+    __func__,
+    *Supported,
+    *DmaSupported
+    ));
+}
+
+STATIC
+EFI_HOB_PLATFORM_INFO *
+QemuFwCfgGetPlatformInfo (
+  VOID
+  )
+{
+  EFI_HOB_PLATFORM_INFO  *PlatformInfoHob;
+  EFI_HOB_GUID_TYPE      *GuidHob;
+
+  GuidHob = GetFirstGuidHob (&gUefiOvmfPkgPlatformInfoGuid);
+  if (GuidHob == NULL) {
+    return NULL;
+  }
+
+  PlatformInfoHob = (EFI_HOB_PLATFORM_INFO *)GET_GUID_HOB_DATA (GuidHob);
+
+  if (!PlatformInfoHob->QemuFwCfgChecked) {
+    QemuFwCfgProbe (
+      &PlatformInfoHob->QemuFwCfgWorkArea.QemuFwCfgSupported,
+      &PlatformInfoHob->QemuFwCfgWorkArea.QemuFwCfgDmaSupported
+      );
+    PlatformInfoHob->QemuFwCfgChecked = TRUE;
+  }
+
+  return PlatformInfoHob;
+}
+
 RETURN_STATUS
 EFIAPI
 QemuFwCfgInitialize (
   VOID
   )
 {
-  UINT32  Signature;
-  UINT32  Revision;
-
-  //
-  // Enable the access routines while probing to see if it is supported.
-  // For probing we always use the IO Port (IoReadFifo8()) access method.
-  //
-  mQemuFwCfgSupported    = TRUE;
-  mQemuFwCfgDmaSupported = FALSE;
-
-  QemuFwCfgSelectItem (QemuFwCfgItemSignature);
-  Signature = QemuFwCfgRead32 ();
-  DEBUG ((DEBUG_INFO, "FW CFG Signature: 0x%x\n", Signature));
-  QemuFwCfgSelectItem (QemuFwCfgItemInterfaceVersion);
-  Revision = QemuFwCfgRead32 ();
-  DEBUG ((DEBUG_INFO, "FW CFG Revision: 0x%x\n", Revision));
-  if ((Signature != SIGNATURE_32 ('Q', 'E', 'M', 'U')) ||
-      (Revision < 1)
-      )
-  {
-    DEBUG ((DEBUG_INFO, "QemuFwCfg interface not supported.\n"));
-    mQemuFwCfgSupported = FALSE;
-    return RETURN_SUCCESS;
-  }
-
-  if ((Revision & FW_CFG_F_DMA) == 0) {
-    DEBUG ((DEBUG_INFO, "QemuFwCfg interface (IO Port) is supported.\n"));
-  } else {
-    //
-    // If SEV is enabled then we do not support DMA operations in PEI phase.
-    // This is mainly because DMA in SEV guest requires using bounce buffer
-    // (which need to allocate dynamic memory and allocating a PAGE size'd
-    // buffer can be challenge in PEI phase)
-    //
-    if (MemEncryptSevIsEnabled ()) {
-      DEBUG ((DEBUG_INFO, "SEV: QemuFwCfg fallback to IO Port interface.\n"));
-    } else {
-      mQemuFwCfgDmaSupported = TRUE;
-      DEBUG ((DEBUG_INFO, "QemuFwCfg interface (DMA) is supported.\n"));
-    }
-  }
-
   return RETURN_SUCCESS;
 }
 
@@ -104,7 +152,9 @@ InternalQemuFwCfgIsAvailable (
   VOID
   )
 {
-  return mQemuFwCfgSupported;
+  EFI_HOB_PLATFORM_INFO  *PlatformInfoHob = QemuFwCfgGetPlatformInfo ();
+
+  return PlatformInfoHob->QemuFwCfgWorkArea.QemuFwCfgSupported;
 }
 
 /**
@@ -119,7 +169,9 @@ InternalQemuFwCfgDmaIsAvailable (
   VOID
   )
 {
-  return mQemuFwCfgDmaSupported;
+  EFI_HOB_PLATFORM_INFO  *PlatformInfoHob = QemuFwCfgGetPlatformInfo ();
+
+  return PlatformInfoHob->QemuFwCfgWorkArea.QemuFwCfgDmaSupported;
 }
 
 /**
@@ -158,10 +210,10 @@ InternalQemuFwCfgDmaBytes (
   }
 
   //
-  // SEV does not support DMA operations in PEI stage, we should
+  // TDX does not support DMA operations in PEI stage, we should
   // not have reached here.
   //
-  ASSERT (!MemEncryptSevIsEnabled ());
+  ASSERT (!QemuFwCfgIsCcGuest ());
 
   Access.Control = SwapBytes32 (Control);
   Access.Length  = SwapBytes32 (Size);
@@ -198,4 +250,53 @@ InternalQemuFwCfgDmaBytes (
   // After a read, the caller will want to use Buffer.
   //
   MemoryFence ();
+}
+
+/**
+  Get the pointer to the QEMU_FW_CFG_WORK_AREA. This data is used as the
+  workarea to record the onging fw_cfg item and offset.
+  @retval   QEMU_FW_CFG_WORK_AREA  Pointer to the QEMU_FW_CFG_WORK_AREA
+  @retval   NULL                QEMU_FW_CFG_WORK_AREA doesn't exist
+**/
+QEMU_FW_CFG_WORK_AREA *
+InternalQemuFwCfgCacheGetWorkArea (
+  VOID
+  )
+{
+  EFI_HOB_GUID_TYPE      *GuidHob;
+  EFI_HOB_PLATFORM_INFO  *PlatformHobinfo;
+
+  GuidHob = GetFirstGuidHob (&gUefiOvmfPkgPlatformInfoGuid);
+  if (GuidHob == NULL) {
+    return NULL;
+  }
+
+  PlatformHobinfo = (EFI_HOB_PLATFORM_INFO *)(VOID *)GET_GUID_HOB_DATA (GuidHob);
+  return &(PlatformHobinfo->QemuFwCfgWorkArea);
+}
+
+/**
+ OVMF reads configuration data from QEMU via fw_cfg.
+ For Td-Guest VMM is out of TCB and the configuration data is untrusted.
+ From the security perpective the configuration data shall be measured
+ before it is consumed.
+ This function reads the fw_cfg items and cached them. In the meanwhile these
+ fw_cfg items are measured as well. This is to avoid changing the order when
+ reading the fw_cfg process, which depends on multiple factors(depex, order in
+ the Firmware volume).
+ @retval  RETURN_SUCCESS   - Successfully cache with measurement
+ @retval  Others           - As the error code indicates
+ */
+RETURN_STATUS
+EFIAPI
+QemuFwCfgInitCache (
+  IN OUT EFI_HOB_PLATFORM_INFO  *PlatformInfoHob
+  )
+{
+  if (EFI_ERROR (InternalQemuFwCfgInitCache (PlatformInfoHob))) {
+    return RETURN_ABORTED;
+  }
+
+  DEBUG ((DEBUG_INFO, "QemuFwCfgInitCache Pass!!!\n"));
+  return RETURN_SUCCESS;
 }

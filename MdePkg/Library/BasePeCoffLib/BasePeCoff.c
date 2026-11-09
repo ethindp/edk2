@@ -1,6 +1,6 @@
 /** @file
   Base PE/COFF loader supports loading any PE32/PE32+ or TE image, but
-  only supports relocating IA32, x64, IPF, ARM, RISC-V and EBC images.
+  only supports relocating IA32, x64, IPF, RISC-V, LoongArch and EBC images.
 
   Caution: This file requires additional review when modified.
   This library will have external input - PE/COFF image.
@@ -18,11 +18,13 @@
   Copyright (c) 2006 - 2019, Intel Corporation. All rights reserved.<BR>
   Portions copyright (c) 2008 - 2009, Apple Inc. All rights reserved.<BR>
   Portions Copyright (c) 2020, Hewlett Packard Enterprise Development LP. All rights reserved.<BR>
+  Portions Copyright (c) 2022, Loongson Technology Corporation Limited. All rights reserved.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
 #include "BasePeCoffLibInternals.h"
+#include <Library/SafeIntLib.h>
 
 /**
   Adjust some fields in section header for TE image.
@@ -67,11 +69,19 @@ PeCoffLoaderGetPeHeader (
   UINTN                     Size;
   UINTN                     ReadSize;
   UINT32                    SectionHeaderOffset;
-  UINT32                    Index;
+  UINTN                     Index;
   UINT32                    HeaderWithoutDataDir;
   CHAR8                     BufferData;
   UINTN                     NumberOfSections;
   EFI_IMAGE_SECTION_HEADER  SectionHeader;
+
+  //
+  // Zero the security data directory. It is populated below only if the image
+  // has a non-empty EFI_IMAGE_DIRECTORY_ENTRY_SECURITY entry that passes
+  // bounds checking.
+  //
+  ImageContext->SecurityDataDirectory.VirtualAddress = 0;
+  ImageContext->SecurityDataDirectory.Size           = 0;
 
   //
   // Read the DOS image header to check for its existence
@@ -301,16 +311,27 @@ PeCoffLoaderGetPeHeader (
 
             return Status;
           }
+
+          //
+          // The security data directory exists and is within the image bounds. Record a copy of it
+          // in the image context so callers can locate the certificate data without re-parsing the headers.
+          //
+          CopyMem (
+            &ImageContext->SecurityDataDirectory,
+            &Hdr.Pe32->OptionalHeader.DataDirectory[EFI_IMAGE_DIRECTORY_ENTRY_SECURITY],
+            sizeof (EFI_IMAGE_DATA_DIRECTORY)
+            );
         }
       }
 
       //
       // Use PE32 offset
       //
-      ImageContext->ImageType        = Hdr.Pe32->OptionalHeader.Subsystem;
-      ImageContext->ImageSize        = (UINT64)Hdr.Pe32->OptionalHeader.SizeOfImage;
-      ImageContext->SectionAlignment = Hdr.Pe32->OptionalHeader.SectionAlignment;
-      ImageContext->SizeOfHeaders    = Hdr.Pe32->OptionalHeader.SizeOfHeaders;
+      ImageContext->ImageType          = Hdr.Pe32->OptionalHeader.Subsystem;
+      ImageContext->ImageSize          = (UINT64)Hdr.Pe32->OptionalHeader.SizeOfImage;
+      ImageContext->SectionAlignment   = Hdr.Pe32->OptionalHeader.SectionAlignment;
+      ImageContext->SizeOfHeaders      = Hdr.Pe32->OptionalHeader.SizeOfHeaders;
+      ImageContext->DllCharacteristics = Hdr.Pe32->OptionalHeader.DllCharacteristics;
     } else if (Hdr.Pe32->OptionalHeader.Magic == EFI_IMAGE_NT_OPTIONAL_HDR64_MAGIC) {
       //
       // 1. Check FileHeader.NumberOfRvaAndSizes filed.
@@ -422,16 +443,27 @@ PeCoffLoaderGetPeHeader (
 
             return Status;
           }
+
+          //
+          // The security data directory exists and is within the image bounds. Record a copy of it
+          // in the image context so callers can locate the certificate data without re-parsing the headers.
+          //
+          CopyMem (
+            &ImageContext->SecurityDataDirectory,
+            &Hdr.Pe32Plus->OptionalHeader.DataDirectory[EFI_IMAGE_DIRECTORY_ENTRY_SECURITY],
+            sizeof (EFI_IMAGE_DATA_DIRECTORY)
+            );
         }
       }
 
       //
       // Use PE32+ offset
       //
-      ImageContext->ImageType        = Hdr.Pe32Plus->OptionalHeader.Subsystem;
-      ImageContext->ImageSize        = (UINT64)Hdr.Pe32Plus->OptionalHeader.SizeOfImage;
-      ImageContext->SectionAlignment = Hdr.Pe32Plus->OptionalHeader.SectionAlignment;
-      ImageContext->SizeOfHeaders    = Hdr.Pe32Plus->OptionalHeader.SizeOfHeaders;
+      ImageContext->ImageType          = Hdr.Pe32Plus->OptionalHeader.Subsystem;
+      ImageContext->ImageSize          = (UINT64)Hdr.Pe32Plus->OptionalHeader.SizeOfImage;
+      ImageContext->SectionAlignment   = Hdr.Pe32Plus->OptionalHeader.SectionAlignment;
+      ImageContext->SizeOfHeaders      = Hdr.Pe32Plus->OptionalHeader.SizeOfHeaders;
+      ImageContext->DllCharacteristics = Hdr.Pe32Plus->OptionalHeader.DllCharacteristics;
     } else {
       ImageContext->ImageError = IMAGE_ERROR_INVALID_MACHINE_TYPE;
       return RETURN_UNSUPPORTED;
@@ -544,8 +576,9 @@ PeCoffLoaderGetPeHeader (
   Retrieves information about a PE/COFF image.
 
   Computes the PeCoffHeaderOffset, IsTeImage, ImageType, ImageAddress, ImageSize,
-  DestinationAddress, RelocationsStripped, SectionAlignment, SizeOfHeaders, and
-  DebugDirectoryEntryRva fields of the ImageContext structure.
+  DestinationAddress, RelocationsStripped, SectionAlignment, SizeOfHeaders,
+  DllCharacteristics, DllCharacteristicsEx and DebugDirectoryEntryRva fields of
+  the ImageContext structure.
   If ImageContext is NULL, then return RETURN_INVALID_PARAMETER.
   If the PE/COFF image accessed through the ImageRead service in the ImageContext
   structure is not a supported PE/COFF image type, then return RETURN_UNSUPPORTED.
@@ -581,6 +614,7 @@ PeCoffLoaderGetImageInfo (
   UINTN                                Size;
   UINTN                                ReadSize;
   UINTN                                Index;
+  UINTN                                NextIndex;
   UINTN                                DebugDirectoryEntryRva;
   UINTN                                DebugDirectoryEntryFileOffset;
   UINTN                                SectionHeaderOffset;
@@ -751,7 +785,42 @@ PeCoffLoaderGetImageInfo (
               ImageContext->ImageSize += DebugEntry.SizeOfData;
             }
 
-            return RETURN_SUCCESS;
+            //
+            // Implementations of GenFw before commit 60e85a39fe49071 will
+            // concatenate the debug directory entry and the codeview entry,
+            // and erroneously put the combined size into the debug directory's
+            // size field. If this is the case, no other relevant directory
+            // entries can exist, and we can terminate here.
+            //
+            NextIndex = Index + sizeof (EFI_IMAGE_DEBUG_DIRECTORY_ENTRY);
+            if ((NextIndex < DebugDirectoryEntry->Size) &&
+                (DebugEntry.FileOffset == (DebugDirectoryEntryFileOffset + NextIndex)))
+            {
+              break;
+            }
+
+            continue;
+          }
+
+          if (DebugEntry.Type == EFI_IMAGE_DEBUG_TYPE_EX_DLLCHARACTERISTICS) {
+            Size     = sizeof (EFI_IMAGE_DEBUG_EX_DLLCHARACTERISTICS_ENTRY);
+            ReadSize = sizeof (EFI_IMAGE_DEBUG_EX_DLLCHARACTERISTICS_ENTRY);
+            Status   = ImageContext->ImageRead (
+                                       ImageContext->Handle,
+                                       DebugEntry.FileOffset,
+                                       &Size,
+                                       &ImageContext->DllCharacteristicsEx
+                                       );
+            if (RETURN_ERROR (Status) || (Size != ReadSize)) {
+              ImageContext->ImageError = IMAGE_ERROR_IMAGE_READ;
+              if (Size != ReadSize) {
+                Status = RETURN_UNSUPPORTED;
+              }
+
+              return Status;
+            }
+
+            continue;
           }
         }
       }
@@ -935,6 +1004,7 @@ PeCoffLoaderRelocateImage (
   PHYSICAL_ADDRESS                     BaseAddress;
   UINT32                               NumberOfRvaAndSizes;
   UINT32                               TeStrippedOffset;
+  UINT32                               EndAddress;
 
   ASSERT (ImageContext != NULL);
 
@@ -1014,22 +1084,24 @@ PeCoffLoaderRelocateImage (
     RelocDir = &Hdr.Te->DataDirectory[0];
   }
 
+  RelocBase    = NULL;
+  RelocBaseEnd = NULL;
   if ((RelocDir != NULL) && (RelocDir->Size > 0)) {
-    RelocBase    = (EFI_IMAGE_BASE_RELOCATION *)PeCoffLoaderImageAddress (ImageContext, RelocDir->VirtualAddress, TeStrippedOffset);
-    RelocBaseEnd = (EFI_IMAGE_BASE_RELOCATION *)PeCoffLoaderImageAddress (
-                                                  ImageContext,
-                                                  RelocDir->VirtualAddress + RelocDir->Size - 1,
-                                                  TeStrippedOffset
-                                                  );
+    Status = SafeUint32Add (RelocDir->VirtualAddress, (RelocDir->Size - 1), &EndAddress);
+    if (!RETURN_ERROR (Status)) {
+      RelocBase    = (EFI_IMAGE_BASE_RELOCATION *)PeCoffLoaderImageAddress (ImageContext, RelocDir->VirtualAddress, TeStrippedOffset);
+      RelocBaseEnd = (EFI_IMAGE_BASE_RELOCATION *)PeCoffLoaderImageAddress (
+                                                    ImageContext,
+                                                    EndAddress,
+                                                    TeStrippedOffset
+                                                    );
+    }
+
     if ((RelocBase == NULL) || (RelocBaseEnd == NULL) || ((UINTN)RelocBaseEnd < (UINTN)RelocBase)) {
       ImageContext->ImageError = IMAGE_ERROR_FAILED_RELOCATION;
+      DEBUG ((DEBUG_ERROR, "Relocation block is not valid\n"));
       return RETURN_LOAD_ERROR;
     }
-  } else {
-    //
-    // Set base and end to bypass processing below.
-    //
-    RelocBase = RelocBaseEnd = NULL;
   }
 
   RelocBaseOrg = RelocBase;
@@ -1367,7 +1439,7 @@ PeCoffLoaderLoadImage (
       return RETURN_LOAD_ERROR;
     }
 
-    if (Section->SizeOfRawData > 0) {
+    if ((Section->SizeOfRawData > 0) && (Base != NULL)) {
       Status = ImageContext->ImageRead (
                                ImageContext->Handle,
                                Section->PointerToRawData - TeStrippedOffset,
@@ -1384,7 +1456,7 @@ PeCoffLoaderLoadImage (
     // If raw size is less then virtual size, zero fill the remaining
     //
 
-    if (Size < Section->Misc.VirtualSize) {
+    if ((Size < Section->Misc.VirtualSize) && (Base != NULL)) {
       ZeroMem (Base + Size, Section->Misc.VirtualSize - Size);
     }
 
@@ -1675,7 +1747,7 @@ PeCoffLoaderLoadImage (
 }
 
 /**
-  Reapply fixups on a fixed up PE32/PE32+ image to allow virutal calling at EFI
+  Reapply fixups on a fixed up PE32/PE32+ image to allow virtual calling at EFI
   runtime.
 
   This function reapplies relocation fixups to the PE/COFF image specified by ImageBase
@@ -1727,6 +1799,7 @@ PeCoffLoaderRelocateImageForRuntime (
   UINTN                                Adjust;
   RETURN_STATUS                        Status;
   PE_COFF_LOADER_IMAGE_CONTEXT         ImageContext;
+  UINT32                               EndAddress;
 
   if ((RelocationData == NULL) || (ImageBase == 0x0) || (VirtImageBase == 0x0)) {
     return;
@@ -1788,12 +1861,15 @@ PeCoffLoaderRelocateImageForRuntime (
   if (NumberOfRvaAndSizes > EFI_IMAGE_DIRECTORY_ENTRY_BASERELOC) {
     RelocDir = DataDirectory + EFI_IMAGE_DIRECTORY_ENTRY_BASERELOC;
     if ((RelocDir != NULL) && (RelocDir->Size > 0)) {
-      RelocBase    = (EFI_IMAGE_BASE_RELOCATION *)PeCoffLoaderImageAddress (&ImageContext, RelocDir->VirtualAddress, 0);
-      RelocBaseEnd = (EFI_IMAGE_BASE_RELOCATION *)PeCoffLoaderImageAddress (
-                                                    &ImageContext,
-                                                    RelocDir->VirtualAddress + RelocDir->Size - 1,
-                                                    0
-                                                    );
+      Status = SafeUint32Add (RelocDir->VirtualAddress, (RelocDir->Size - 1), &EndAddress);
+      if (!RETURN_ERROR (Status)) {
+        RelocBase    = (EFI_IMAGE_BASE_RELOCATION *)PeCoffLoaderImageAddress (&ImageContext, RelocDir->VirtualAddress, 0);
+        RelocBaseEnd = (EFI_IMAGE_BASE_RELOCATION *)PeCoffLoaderImageAddress (
+                                                      &ImageContext,
+                                                      EndAddress,
+                                                      0
+                                                      );
+      }
     }
 
     if ((RelocBase == NULL) || (RelocBaseEnd == NULL) || ((UINTN)RelocBaseEnd < (UINTN)RelocBase)) {

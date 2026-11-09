@@ -5,8 +5,7 @@
 
 **/
 
-#ifndef _FSP_SWITCH_STACK_LIB_H_
-#define _FSP_SWITCH_STACK_LIB_H_
+#pragma once
 
 /**
 
@@ -30,7 +29,7 @@
 
 
 **/
-UINT32
+EFI_STATUS
 EFIAPI
 Pei2LoaderSwitchStack (
   VOID
@@ -46,10 +45,8 @@ Pei2LoaderSwitchStack (
 
 
 **/
-UINT32
+EFI_STATUS
 EFIAPI
 Loader2PeiSwitchStack (
   VOID
   );
-
-#endif

@@ -3,6 +3,8 @@
 
   Copyright (c) 2019, Intel Corporation. All rights reserved.<BR>
   (C) Copyright 2020 Hewlett Packard Enterprise Development LP<BR>
+  Copyright (c) 2023-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+  Copyright (C) 2024 Advanced Micro Devices, Inc. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -57,6 +59,7 @@ RestExDestroyChildEntryInHandleBuffer (
   ChildHandleBuffer = ((RESTEX_DESTROY_CHILD_IN_HANDLE_BUF_CONTEXT *)Context)->ChildHandleBuffer;
 
   if (!NetIsInHandleBuffer (Instance->ChildHandle, NumberOfChildren, ChildHandleBuffer)) {
+    RemoveEntryList (&Instance->Link);
     return EFI_SUCCESS;
   }
 
@@ -354,17 +357,37 @@ RedfishRestExDriverBindingSupported (
   IN EFI_DEVICE_PATH_PROTOCOL     *RemainingDevicePath OPTIONAL
   )
 {
+  EFI_STATUS  Status;
+  UINT32      *Id;
+
+  Status = gBS->OpenProtocol (
+                  ControllerHandle,
+                  &gEfiCallerIdGuid,
+                  (VOID **)&Id,
+                  This->DriverBindingHandle,
+                  ControllerHandle,
+                  EFI_OPEN_PROTOCOL_GET_PROTOCOL
+                  );
+  if (!EFI_ERROR (Status)) {
+    return EFI_ALREADY_STARTED;
+  }
+
   //
   // Test for the HttpServiceBinding Protocol.
   //
-  return gBS->OpenProtocol (
-                ControllerHandle,
-                &gEfiHttpServiceBindingProtocolGuid,
-                NULL,
-                This->DriverBindingHandle,
-                ControllerHandle,
-                EFI_OPEN_PROTOCOL_TEST_PROTOCOL
-                );
+  Status = gBS->OpenProtocol (
+                  ControllerHandle,
+                  &gEfiHttpServiceBindingProtocolGuid,
+                  NULL,
+                  This->DriverBindingHandle,
+                  ControllerHandle,
+                  EFI_OPEN_PROTOCOL_TEST_PROTOCOL
+                  );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  return IsPlatformWantedDevice (ControllerHandle, RemainingDevicePath);
 }
 
 /**
@@ -563,7 +586,7 @@ RedfishRestExDriverBindingStop (
                                   );
   }
 
-  if ((NumberOfChildren == 0) && IsListEmpty (&RestExSb->RestExChildrenList)) {
+  if (IsListEmpty (&RestExSb->RestExChildrenList)) {
     gBS->UninstallProtocolInterface (
            NicHandle,
            &gEfiRestExServiceBindingProtocolGuid,
@@ -584,6 +607,53 @@ RedfishRestExDriverBindingStop (
 }
 
 /**
+  Callback function that is invoked when HTTP event occurs.
+
+  @param[in]  This                Pointer to the EDKII_HTTP_CALLBACK_PROTOCOL instance.
+  @param[in]  Event               The event that occurs in the current state.
+  @param[in]  EventStatus         The Status of Event, EFI_SUCCESS or other errors.
+**/
+VOID
+EFIAPI
+RestExHttpCallback (
+  IN EDKII_HTTP_CALLBACK_PROTOCOL  *This,
+  IN EDKII_HTTP_CALLBACK_EVENT     Event,
+  IN EFI_STATUS                    EventStatus
+  )
+{
+  EFI_STATUS        Status;
+  EFI_TLS_PROTOCOL  *TlsProtocol;
+  RESTEX_INSTANCE   *Instance;
+  EFI_TLS_VERIFY    TlsVerifyMethod;
+
+  if ((Event == HttpEventTlsConfigured) && (EventStatus == EFI_SUCCESS)) {
+    // Reconfigure TLS configuration data.
+    Instance = RESTEX_INSTANCE_FROM_HTTP_CALLBACK (This);
+    Status   = gBS->HandleProtocol (
+                      Instance->HttpIo.Handle,
+                      &gEfiTlsProtocolGuid,
+                      (VOID **)&TlsProtocol
+                      );
+    if (EFI_ERROR (Status)) {
+      return;
+    }
+
+    TlsVerifyMethod = EFI_TLS_VERIFY_NONE;
+    Status          = TlsProtocol->SetSessionData (
+                                     TlsProtocol,
+                                     EfiTlsVerifyMethod,
+                                     &TlsVerifyMethod,
+                                     sizeof (EFI_TLS_VERIFY)
+                                     );
+    if (!EFI_ERROR (Status)) {
+      DEBUG ((DEBUG_MANAGEABILITY, "%a: REST EX reconfigures TLS verify method.\n", __func__));
+    }
+  }
+
+  return;
+}
+
+/**
   Creates a child handle and installs a protocol.
 
   The CreateChild() function installs a protocol on ChildHandle.
@@ -595,7 +665,7 @@ RedfishRestExDriverBindingStop (
                          then a new handle is created. If it is a pointer to an existing UEFI handle,
                          then the protocol is added to the existing UEFI handle.
 
-  @retval EFI_SUCCES            The protocol was added to ChildHandle.
+  @retval EFI_SUCCESS           The protocol was added to ChildHandle.
   @retval EFI_INVALID_PARAMETER ChildHandle is NULL.
   @retval EFI_OUT_OF_RESOURCES  There are not enough resources available to create
                                 the child
@@ -697,6 +767,19 @@ RedfishRestExServiceBindingCreateChild (
     goto ON_ERROR;
   }
 
+  // Initial HTTP callback function on this REST EX instance
+  Instance->HttpCallbakFunction.Callback = RestExHttpCallback;
+  Status                                 = gBS->InstallProtocolInterface (
+                                                  &Instance->HttpIo.Handle,
+                                                  &gEdkiiHttpCallbackProtocolGuid,
+                                                  EFI_NATIVE_INTERFACE,
+                                                  &Instance->HttpCallbakFunction
+                                                  );
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "%a: Fail to install HttpCallbackFunction.\n", __func__));
+    goto ON_ERROR;
+  }
+
   //
   // Add it to the parent's child list.
   //
@@ -725,7 +808,7 @@ ON_ERROR:
   @param[in] This        Pointer to the EFI_SERVICE_BINDING_PROTOCOL instance.
   @param[in] ChildHandle Handle of the child to destroy
 
-  @retval EFI_SUCCES            The protocol was removed from ChildHandle.
+  @retval EFI_SUCCESS           The protocol was removed from ChildHandle.
   @retval EFI_UNSUPPORTED       ChildHandle does not support the protocol that is being removed.
   @retval EFI_INVALID_PARAMETER Child handle is NULL.
   @retval EFI_ACCESS_DENIED     The protocol could not be removed from the ChildHandle
@@ -808,6 +891,15 @@ RedfishRestExServiceBindingDestroyChild (
                   ChildHandle,
                   &gEfiRestExProtocolGuid,
                   RestEx
+                  );
+
+  //
+  // Uninstall the HTTP callback protocol.
+  //
+  Status = gBS->UninstallProtocolInterface (
+                  Instance->HttpIo.Handle,
+                  &gEdkiiHttpCallbackProtocolGuid,
+                  &Instance->HttpCallbakFunction
                   );
 
   OldTpl = gBS->RaiseTPL (TPL_CALLBACK);

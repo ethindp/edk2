@@ -2,13 +2,144 @@
   X.509 Certificate Handler Wrapper Implementation over OpenSSL.
 
 Copyright (c) 2010 - 2020, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2026, Arm Limited. All rights reserved.
+Copyright (c) Microsoft Corporation.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
 #include "InternalCryptLib.h"
+#include "KeyContext.h"
 #include <openssl/x509.h>
+#include <openssl/x509v3.h>
+#include <crypto/asn1.h>
+#include <openssl/asn1.h>
 #include <openssl/rsa.h>
+
+/* OID*/
+#define OID_EXT_KEY_USAGE      { 0x55, 0x1D, 0x25 }
+#define OID_BASIC_CONSTRAINTS  { 0x55, 0x1D, 0x13 }
+
+static CONST UINT8  mOidExtKeyUsage[]      = OID_EXT_KEY_USAGE;
+static CONST UINT8  mOidBasicConstraints[] = OID_BASIC_CONSTRAINTS;
+
+#define CRYPTO_ASN1_TAG_CLASS_MASK  0xC0
+#define CRYPTO_ASN1_TAG_PC_MASK     0x20
+#define CRYPTO_ASN1_TAG_VALUE_MASK  0x1F
+
+/**
+  Convert an ML-DSA type name string to an OpenSSL NID.
+
+  This helper function translates ML-DSA type name strings (e.g., "ML-DSA-87")
+  to their corresponding OpenSSL EVP_PKEY NIDs (e.g., EVP_PKEY_ML_DSA_87).
+
+  If the type name is not recognized, EVP_PKEY_NONE is returned.
+
+  @param[in]  TypeName   ML-DSA type name string (e.g., "ML-DSA-87").
+
+  @retval OpenSSL NID (e.g., EVP_PKEY_ML_DSA_87) if recognized.
+  @retval EVP_PKEY_NONE if the type name is not recognized.
+
+**/
+STATIC
+INT32
+MlDsaTypeNameToNid (
+  IN CONST CHAR8  *TypeName
+  )
+{
+  INT32  Nid;
+
+  if (AsciiStrCmp (TypeName, "ML-DSA-87") == 0) {
+    Nid = EVP_PKEY_ML_DSA_87;
+  } else {
+    Nid = EVP_PKEY_NONE;
+  }
+
+  return Nid;
+}
+
+/**
+  Check if the given NID is supported for ML-DSA.
+
+  This helper function checks if the provided NID corresponds to a supported
+  ML-DSA type. Currently, only EVP_PKEY_ML_DSA_87 is supported.
+
+  @param[in]  Nid   The NID to check.
+
+  @retval TRUE   The NID is supported for ML-DSA.
+  @retval FALSE  The NID is not supported for ML-DSA.
+
+**/
+STATIC
+BOOLEAN
+IsMlDsaNidSupported (
+  IN INT32  Nid
+  )
+{
+  switch (Nid) {
+    case EVP_PKEY_ML_DSA_87:
+      return TRUE;
+    default:
+      return FALSE;
+  }
+}
+
+/**
+  Convert an SLH-DSA type name string to an OpenSSL NID.
+
+  This helper function translates SLH-DSA type name strings (e.g., "SLH-DSA-SHAKE-256s")
+  to their corresponding OpenSSL EVP_PKEY NIDs (e.g., EVP_PKEY_SLH_DSA_SHAKE_256S).
+
+  If the type name is not recognized, EVP_PKEY_NONE is returned.
+
+  @param[in]  TypeName   SLH-DSA type name string (e.g., "SLH-DSA-SHAKE-256s").
+
+  @retval OpenSSL NID (e.g., EVP_PKEY_SLH_DSA_SHAKE_256S) if recognized.
+  @retval EVP_PKEY_NONE if the type name is not recognized.
+
+**/
+STATIC
+INT32
+SlhDsaTypeNameToNid (
+  IN CONST CHAR8  *TypeName
+  )
+{
+  INT32  Nid;
+
+  if (AsciiStrCmp (TypeName, "SLH-DSA-SHAKE-256s") == 0) {
+    Nid = EVP_PKEY_SLH_DSA_SHAKE_256S;
+  } else {
+    Nid = EVP_PKEY_NONE;
+  }
+
+  return Nid;
+}
+
+/**
+  Check if the given NID is supported for SLH-DSA.
+
+  This helper function checks if the provided NID corresponds to a supported
+  SLH-DSA type. Currently, only EVP_PKEY_SLH_DSA_SHAKE_256S is supported.
+
+  @param[in]  Nid   The NID to check.
+
+  @retval TRUE   The NID is supported for SLH-DSA.
+  @retval FALSE  The NID is not supported for SLH-DSA.
+
+**/
+STATIC
+BOOLEAN
+IsSlhDsaNidSupported (
+  IN INT32  Nid
+  )
+{
+  switch (Nid) {
+    case EVP_PKEY_SLH_DSA_SHAKE_256S:
+      return TRUE;
+    default:
+      return FALSE;
+  }
+}
 
 /**
   Construct a X509 object from DER-encoded certificate data.
@@ -87,8 +218,8 @@ X509ConstructCertificateStackV (
   X509   *X509Cert;
 
   STACK_OF (X509)  *CertStack;
+  STACK_OF (X509)  *NewCertStack;
   BOOLEAN  Status;
-  UINTN    Index;
 
   //
   // Check input parameters.
@@ -97,20 +228,14 @@ X509ConstructCertificateStackV (
     return FALSE;
   }
 
-  Status = FALSE;
-
-  //
-  // Initialize X509 stack object.
-  //
-  CertStack = (STACK_OF (X509) *)(*X509Stack);
-  if (CertStack == NULL) {
-    CertStack = sk_X509_new_null ();
-    if (CertStack == NULL) {
-      return Status;
-    }
+  CertStack    = (STACK_OF (X509) *)(*X509Stack);
+  NewCertStack = sk_X509_new_null ();
+  if (NewCertStack == NULL) {
+    return FALSE;
   }
 
-  for (Index = 0; ; Index++) {
+  Status = TRUE;
+  while (TRUE) {
     //
     // If Cert is NULL, then it is the end of the list.
     //
@@ -121,6 +246,7 @@ X509ConstructCertificateStackV (
 
     CertSize = VA_ARG (Args, UINTN);
     if (CertSize == 0) {
+      Status = FALSE;
       break;
     }
 
@@ -144,16 +270,43 @@ X509ConstructCertificateStackV (
     //
     // Insert the new X509 object into X509 stack object.
     //
-    sk_X509_push (CertStack, X509Cert);
+    if (sk_X509_push (NewCertStack, X509Cert) == 0) {
+      X509_free (X509Cert);
+      Status = FALSE;
+      break;
+    }
   }
 
   if (!Status) {
-    sk_X509_pop_free (CertStack, X509_free);
-  } else {
-    *X509Stack = (UINT8 *)CertStack;
+    sk_X509_pop_free (NewCertStack, X509_free);
+    return FALSE;
   }
 
-  return Status;
+  if (CertStack == NULL) {
+    *X509Stack = (UINT8 *)NewCertStack;
+    return TRUE;
+  }
+
+  if (sk_X509_num (NewCertStack) == 0) {
+    sk_X509_free (NewCertStack);
+    return TRUE;
+  }
+
+  if (sk_X509_reserve (CertStack, sk_X509_num (NewCertStack)) == 0) {
+    sk_X509_pop_free (NewCertStack, X509_free);
+    return FALSE;
+  }
+
+  while ((X509Cert = sk_X509_shift (NewCertStack)) != NULL) {
+    if (sk_X509_push (CertStack, X509Cert) == 0) {
+      X509_free (X509Cert);
+      sk_X509_pop_free (NewCertStack, X509_free);
+      return FALSE;
+    }
+  }
+
+  sk_X509_free (NewCertStack);
+  return TRUE;
 }
 
 /**
@@ -434,6 +587,14 @@ InternalX509GetNIDName (
   }
 
   EntryData = X509_NAME_ENTRY_get_data (Entry);
+  if (EntryData == NULL) {
+    //
+    // Fail to retrieve name entry data
+    //
+    *CommonNameSize = 0;
+    ReturnStatus    = RETURN_NOT_FOUND;
+    goto _Exit;
+  }
 
   Length = ASN1_STRING_to_UTF8 (&UTF8Name, EntryData);
   if (Length < 0) {
@@ -578,6 +739,14 @@ RsaGetPublicKeyFromX509 (
   // Check input parameters.
   //
   if ((Cert == NULL) || (RsaContext == NULL)) {
+    return FALSE;
+  }
+
+  //
+  // If CertSize is 0, return FALSE to be safe.
+  //
+  if (CertSize == 0) {
+    *RsaContext = NULL;
     return FALSE;
   }
 
@@ -793,6 +962,9 @@ X509GetTBSCert (
   UINT32       Asn1Tag;
   UINT32       ObjClass;
   UINTN        Length;
+  UINTN        Inf;
+
+  Asn1Tag = (UINT32)V_ASN1_UNDEF;
 
   //
   // Check input parameters.
@@ -822,23 +994,1483 @@ X509GetTBSCert (
   //
   Temp   = Cert;
   Length = 0;
-  ASN1_get_object (&Temp, (long *)&Length, (int *)&Asn1Tag, (int *)&ObjClass, (long)CertSize);
+  Inf    = ASN1_get_object (&Temp, (long *)&Length, (int *)&Asn1Tag, (int *)&ObjClass, (long)CertSize);
 
-  if (Asn1Tag != V_ASN1_SEQUENCE) {
+  if (((Inf & 0x80) == 0x80) || (Asn1Tag != V_ASN1_SEQUENCE)) {
     return FALSE;
   }
 
   *TBSCert = (UINT8 *)Temp;
 
-  ASN1_get_object (&Temp, (long *)&Length, (int *)&Asn1Tag, (int *)&ObjClass, (long)Length);
+  Inf = ASN1_get_object (&Temp, (long *)&Length, (int *)&Asn1Tag, (int *)&ObjClass, (long)Length);
   //
   // Verify the parsed TBSCertificate is one correct SEQUENCE data.
   //
-  if (Asn1Tag != V_ASN1_SEQUENCE) {
+  if (((Inf & 0x80) == 0x80) || (Asn1Tag != V_ASN1_SEQUENCE)) {
     return FALSE;
   }
 
   *TBSCertSize = Length + (Temp - *TBSCert);
 
   return TRUE;
+}
+
+/**
+  Retrieve the EC Public Key from one DER-encoded X509 certificate.
+
+  @param[in]  Cert         Pointer to the DER-encoded X509 certificate.
+  @param[in]  CertSize     Size of the X509 certificate in bytes.
+  @param[out] EcContext    Pointer to new-generated EC DSA context which contain the retrieved
+                           EC public key component. Use EcFree() function to free the
+                           resource.
+
+  If Cert is NULL, then return FALSE.
+  If EcContext is NULL, then return FALSE.
+
+  @retval  TRUE   EC Public Key was retrieved successfully.
+  @retval  FALSE  Fail to retrieve EC public key from X509 certificate.
+
+**/
+BOOLEAN
+EFIAPI
+EcGetPublicKeyFromX509 (
+  IN   CONST UINT8  *Cert,
+  IN   UINTN        CertSize,
+  OUT  VOID         **EcContext
+  )
+{
+  BOOLEAN     Status;
+  EC_CONTEXT  *EcCtx;
+  X509        *X509Cert;
+
+  //
+  // Check input parameters.
+  //
+  if ((Cert == NULL) || (EcContext == NULL)) {
+    return FALSE;
+  }
+
+  *EcContext = NULL;
+
+  //
+  // If CertSize is 0, return FALSE to be safe.
+  //
+  if (CertSize == 0) {
+    return FALSE;
+  }
+
+  X509Cert = NULL;
+  Status   = FALSE;
+
+  EcCtx = OPENSSL_zalloc (sizeof (EC_CONTEXT));
+  if (EcCtx == NULL) {
+    return FALSE;
+  }
+
+  //
+  // Read DER-encoded X509 Certificate and Construct X509 object.
+  //
+  Status = X509ConstructCertificate (Cert, CertSize, (UINT8 **)&X509Cert);
+  if ((X509Cert == NULL) || (!Status)) {
+    Status = FALSE;
+    goto _Exit;
+  }
+
+  Status = FALSE;
+
+  //
+  // Retrieve and check EVP_PKEY data from X509 Certificate.
+  //
+  EcCtx->EvpPkey = X509_get_pubkey (X509Cert);
+  if (EcCtx->EvpPkey == NULL) {
+    goto _Exit;
+  }
+
+  if (EVP_PKEY_id (EcCtx->EvpPkey) != EVP_PKEY_EC) {
+    EVP_PKEY_free (EcCtx->EvpPkey);
+    goto _Exit;
+  }
+
+  Status     = TRUE;
+  *EcContext = EcCtx;
+  EcCtx      = NULL;
+
+_Exit:
+  //
+  // Release Resources.
+  //
+  if (X509Cert != NULL) {
+    X509_free (X509Cert);
+  }
+
+  if (EcCtx != NULL) {
+    OPENSSL_free (EcCtx);
+  }
+
+  return Status;
+}
+
+/**
+  Retrieve the Ed-DSA Public Key from one DER-encoded X509 certificate.
+
+  @param[in]  Cert          Pointer to the DER-encoded X509 certificate.
+  @param[in]  CertSize      Size of the X509 certificate in bytes.
+  @param[out] EdDsaContext  Pointer to new-generated Ed DSA context which contain the retrieved
+                            Ed-Dsa public key component. Use EdDsaFree() function to free the
+                            resource.
+
+  If Cert is NULL, then return FALSE.
+  If EdDsaContext is NULL, then return FALSE.
+
+  @retval  TRUE   EdDsa Public Key was retrieved successfully.
+  @retval  FALSE  Fail to retrieve EdDsa public key from X509 certificate.
+
+**/
+BOOLEAN
+EFIAPI
+EdDsaGetPublicKeyFromX509 (
+  IN   CONST UINT8  *Cert,
+  IN   UINTN        CertSize,
+  OUT  VOID         **EdDsaContext
+  )
+{
+  BOOLEAN      Status;
+  EVP_PKEY     *Pkey;
+  EVP_PKEY     *DupPkey;
+  INT32        Nid;
+  X509         *X509Cert;
+  KEY_CONTEXT  *Ctx;
+
+  //
+  // Check input parameters.
+  //
+  if ((Cert == NULL) || (EdDsaContext == NULL)) {
+    return FALSE;
+  }
+
+  //
+  // If CertSize is 0, return FALSE to be safe.
+  //
+  if (CertSize == 0) {
+    *EdDsaContext = NULL;
+    return FALSE;
+  }
+
+  Pkey     = NULL;
+  X509Cert = NULL;
+  Status   = FALSE;
+
+  //
+  // Read DER-encoded X509 Certificate and Construct X509 object.
+  //
+  Status = X509ConstructCertificate (Cert, CertSize, (UINT8 **)&X509Cert);
+  if (!Status || (X509Cert == NULL)) {
+    Status = FALSE;
+    goto _Exit;
+  }
+
+  //
+  // Retrieve and check EVP_PKEY data from X509 Certificate.
+  //
+  Pkey = X509_get_pubkey (X509Cert);
+  if (Pkey == NULL) {
+    Status = FALSE;
+    goto _Exit;
+  }
+
+  Nid = EVP_PKEY_id (Pkey);
+  if (Nid != EVP_PKEY_ED448) {
+    Status = FALSE;
+    goto _Exit;
+  }
+
+  //
+  // Duplicate EdDSA Context from the retrieved EVP_PKEY.
+  //
+  DupPkey = EVP_PKEY_dup (Pkey);
+  if (DupPkey == NULL) {
+    Status = FALSE;
+    goto _Exit;
+  }
+
+  //
+  // Allocate KEY_CONTEXT wrapper structure
+  //
+  Ctx = (KEY_CONTEXT *)AllocateZeroPool (sizeof (KEY_CONTEXT));
+  if (Ctx == NULL) {
+    EVP_PKEY_free (DupPkey);
+    Status = FALSE;
+    goto _Exit;
+  }
+
+  Ctx->Nid      = Nid;
+  Ctx->EvpPkey  = DupPkey;
+  *EdDsaContext = (VOID *)Ctx;
+  Status        = TRUE;
+
+_Exit:
+  //
+  // Release Resources.
+  //
+  if (X509Cert != NULL) {
+    X509_free (X509Cert);
+  }
+
+  if (Pkey != NULL) {
+    EVP_PKEY_free (Pkey);
+  }
+
+  return Status;
+}
+
+/**
+  Retrieve the ML-DSA Public Key from one DER-encoded X509 certificate.
+
+  @param[in]  Cert          Pointer to the DER-encoded X509 certificate.
+  @param[in]  CertSize      Size of the X509 certificate in bytes.
+  @param[out] MlDsaContext  Pointer to new-generated ML DSA context which contain the retrieved
+                            ML-DSA public key component. Use MlDsaFree() function to free the
+                            resource.
+
+  If Cert is NULL, then return FALSE.
+  If MlDsaContext is NULL, then return FALSE.
+
+  @retval  TRUE   ML-DSA Public Key was retrieved successfully.
+  @retval  FALSE  Fail to retrieve ML-DSA public key from X509 certificate.
+
+**/
+BOOLEAN
+EFIAPI
+MlDsaGetPublicKeyFromX509 (
+  IN   CONST UINT8  *Cert,
+  IN   UINTN        CertSize,
+  OUT  VOID         **MlDsaContext
+  )
+{
+  BOOLEAN      Status;
+  EVP_PKEY     *Pkey;
+  EVP_PKEY     *DupPkey;
+  INT32        Nid;
+  X509         *X509Cert;
+  KEY_CONTEXT  *Ctx;
+
+  if ((Cert == NULL) || (MlDsaContext == NULL)) {
+    return FALSE;
+  }
+
+  //
+  // If CertSize is 0, return FALSE to be safe.
+  //
+  if (CertSize == 0) {
+    *MlDsaContext = NULL;
+    return FALSE;
+  }
+
+  Pkey     = NULL;
+  X509Cert = NULL;
+  Status   = FALSE;
+
+  //
+  // Read DER-encoded X509 Certificate and Construct X509 object.
+  //
+  Status = X509ConstructCertificate (Cert, CertSize, (UINT8 **)&X509Cert);
+  if (!Status || (X509Cert == NULL)) {
+    Status = FALSE;
+    goto _Exit;
+  }
+
+  //
+  // Retrieve and check EVP_PKEY data from X509 Certificate.
+  //
+  Pkey = X509_get_pubkey (X509Cert);
+  if (Pkey == NULL) {
+    Status = FALSE;
+    goto _Exit;
+  }
+
+  //
+  // Check if the retrieved EVP_PKEY is one supported ML-DSA key type.
+  //
+  Nid = MlDsaTypeNameToNid (EVP_PKEY_get0_type_name (Pkey));
+  if (!IsMlDsaNidSupported (Nid)) {
+    Status = FALSE;
+    goto _Exit;
+  }
+
+  //
+  // Duplicate ML-DSA Context from the retrieved EVP_PKEY.
+  //
+  DupPkey = EVP_PKEY_dup (Pkey);
+  if (DupPkey == NULL) {
+    Status = FALSE;
+    goto _Exit;
+  }
+
+  //
+  // Allocate KEY_CONTEXT wrapper structure
+  //
+  Ctx = (KEY_CONTEXT *)AllocateZeroPool (sizeof (KEY_CONTEXT));
+  if (Ctx == NULL) {
+    EVP_PKEY_free (DupPkey);
+    Status = FALSE;
+    goto _Exit;
+  }
+
+  Ctx->Nid      = Nid;
+  Ctx->EvpPkey  = DupPkey;
+  *MlDsaContext = (VOID *)Ctx;
+  Status        = TRUE;
+
+_Exit:
+  //
+  // Release Resources.
+  //
+  if (X509Cert != NULL) {
+    X509_free (X509Cert);
+  }
+
+  if (Pkey != NULL) {
+    EVP_PKEY_free (Pkey);
+  }
+
+  return Status;
+}
+
+/**
+  Retrieve the SLH-DSA Public Key from one DER-encoded X509 certificate.
+
+  @param[in]  Cert           Pointer to the DER-encoded X509 certificate.
+  @param[in]  CertSize       Size of the X509 certificate in bytes.
+  @param[out] SlhDsaContext  Pointer to new-generated SLH-DSA context which contain the retrieved
+                             SLH-DSA public key component. Use SlhDsaFree() function to free the
+                             resource.
+
+  If Cert is NULL, then return FALSE.
+  If SlhDsaContext is NULL, then return FALSE.
+
+  @retval  TRUE   SLH-DSA Public Key was retrieved successfully.
+  @retval  FALSE  Fail to retrieve SLH-DSA public key from X509 certificate.
+
+**/
+BOOLEAN
+EFIAPI
+SlhDsaGetPublicKeyFromX509 (
+  IN   CONST UINT8  *Cert,
+  IN   UINTN        CertSize,
+  OUT  VOID         **SlhDsaContext
+  )
+{
+  BOOLEAN      Status;
+  EVP_PKEY     *Pkey;
+  EVP_PKEY     *DupPkey;
+  INT32        Nid;
+  X509         *X509Cert;
+  KEY_CONTEXT  *Ctx;
+
+  if ((Cert == NULL) || (SlhDsaContext == NULL)) {
+    return FALSE;
+  }
+
+  //
+  // If CertSize is 0, return FALSE to be safe.
+  //
+  if (CertSize == 0) {
+    *SlhDsaContext = NULL;
+    return FALSE;
+  }
+
+  Pkey     = NULL;
+  X509Cert = NULL;
+  Status   = FALSE;
+
+  //
+  // Read DER-encoded X509 Certificate and Construct X509 object.
+  //
+  Status = X509ConstructCertificate (Cert, CertSize, (UINT8 **)&X509Cert);
+  if (!Status || (X509Cert == NULL)) {
+    Status = FALSE;
+    goto _Exit;
+  }
+
+  //
+  // Retrieve and check EVP_PKEY data from X509 Certificate.
+  //
+  Pkey = X509_get_pubkey (X509Cert);
+  if (Pkey == NULL) {
+    Status = FALSE;
+    goto _Exit;
+  }
+
+  //
+  // Check if the retrieved EVP_PKEY is one supported SLH-DSA key type.
+  //
+  Nid = SlhDsaTypeNameToNid (EVP_PKEY_get0_type_name (Pkey));
+  if (!IsSlhDsaNidSupported (Nid)) {
+    Status = FALSE;
+    goto _Exit;
+  }
+
+  //
+  // Duplicate SLH-DSA Context from the retrieved EVP_PKEY.
+  //
+  DupPkey = EVP_PKEY_dup (Pkey);
+  if (DupPkey == NULL) {
+    Status = FALSE;
+    goto _Exit;
+  }
+
+  //
+  // Allocate KEY_CONTEXT wrapper structure
+  //
+  Ctx = (KEY_CONTEXT *)AllocateZeroPool (sizeof (KEY_CONTEXT));
+  if (Ctx == NULL) {
+    EVP_PKEY_free (DupPkey);
+    Status = FALSE;
+    goto _Exit;
+  }
+
+  Ctx->Nid       = Nid;
+  Ctx->EvpPkey   = DupPkey;
+  *SlhDsaContext = (VOID *)Ctx;
+  Status         = TRUE;
+
+_Exit:
+  //
+  // Release Resources.
+  //
+  if (X509Cert != NULL) {
+    X509_free (X509Cert);
+  }
+
+  if (Pkey != NULL) {
+    EVP_PKEY_free (Pkey);
+  }
+
+  return Status;
+}
+
+/**
+  Retrieve the version from one X.509 certificate.
+
+  If Cert is NULL, then return FALSE.
+  If CertSize is 0, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]      Cert         Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize     Size of the X509 certificate in bytes.
+  @param[out]     Version      Pointer to the retrieved version integer.
+
+  @retval TRUE           The certificate version retrieved successfully.
+  @retval FALSE          If  Cert is NULL or CertSize is Zero.
+  @retval FALSE          The operation is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+X509GetVersion (
+  IN      CONST UINT8  *Cert,
+  IN      UINTN        CertSize,
+  OUT     UINTN        *Version
+  )
+{
+  BOOLEAN  Status;
+  X509     *X509Cert;
+
+  X509Cert = NULL;
+  Status   = X509ConstructCertificate (Cert, CertSize, (UINT8 **)&X509Cert);
+  if ((X509Cert == NULL) || (!Status)) {
+    //
+    // Invalid X.509 Certificate
+    //
+    Status = FALSE;
+  }
+
+  if (Status) {
+    *Version = X509_get_version (X509Cert);
+  }
+
+  if (X509Cert != NULL) {
+    X509_free (X509Cert);
+  }
+
+  return Status;
+}
+
+/**
+  Retrieve the serialNumber from one X.509 certificate.
+
+  If Cert is NULL, then return FALSE.
+  If CertSize is 0, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]      Cert         Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize     Size of the X509 certificate in bytes.
+  @param[out]     SerialNumber  Pointer to the retrieved certificate SerialNumber bytes.
+  @param[in, out] SerialNumberSize  The size in bytes of the SerialNumber buffer on input,
+                               and the size of buffer returned SerialNumber on output.
+
+  @retval TRUE                     The certificate serialNumber retrieved successfully.
+  @retval FALSE                    If Cert is NULL or CertSize is Zero.
+                                   If SerialNumberSize is NULL.
+                                   If Certificate is invalid.
+  @retval FALSE                    If no SerialNumber exists.
+  @retval FALSE                    If the SerialNumber is NULL. The required buffer size
+                                   (including the final null) is returned in the
+                                   SerialNumberSize parameter.
+  @retval FALSE                    The operation is not supported.
+**/
+BOOLEAN
+EFIAPI
+X509GetSerialNumber (
+  IN      CONST UINT8 *Cert,
+  IN      UINTN CertSize,
+  OUT     UINT8 *SerialNumber, OPTIONAL
+  IN OUT  UINTN         *SerialNumberSize
+  )
+{
+  BOOLEAN       Status;
+  X509          *X509Cert;
+  ASN1_INTEGER  *Asn1Integer;
+
+  Status = FALSE;
+  //
+  // Check input parameters.
+  //
+  if ((Cert == NULL) || (SerialNumberSize == NULL)) {
+    return Status;
+  }
+
+  X509Cert = NULL;
+
+  //
+  // Read DER-encoded X509 Certificate and Construct X509 object.
+  //
+  Status = X509ConstructCertificate (Cert, CertSize, (UINT8 **)&X509Cert);
+  if ((X509Cert == NULL) || (!Status)) {
+    *SerialNumberSize = 0;
+    Status            = FALSE;
+    goto _Exit;
+  }
+
+  //
+  // Retrieve subject name from certificate object.
+  //
+  Asn1Integer = X509_get_serialNumber (X509Cert);
+  if (Asn1Integer == NULL) {
+    *SerialNumberSize = 0;
+    Status            = FALSE;
+    goto _Exit;
+  }
+
+  if (*SerialNumberSize < (UINTN)Asn1Integer->length) {
+    *SerialNumberSize = (UINTN)Asn1Integer->length;
+    Status            = FALSE;
+    goto _Exit;
+  }
+
+  if (SerialNumber != NULL) {
+    CopyMem (SerialNumber, Asn1Integer->data, (UINTN)Asn1Integer->length);
+    Status = TRUE;
+  }
+
+  *SerialNumberSize = (UINTN)Asn1Integer->length;
+
+_Exit:
+  //
+  // Release Resources.
+  //
+  if (X509Cert != NULL) {
+    X509_free (X509Cert);
+  }
+
+  return Status;
+}
+
+/**
+  Retrieve the issuer bytes from one X.509 certificate.
+
+  If Cert is NULL, then return FALSE.
+  If CertIssuerSize is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]      Cert         Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize     Size of the X509 certificate in bytes.
+  @param[out]     CertIssuer  Pointer to the retrieved certificate subject bytes.
+  @param[in, out] CertIssuerSize  The size in bytes of the CertIssuer buffer on input,
+                               and the size of buffer returned CertSubject on output.
+
+  @retval  TRUE   The certificate issuer retrieved successfully.
+  @retval  FALSE  Invalid certificate, or the CertIssuerSize is too small for the result.
+                  The CertIssuerSize will be updated with the required size.
+  @retval  FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+X509GetIssuerName (
+  IN      CONST UINT8  *Cert,
+  IN      UINTN        CertSize,
+  OUT     UINT8        *CertIssuer,
+  IN OUT  UINTN        *CertIssuerSize
+  )
+{
+  BOOLEAN    Status;
+  X509       *X509Cert;
+  X509_NAME  *X509Name;
+  UINTN      X509NameSize;
+
+  //
+  // Check input parameters.
+  //
+  if ((Cert == NULL) || (CertIssuerSize == NULL)) {
+    return FALSE;
+  }
+
+  X509Cert = NULL;
+
+  //
+  // Read DER-encoded X509 Certificate and Construct X509 object.
+  //
+  Status = X509ConstructCertificate (Cert, CertSize, (UINT8 **)&X509Cert);
+  if ((X509Cert == NULL) || (!Status)) {
+    Status = FALSE;
+    goto _Exit;
+  }
+
+  Status = FALSE;
+
+  //
+  // Retrieve subject name from certificate object.
+  //
+  X509Name = X509_get_subject_name (X509Cert);
+  if (X509Name == NULL) {
+    goto _Exit;
+  }
+
+  X509NameSize = i2d_X509_NAME (X509Name, NULL);
+  if (*CertIssuerSize < X509NameSize) {
+    *CertIssuerSize = X509NameSize;
+    goto _Exit;
+  }
+
+  *CertIssuerSize = X509NameSize;
+  if (CertIssuer != NULL) {
+    i2d_X509_NAME (X509Name, &CertIssuer);
+    Status = TRUE;
+  }
+
+_Exit:
+  //
+  // Release Resources.
+  //
+  if (X509Cert != NULL) {
+    X509_free (X509Cert);
+  }
+
+  return Status;
+}
+
+/**
+  Retrieve the Signature Algorithm from one X.509 certificate.
+
+  @param[in]      Cert             Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize         Size of the X509 certificate in bytes.
+  @param[out]     Oid              Signature Algorithm Object identifier buffer.
+  @param[in,out]  OidSize          Signature Algorithm Object identifier buffer size
+
+  @retval TRUE           The certificate Extension data retrieved successfully.
+  @retval FALSE                    If Cert is NULL.
+                                   If OidSize is NULL.
+                                   If Oid is not NULL and *OidSize is 0.
+                                   If Certificate is invalid.
+  @retval FALSE                    If no SignatureType.
+  @retval FALSE                    If the Oid is NULL. The required buffer size
+                                   is returned in the OidSize.
+  @retval FALSE                    The operation is not supported.
+**/
+BOOLEAN
+EFIAPI
+X509GetSignatureAlgorithm (
+  IN CONST UINT8 *Cert,
+  IN       UINTN CertSize,
+  OUT   UINT8 *Oid, OPTIONAL
+  IN OUT   UINTN       *OidSize
+  )
+{
+  BOOLEAN      Status;
+  X509         *X509Cert;
+  int          Nid;
+  ASN1_OBJECT  *Asn1Obj;
+
+  //
+  // Check input parameters.
+  //
+  if ((Cert == NULL) || (OidSize == NULL) || (CertSize == 0)) {
+    return FALSE;
+  }
+
+  X509Cert = NULL;
+  Status   = FALSE;
+
+  //
+  // Read DER-encoded X509 Certificate and Construct X509 object.
+  //
+  Status = X509ConstructCertificate (Cert, CertSize, (UINT8 **)&X509Cert);
+  if ((X509Cert == NULL) || (!Status)) {
+    Status = FALSE;
+    goto _Exit;
+  }
+
+  //
+  // Retrieve subject name from certificate object.
+  //
+  Nid = X509_get_signature_nid (X509Cert);
+  if (Nid == NID_undef) {
+    *OidSize = 0;
+    Status   = FALSE;
+    goto _Exit;
+  }
+
+  Asn1Obj = OBJ_nid2obj (Nid);
+  if (Asn1Obj == NULL) {
+    *OidSize = 0;
+    Status   = FALSE;
+    goto _Exit;
+  }
+
+  if (*OidSize < (UINTN)Asn1Obj->length) {
+    *OidSize = Asn1Obj->length;
+    Status   = FALSE;
+    goto _Exit;
+  }
+
+  if (Oid != NULL) {
+    CopyMem (Oid, Asn1Obj->data, Asn1Obj->length);
+  }
+
+  *OidSize = Asn1Obj->length;
+  Status   = TRUE;
+
+_Exit:
+  //
+  // Release Resources.
+  //
+  if (X509Cert != NULL) {
+    X509_free (X509Cert);
+  }
+
+  return Status;
+}
+
+/**
+  Retrieve Extension data from one X.509 certificate.
+
+  @param[in]      Cert             Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize         Size of the X509 certificate in bytes.
+  @param[in]      Oid              Object identifier buffer
+  @param[in]      OidSize          Object identifier buffer size
+  @param[out]     ExtensionData    Extension bytes.
+  @param[in, out] ExtensionDataSize Extension bytes size.
+
+  @retval TRUE                     The certificate Extension data retrieved successfully.
+  @retval TRUE                     The Certificate Extension is found, but the oid extension is not found.
+  @retval FALSE                    If Cert is NULL.
+                                   If ExtensionDataSize is NULL.
+                                   If ExtensionData is not NULL and *ExtensionDataSize is 0.
+                                   If Certificate is invalid.
+  @retval FALSE                    If the ExtensionData is NULL. The required buffer size
+                                   is returned in the ExtensionDataSize parameter.
+  @retval FALSE                    The operation is not supported.
+**/
+BOOLEAN
+EFIAPI
+X509GetExtensionData (
+  IN     CONST UINT8  *Cert,
+  IN     UINTN        CertSize,
+  IN     CONST UINT8  *Oid,
+  IN     UINTN        OidSize,
+  OUT UINT8           *ExtensionData,
+  IN OUT UINTN        *ExtensionDataSize
+  )
+{
+  BOOLEAN  Status;
+  INTN     i;
+  X509     *X509Cert;
+
+  CONST STACK_OF (X509_EXTENSION) *Extensions;
+  ASN1_OBJECT        *Asn1Obj;
+  ASN1_OCTET_STRING  *Asn1Oct;
+  X509_EXTENSION     *Ext;
+  UINTN              ObjLength;
+  UINTN              OctLength;
+
+  //
+  // Check input parameters.
+  //
+  if ((Cert == NULL) || (CertSize == 0) || (Oid == NULL) || (OidSize == 0) || (ExtensionDataSize == NULL)) {
+    return FALSE;
+  }
+
+  X509Cert = NULL;
+  Status   = FALSE;
+
+  //
+  // Read DER-encoded X509 Certificate and Construct X509 object.
+  //
+  Status = X509ConstructCertificate (Cert, CertSize, (UINT8 **)&X509Cert);
+  if ((X509Cert == NULL) || (!Status)) {
+    *ExtensionDataSize = 0;
+    goto Cleanup;
+  }
+
+  //
+  // Retrieve Extensions from certificate object.
+  //
+  Extensions = X509_get0_extensions (X509Cert);
+  if (sk_X509_EXTENSION_num (Extensions) <= 0) {
+    *ExtensionDataSize = 0;
+    goto Cleanup;
+  }
+
+  //
+  // Traverse Extensions
+  //
+  Status    = FALSE;
+  Asn1Oct   = NULL;
+  OctLength = 0;
+  for (i = 0; i < sk_X509_EXTENSION_num (Extensions); i++) {
+    Ext = sk_X509_EXTENSION_value (Extensions, (int)i);
+    if (Ext == NULL) {
+      continue;
+    }
+
+    Asn1Obj = X509_EXTENSION_get_object (Ext);
+    if (Asn1Obj == NULL) {
+      continue;
+    }
+
+    Asn1Oct = X509_EXTENSION_get_data (Ext);
+    if (Asn1Oct == NULL) {
+      continue;
+    }
+
+    ObjLength = OBJ_length (Asn1Obj);
+    OctLength = ASN1_STRING_length (Asn1Oct);
+    if ((OidSize == ObjLength) && (CompareMem (OBJ_get0_data (Asn1Obj), Oid, OidSize) == 0)) {
+      //
+      // Extension Found
+      //
+      Status = TRUE;
+      break;
+    }
+
+    //
+    // reset to 0 if not found
+    //
+    OctLength = 0;
+  }
+
+  if (Status) {
+    if (*ExtensionDataSize < OctLength) {
+      *ExtensionDataSize = OctLength;
+      Status             = FALSE;
+      goto Cleanup;
+    }
+
+    if (Asn1Oct != NULL) {
+      CopyMem (ExtensionData, ASN1_STRING_get0_data (Asn1Oct), OctLength);
+    }
+
+    *ExtensionDataSize = OctLength;
+  } else {
+    /* the cert extension is found, but the oid extension is not found; */
+    Status             = TRUE;
+    *ExtensionDataSize = 0;
+  }
+
+Cleanup:
+  //
+  // Release Resources.
+  //
+  if (X509Cert != NULL) {
+    X509_free (X509Cert);
+  }
+
+  return Status;
+}
+
+/**
+  Retrieve the Extended Key Usage from one X.509 certificate.
+
+  @param[in]      Cert             Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize         Size of the X509 certificate in bytes.
+  @param[out]     Usage            Key Usage bytes.
+  @param[in, out] UsageSize        Key Usage buffer size in bytes.
+
+  @retval TRUE                     The Usage bytes retrieve successfully.
+  @retval FALSE                    If Cert is NULL.
+                                   If CertSize is NULL.
+                                   If Usage is not NULL and *UsageSize is 0.
+                                   If Cert is invalid.
+  @retval FALSE                    If the Usage is NULL. The required buffer size
+                                   is returned in the UsageSize parameter.
+  @retval FALSE                    The operation is not supported.
+**/
+BOOLEAN
+EFIAPI
+X509GetExtendedKeyUsage (
+  IN     CONST UINT8  *Cert,
+  IN     UINTN        CertSize,
+  OUT UINT8           *Usage,
+  IN OUT UINTN        *UsageSize
+  )
+{
+  BOOLEAN  Status;
+
+  Status = X509GetExtensionData (Cert, CertSize, mOidExtKeyUsage, sizeof (mOidExtKeyUsage), Usage, UsageSize);
+  return Status;
+}
+
+/**
+  Retrieve the Validity from one X.509 certificate
+
+  If Cert is NULL, then return FALSE.
+  If CertIssuerSize is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]      Cert         Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize     Size of the X509 certificate in bytes.
+  @param[out]     From         notBefore Pointer to DateTime object.
+  @param[in,out]  FromSize     notBefore DateTime object size.
+  @param[out]     To           notAfter Pointer to DateTime object.
+  @param[in,out]  ToSize       notAfter DateTime object size.
+
+  Note: X509CompareDateTime to compare DateTime oject
+        x509SetDateTime to get a DateTime object from a DateTimeStr
+
+  @retval  TRUE   The certificate Validity retrieved successfully.
+  @retval  FALSE  Invalid certificate, or Validity retrieve failed.
+  @retval  FALSE  This interface is not supported.
+**/
+BOOLEAN
+EFIAPI
+X509GetValidity  (
+  IN     CONST UINT8  *Cert,
+  IN     UINTN        CertSize,
+  IN     UINT8        *From,
+  IN OUT UINTN        *FromSize,
+  IN     UINT8        *To,
+  IN OUT UINTN        *ToSize
+  )
+{
+  BOOLEAN          Status;
+  X509             *X509Cert;
+  CONST ASN1_TIME  *F;
+  CONST ASN1_TIME  *T;
+  UINTN            TSize;
+  UINTN            FSize;
+
+  //
+  // Check input parameters.
+  //
+  if ((Cert == NULL) || (FromSize == NULL) || (ToSize == NULL) || (CertSize == 0)) {
+    return FALSE;
+  }
+
+  X509Cert = NULL;
+  Status   = FALSE;
+
+  //
+  // Read DER-encoded X509 Certificate and Construct X509 object.
+  //
+  Status = X509ConstructCertificate (Cert, CertSize, (UINT8 **)&X509Cert);
+  if ((X509Cert == NULL) || (!Status)) {
+    goto _Exit;
+  }
+
+  //
+  // Retrieve Validity from/to from certificate object.
+  //
+  F = X509_get0_notBefore (X509Cert);
+  T = X509_get0_notAfter (X509Cert);
+
+  if ((F == NULL) || (T == NULL)) {
+    goto _Exit;
+  }
+
+  FSize = sizeof (ASN1_TIME) + F->length;
+  if (*FromSize < FSize) {
+    *FromSize = FSize;
+    goto _Exit;
+  }
+
+  *FromSize = FSize;
+  if (From != NULL) {
+    CopyMem (From, F, sizeof (ASN1_TIME));
+    ((ASN1_TIME *)From)->data = From + sizeof (ASN1_TIME);
+    CopyMem (From + sizeof (ASN1_TIME), F->data, F->length);
+  }
+
+  TSize = sizeof (ASN1_TIME) + T->length;
+  if (*ToSize < TSize) {
+    *ToSize = TSize;
+    goto _Exit;
+  }
+
+  *ToSize = TSize;
+  if (To != NULL) {
+    CopyMem (To, T, sizeof (ASN1_TIME));
+    ((ASN1_TIME *)To)->data = To + sizeof (ASN1_TIME);
+    CopyMem (To + sizeof (ASN1_TIME), T->data, T->length);
+  }
+
+  Status = TRUE;
+
+_Exit:
+  //
+  // Release Resources.
+  //
+  if (X509Cert != NULL) {
+    X509_free (X509Cert);
+  }
+
+  return Status;
+}
+
+/**
+  Format a DateTimeStr to DataTime object in DataTime Buffer
+
+  If DateTimeStr is NULL, then return FALSE.
+  If DateTimeSize is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]      DateTimeStr      DateTime string like YYYYMMDDhhmmssZ
+                                   Ref: https://www.w3.org/TR/NOTE-datetime
+                                   Z stand for UTC time
+  @param[out]     DateTime         Pointer to a DateTime object.
+  @param[in,out]  DateTimeSize     DateTime object buffer size.
+
+  @retval TRUE                     The DateTime object create successfully.
+  @retval FALSE                    If DateTimeStr is NULL.
+                                   If DateTimeSize is NULL.
+                                   If DateTime is not NULL and *DateTimeSize is 0.
+                                   If Year Month Day Hour Minute Second combination is invalid datetime.
+  @retval FALSE                    If the DateTime is NULL. The required buffer size
+                                   (including the final null) is returned in the
+                                   DateTimeSize parameter.
+  @retval FALSE                    The operation is not supported.
+**/
+BOOLEAN
+EFIAPI
+X509FormatDateTime (
+  IN  CONST  CHAR8  *DateTimeStr,
+  OUT VOID          *DateTime,
+  IN OUT UINTN      *DateTimeSize
+  )
+{
+  BOOLEAN    Status;
+  INT32      Ret;
+  ASN1_TIME  *Dt;
+  UINTN      DSize;
+
+  Dt     = NULL;
+  Status = FALSE;
+
+  Dt = ASN1_TIME_new ();
+  if (Dt == NULL) {
+    Status = FALSE;
+    goto Cleanup;
+  }
+
+  Ret = ASN1_TIME_set_string_X509 (Dt, DateTimeStr);
+  if (Ret != 1) {
+    Status = FALSE;
+    goto Cleanup;
+  }
+
+  DSize = sizeof (ASN1_TIME) + Dt->length;
+  if (*DateTimeSize < DSize) {
+    *DateTimeSize = DSize;
+    Status        = FALSE;
+    goto Cleanup;
+  }
+
+  *DateTimeSize = DSize;
+  if (DateTime != NULL) {
+    CopyMem (DateTime, Dt, sizeof (ASN1_TIME));
+    ((ASN1_TIME *)DateTime)->data = (UINT8 *)DateTime + sizeof (ASN1_TIME);
+    CopyMem ((UINT8 *)DateTime + sizeof (ASN1_TIME), Dt->data, Dt->length);
+  }
+
+  Status = TRUE;
+
+Cleanup:
+  if (Dt != NULL) {
+    ASN1_TIME_free (Dt);
+  }
+
+  return Status;
+}
+
+/**
+  Compare DateTime1 object and DateTime2 object.
+
+  If DateTime1 is NULL, then return -2.
+  If DateTime2 is NULL, then return -2.
+  If DateTime1 == DateTime2, then return 0
+  If DateTime1 > DateTime2, then return 1
+  If DateTime1 < DateTime2, then return -1
+
+  @param[in]      DateTime1         Pointer to a DateTime Ojbect
+  @param[in]      DateTime2         Pointer to a DateTime Object
+
+  @retval  0      If DateTime1 == DateTime2
+  @retval  1      If DateTime1 > DateTime2
+  @retval  -1     If DateTime1 < DateTime2
+**/
+INT32
+EFIAPI
+X509CompareDateTime (
+  IN CONST  VOID  *DateTime1,
+  IN CONST  VOID  *DateTime2
+  )
+{
+  return (INT32)ASN1_TIME_compare (DateTime1, DateTime2);
+}
+
+/**
+  Retrieve the Key Usage from one X.509 certificate.
+
+  @param[in]      Cert             Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize         Size of the X509 certificate in bytes.
+  @param[out]     Usage            Key Usage (CRYPTO_X509_KU_*)
+
+  @retval  TRUE   The certificate Key Usage retrieved successfully.
+  @retval  FALSE  Invalid certificate, or Usage is NULL
+  @retval  FALSE  This interface is not supported.
+**/
+BOOLEAN
+EFIAPI
+X509GetKeyUsage (
+  IN    CONST UINT8  *Cert,
+  IN    UINTN        CertSize,
+  OUT   UINTN        *Usage
+  )
+{
+  BOOLEAN  Status;
+  X509     *X509Cert;
+
+  //
+  // Check input parameters.
+  //
+  if ((Cert == NULL) || (Usage == NULL)) {
+    return FALSE;
+  }
+
+  X509Cert = NULL;
+  Status   = FALSE;
+
+  //
+  // Read DER-encoded X509 Certificate and Construct X509 object.
+  //
+  Status = X509ConstructCertificate (Cert, CertSize, (UINT8 **)&X509Cert);
+  if ((X509Cert == NULL) || (!Status)) {
+    goto _Exit;
+  }
+
+  //
+  // Retrieve subject name from certificate object.
+  //
+  *Usage = X509_get_key_usage (X509Cert);
+  if (*Usage == NID_undef) {
+    goto _Exit;
+  }
+
+  Status = TRUE;
+
+_Exit:
+  //
+  // Release Resources.
+  //
+  if (X509Cert != NULL) {
+    X509_free (X509Cert);
+  }
+
+  return Status;
+}
+
+/**
+  Verify one X509 certificate was issued by the trusted CA.
+  @param[in]      RootCert          Trusted Root Certificate buffer
+
+  @param[in]      RootCertLength    Trusted Root Certificate buffer length
+  @param[in]      CertChain         One or more ASN.1 DER-encoded X.509 certificates
+                                    where the first certificate is signed by the Root
+                                    Certificate or is the Root Certificate itself. and
+                                    subsequent certificate is signed by the preceding
+                                    certificate.
+  @param[in]      CertChainLength   Total length of the certificate chain, in bytes.
+
+  @retval  TRUE   All certificates was issued by the first certificate in X509Certchain.
+  @retval  FALSE  Invalid certificate or the certificate was not issued by the given
+                  trusted CA.
+**/
+BOOLEAN
+EFIAPI
+X509VerifyCertChain (
+  IN CONST UINT8  *RootCert,
+  IN UINTN        RootCertLength,
+  IN CONST UINT8  *CertChain,
+  IN UINTN        CertChainLength
+  )
+{
+  CONST UINT8  *TmpPtr;
+  UINTN        Length;
+  UINT32       Asn1Tag;
+  UINT32       ObjClass;
+  CONST UINT8  *CurrentCert;
+  UINTN        CurrentCertLen;
+  CONST UINT8  *PrecedingCert;
+  UINTN        PrecedingCertLen;
+  BOOLEAN      VerifyFlag;
+  INT32        Ret;
+
+  PrecedingCert    = RootCert;
+  PrecedingCertLen = RootCertLength;
+
+  CurrentCert    = CertChain;
+  Length         = 0;
+  CurrentCertLen = 0;
+
+  VerifyFlag = FALSE;
+  while (TRUE) {
+    TmpPtr = CurrentCert;
+    Ret    = ASN1_get_object (
+               (CONST UINT8 **)&TmpPtr,
+               (long *)&Length,
+               (int *)&Asn1Tag,
+               (int *)&ObjClass,
+               (long)(CertChainLength + CertChain - TmpPtr)
+               );
+    if ((Asn1Tag != V_ASN1_SEQUENCE) || (Ret == 0x80)) {
+      break;
+    }
+
+    //
+    // Calculate CurrentCert length;
+    //
+    CurrentCertLen = TmpPtr - CurrentCert + Length;
+
+    //
+    // Verify CurrentCert with preceding cert;
+    //
+    VerifyFlag = X509VerifyCert (CurrentCert, CurrentCertLen, PrecedingCert, PrecedingCertLen);
+    if (VerifyFlag == FALSE) {
+      break;
+    }
+
+    //
+    // move Current cert to Preceding cert
+    //
+    PrecedingCertLen = CurrentCertLen;
+    PrecedingCert    = CurrentCert;
+
+    //
+    // Move to next
+    //
+    CurrentCert = CurrentCert + CurrentCertLen;
+  }
+
+  return VerifyFlag;
+}
+
+/**
+  Get one X509 certificate from CertChain.
+
+  @param[in]      CertChain         One or more ASN.1 DER-encoded X.509 certificates
+                                    where the first certificate is signed by the Root
+                                    Certificate or is the Root Certificate itself. and
+                                    subsequent certificate is signed by the preceding
+                                    certificate.
+  @param[in]      CertChainLength   Total length of the certificate chain, in bytes.
+
+  @param[in]      CertIndex         Index of certificate.
+
+  @param[out]     Cert              The certificate at the index of CertChain.
+  @param[out]     CertLength        The length certificate at the index of CertChain.
+
+  @retval  TRUE   Success.
+  @retval  FALSE  Failed to get certificate from certificate chain.
+**/
+BOOLEAN
+EFIAPI
+X509GetCertFromCertChain (
+  IN CONST UINT8   *CertChain,
+  IN UINTN         CertChainLength,
+  IN CONST INT32   CertIndex,
+  OUT CONST UINT8  **Cert,
+  OUT UINTN        *CertLength
+  )
+{
+  UINTN        Asn1Len;
+  INT32        CurrentIndex;
+  UINTN        CurrentCertLen;
+  CONST UINT8  *CurrentCert;
+  CONST UINT8  *TmpPtr;
+  INT32        Ret;
+  UINT32       Asn1Tag;
+  UINT32       ObjClass;
+
+  //
+  // Check input parameters.
+  //
+  if ((CertChain == NULL) || (Cert == NULL) ||
+      (CertIndex < -1) || (CertLength == NULL))
+  {
+    return FALSE;
+  }
+
+  Asn1Len        = 0;
+  CurrentCertLen = 0;
+  CurrentCert    = CertChain;
+  CurrentIndex   = -1;
+
+  //
+  // Traverse the certificate chain
+  //
+  while (TRUE) {
+    TmpPtr = CurrentCert;
+
+    // Get asn1 object and taglen
+    Ret = ASN1_get_object (
+            (CONST UINT8 **)&TmpPtr,
+            (long *)&Asn1Len,
+            (int *)&Asn1Tag,
+            (int *)&ObjClass,
+            (long)(CertChainLength + CertChain - TmpPtr)
+            );
+    if ((Asn1Tag != V_ASN1_SEQUENCE) || (Ret == 0x80)) {
+      break;
+    }
+
+    //
+    // Calculate CurrentCert length;
+    //
+    CurrentCertLen = TmpPtr - CurrentCert + Asn1Len;
+    CurrentIndex++;
+
+    if (CurrentIndex == CertIndex) {
+      *Cert       = CurrentCert;
+      *CertLength = CurrentCertLen;
+      return TRUE;
+    }
+
+    //
+    // Move to next
+    //
+    CurrentCert = CurrentCert + CurrentCertLen;
+  }
+
+  //
+  // If CertIndex is -1, Return the last certificate
+  //
+  if ((CertIndex == -1) && (CurrentIndex >= 0)) {
+    *Cert       = CurrentCert - CurrentCertLen;
+    *CertLength = CurrentCertLen;
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
+/**
+  Retrieve the tag and length of the tag.
+
+  @param Ptr      The position in the ASN.1 data
+  @param End      End of data
+  @param Length   The variable that will receive the length
+  @param Tag      The expected tag
+
+  @retval      TRUE   Get tag successful
+  @retval      FALSe  Failed to get tag or tag not match
+**/
+BOOLEAN
+EFIAPI
+Asn1GetTag (
+  IN OUT UINT8    **Ptr,
+  IN CONST UINT8  *End,
+  OUT UINTN       *Length,
+  IN     UINT32   Tag
+  )
+{
+  UINT8   *PtrOld;
+  INT32   ObjTag;
+  INT32   ObjCls;
+  long    ObjLength;
+  UINT32  Inf;
+
+  //
+  // Save Ptr position
+  //
+  PtrOld = *Ptr;
+
+  Inf = ASN1_get_object ((CONST UINT8 **)Ptr, &ObjLength, &ObjTag, &ObjCls, (INT32)(End - (*Ptr)));
+  if (((Inf & 0x80) == 0x00) &&
+      (ObjTag == (INT32)(Tag & CRYPTO_ASN1_TAG_VALUE_MASK)) &&
+      (ObjCls == (INT32)(Tag & CRYPTO_ASN1_TAG_CLASS_MASK)))
+  {
+    *Length = (UINTN)ObjLength;
+    return TRUE;
+  } else {
+    //
+    // if doesn't match Tag, restore Ptr to origin Ptr
+    //
+    *Ptr = PtrOld;
+    return FALSE;
+  }
+}
+
+/**
+  Retrieve the basic constraints from one X.509 certificate.
+
+  @param[in]      Cert                     Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize                 size of the X509 certificate in bytes.
+  @param[out]     BasicConstraints         basic constraints bytes.
+  @param[in, out] BasicConstraintsSize     basic constraints buffer size in bytes.
+
+  @retval TRUE                     The basic constraints retrieve successfully.
+  @retval FALSE                    If cert is NULL.
+                                   If cert_size is NULL.
+                                   If basic_constraints is not NULL and *basic_constraints_size is 0.
+                                   If cert is invalid.
+  @retval FALSE                    The required buffer size is small.
+                                   The return buffer size is basic_constraints_size parameter.
+  @retval FALSE                    If no Extension entry match oid.
+  @retval FALSE                    The operation is not supported.
+ **/
+BOOLEAN
+EFIAPI
+X509GetExtendedBasicConstraints             (
+  CONST UINT8  *Cert,
+  UINTN        CertSize,
+  UINT8        *BasicConstraints,
+  UINTN        *BasicConstraintsSize
+  )
+{
+  BOOLEAN  Status;
+
+  if ((Cert == NULL) || (CertSize == 0) || (BasicConstraintsSize == NULL)) {
+    return FALSE;
+  }
+
+  Status = X509GetExtensionData (
+             (UINT8 *)Cert,
+             CertSize,
+             mOidBasicConstraints,
+             sizeof (mOidBasicConstraints),
+             BasicConstraints,
+             BasicConstraintsSize
+             );
+
+  return Status;
 }

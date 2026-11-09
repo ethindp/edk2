@@ -8,6 +8,15 @@ PCCTS_HOME=$(BASE_TOOLS_PATH)\Source\C\VfrCompile\Pccts
 ANTLR_SRC=$(PCCTS_HOME)\antlr
 PCCTS_H=$(PCCTS_HOME)\h
 
+!IFNDEF HOST_ARCH
+HOST_ARCH = IA32
+!ENDIF
+
+!IF "$(HOST_ARCH)"=="IA32"
+SYS_BIN_PATH=$(EDK_TOOLS_PATH)\Bin\Win32
+!ELSE
+SYS_BIN_PATH=$(EDK_TOOLS_PATH)\Bin\Win64
+!ENDIF
 
 # Support directories
 SET=$(PCCTS_HOME)\support\set
@@ -16,8 +25,8 @@ SET=$(PCCTS_HOME)\support\set
 # Compiler stuff
 CC = cl
 CFLAGS = /nologo -I "." -I "$(PCCTS_H)" -I "$(SET)" -D "USER_ZZSYN" -D "PC" \
-        -D "ZZLEXBUFSIZE=65536"  /D "LONGFILENAMES" /Zi /W3 -D__USE_PROTOS /wd4700 \
-         /D _CRT_SECURE_NO_DEPRECATE /D _CRT_NONSTDC_NO_DEPRECATE 
+        -D "ZZLEXBUFSIZE=65536"  /D "LONGFILENAMES" /Z7 /W3 -D__USE_PROTOS /wd4700 \
+         /D _CRT_SECURE_NO_DEPRECATE /D _CRT_NONSTDC_NO_DEPRECATE
 
 ANTLR_OBJS = antlr.obj scan.obj err.obj bits.obj build.obj fset2.obj \
             fset.obj gen.obj globals.obj hash.obj lex.obj main.obj \
@@ -27,10 +36,10 @@ SUPPORT_OBJS = set.obj
 
 # Dependencies
 
-$(EDK_TOOLS_PATH)\Bin\Win32\antlr.exe: $(ANTLR_OBJS) $(SUPPORT_OBJS)
+$(SYS_BIN_PATH)\antlr.exe: $(ANTLR_OBJS) $(SUPPORT_OBJS)
     $(CC) $(CFLAGS) -Feantlr.exe $(ANTLR_OBJS) $(SUPPORT_OBJS)
-    -@if not exist $(EDK_TOOLS_PATH)\Bin\Win32 mkdir $(EDK_TOOLS_PATH)\Bin\Win32
-		copy antlr.exe $(EDK_TOOLS_PATH)\Bin\Win32
+    -@if not exist $(SYS_BIN_PATH) mkdir $(SYS_BIN_PATH)
+		copy antlr.exe $(SYS_BIN_PATH)
 
 
 antlr.obj: $(ANTLR_SRC)\antlr.c \
@@ -226,7 +235,7 @@ set.obj: $(SET)\set.c \
 
     $(CC) -c $(CFLAGS) $(SET)\set.c
 
-clean:	
+clean:
     -del *.obj
     -del *.ilk
     -del *.pdb

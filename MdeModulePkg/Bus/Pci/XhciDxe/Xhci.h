@@ -2,14 +2,14 @@
 
   Provides some data structure definitions used by the XHCI host controller driver.
 
+(C) Copyright 2023 Hewlett Packard Enterprise Development LP<BR>
 Copyright (c) 2011 - 2017, Intel Corporation. All rights reserved.<BR>
 Copyright (c) Microsoft Corporation.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _EFI_XHCI_H_
-#define _EFI_XHCI_H_
+#pragma once
 
 #include <Uefi.h>
 
@@ -26,6 +26,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Library/UefiLib.h>
 #include <Library/DebugLib.h>
 #include <Library/ReportStatusCodeLib.h>
+#include <Library/TimerLib.h>
+#include <Library/PcdLib.h>
 
 #include <IndustryStandard/Pci.h>
 
@@ -36,6 +38,11 @@ typedef struct _USB_DEV_CONTEXT    USB_DEV_CONTEXT;
 #include "XhciSched.h"
 #include "ComponentName.h"
 #include "UsbHcMem.h"
+
+//
+// Converts a count from microseconds to nanoseconds
+//
+#define XHC_MICROSECOND_TO_NANOSECOND(Time)  (MultU64x32((Time), 1000))
 
 //
 // The unit is microsecond, setting it as 1us.
@@ -227,6 +234,8 @@ struct _USB_XHCI_INSTANCE {
   UINT32                      ExtCapRegBase;
   UINT32                      UsbLegSupOffset;
   UINT32                      DebugCapSupOffset;
+  UINT32                      Usb2SupOffset;
+  UINT32                      Usb3SupOffset;
   UINT64                      *DCBAA;
   VOID                        *DCBAAMap;
   UINT32                      MaxSlotsEn;
@@ -718,4 +727,27 @@ XhcAsyncIsochronousTransfer (
   IN     VOID                                *Context
   );
 
-#endif
+/**
+  Converts a time in nanoseconds to a performance counter tick count.
+
+  @param  Time  The time in nanoseconds to be converted to performance counter ticks.
+  @return Time in nanoseconds converted to ticks.
+**/
+UINT64
+XhcConvertTimeToTicks (
+  UINT64  Time
+  );
+
+/**
+  Computes and returns the elapsed ticks since PreviousTick. The
+  value of PreviousTick is overwritten with the current performance
+  counter value.
+
+  @param  PreviousTick    Pointer to PreviousTick count.
+  @return The elapsed ticks since PreviousCount. PreviousCount is
+          overwritten with the current performance counter value.
+**/
+UINT64
+XhcGetElapsedTicks (
+  IN OUT UINT64  *PreviousTick
+  );

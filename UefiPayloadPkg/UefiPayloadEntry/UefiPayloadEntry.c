@@ -1,13 +1,26 @@
 /** @file
 
   Copyright (c) 2014 - 2021, Intel Corporation. All rights reserved.<BR>
+  Copyright (C) 2025 Advanced Micro Devices, Inc. All rights reserved.
+
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
+#include <Guid/MemoryTypeInformation.h>
+#include <Library/BaseArchLibSupport.h>
 #include "UefiPayloadEntry.h"
 
 STATIC UINT32  mTopOfLowerUsableDram = 0;
+
+EFI_MEMORY_TYPE_INFORMATION  mDefaultMemoryTypeInformation[] = {
+  { EfiACPIReclaimMemory,   FixedPcdGet32 (PcdMemoryTypeEfiACPIReclaimMemory)   },
+  { EfiACPIMemoryNVS,       FixedPcdGet32 (PcdMemoryTypeEfiACPIMemoryNVS)       },
+  { EfiReservedMemoryType,  FixedPcdGet32 (PcdMemoryTypeEfiReservedMemoryType)  },
+  { EfiRuntimeServicesData, FixedPcdGet32 (PcdMemoryTypeEfiRuntimeServicesData) },
+  { EfiRuntimeServicesCode, FixedPcdGet32 (PcdMemoryTypeEfiRuntimeServicesCode) },
+  { EfiMaxMemoryType,       0                                                   }
+};
 
 /**
    Callback function to build resource descriptor HOB
@@ -31,7 +44,7 @@ MemInfoCallbackMmio (
   EFI_PHYSICAL_ADDRESS         Base;
   EFI_RESOURCE_TYPE            Type;
   UINT64                       Size;
-  EFI_RESOURCE_ATTRIBUTE_TYPE  Attribue;
+  EFI_RESOURCE_ATTRIBUTE_TYPE  Attribute;
   ACPI_BOARD_INFO              *AcpiBoardInfo;
 
   AcpiBoardInfo = (ACPI_BOARD_INFO *)Params;
@@ -68,15 +81,15 @@ MemInfoCallbackMmio (
   Base = MemoryMapEntry->Base;
   Size = MemoryMapEntry->Size;
 
-  Attribue = EFI_RESOURCE_ATTRIBUTE_PRESENT |
-             EFI_RESOURCE_ATTRIBUTE_INITIALIZED |
-             EFI_RESOURCE_ATTRIBUTE_TESTED |
-             EFI_RESOURCE_ATTRIBUTE_UNCACHEABLE |
-             EFI_RESOURCE_ATTRIBUTE_WRITE_COMBINEABLE |
-             EFI_RESOURCE_ATTRIBUTE_WRITE_THROUGH_CACHEABLE |
-             EFI_RESOURCE_ATTRIBUTE_WRITE_BACK_CACHEABLE;
+  Attribute = EFI_RESOURCE_ATTRIBUTE_PRESENT |
+              EFI_RESOURCE_ATTRIBUTE_INITIALIZED |
+              EFI_RESOURCE_ATTRIBUTE_TESTED |
+              EFI_RESOURCE_ATTRIBUTE_UNCACHEABLE |
+              EFI_RESOURCE_ATTRIBUTE_WRITE_COMBINEABLE |
+              EFI_RESOURCE_ATTRIBUTE_WRITE_THROUGH_CACHEABLE |
+              EFI_RESOURCE_ATTRIBUTE_WRITE_BACK_CACHEABLE;
 
-  BuildResourceDescriptorHob (Type, Attribue, (EFI_PHYSICAL_ADDRESS)Base, Size);
+  BuildResourceDescriptorHob (Type, Attribute, (EFI_PHYSICAL_ADDRESS)Base, Size);
   DEBUG ((DEBUG_INFO, "buildhob: base = 0x%lx, size = 0x%lx, type = 0x%x\n", Base, Size, Type));
 
   if ((MemoryMapEntry->Type == E820_UNUSABLE) ||
@@ -157,6 +170,108 @@ FindToludCallback (
 }
 
 /**
+   Callback function to find free and usable DRAM for HOB
+   The memory region returned will have at least PcdSystemMemoryUefiRegionSize bytes
+   and will be aligned to 1 MiB.
+
+   The caller must initialize HobMemBase to zero.
+
+   @param MemoryMapEntry         Memory map entry info got from bootloader.
+   @param Params                 Pointer to HobMemBase
+
+  @retval EFI_SUCCESS            Continue walking the memory map
+  @retval EFI_ALREADY_STARTED    HobMemBase is not zero
+
+**/
+EFI_STATUS
+FindFreeMemForHobCallback (
+  IN MEMORY_MAP_ENTRY  *MemoryMapEntry,
+  IN VOID              *Params
+  )
+{
+  EFI_STATUS        Status;
+  MEMORY_MAP_ENTRY  MemoryMapEntrySplit;
+  UINTN             *HobMemBase = (UINTN *)Params;
+
+  //
+  // Found new base, nothing to do
+  //
+  if (*HobMemBase != 0) {
+    return EFI_ALREADY_STARTED;
+  }
+
+  //
+  // Skip memory types not RAM
+  //
+  if (MemoryMapEntry->Type != E820_RAM) {
+    return EFI_SUCCESS;
+  }
+
+  //
+  // Align on 1 MiB
+  //
+  if (ALIGN_VALUE (MemoryMapEntry->Base, SIZE_1MB) > MemoryMapEntry->Base) {
+    //
+    // Skip too small
+    //
+    if (ALIGN_VALUE (MemoryMapEntry->Base, SIZE_1MB) >= (MemoryMapEntry->Base + MemoryMapEntry->Size)) {
+      return EFI_SUCCESS;
+    }
+
+    MemoryMapEntry->Size -= ALIGN_VALUE (MemoryMapEntry->Base, SIZE_1MB) - MemoryMapEntry->Base;
+    MemoryMapEntry->Base  = ALIGN_VALUE (MemoryMapEntry->Base, SIZE_1MB);
+  }
+
+  //
+  // Skip resources above 4GiB on x86_32
+  //
+  if ((sizeof (UINTN) == 4) && (MemoryMapEntry->Base >= 0x100000000ULL)) {
+    return EFI_SUCCESS;
+  }
+
+  if ((sizeof (UINTN) == 4) && ((MemoryMapEntry->Base + MemoryMapEntry->Size) > 0x100000000ULL)) {
+    MemoryMapEntry->Size = 0x100000000ULL - MemoryMapEntry->Base;
+  }
+
+  //
+  // Skip too small
+  //
+  if (MemoryMapEntry->Size < FixedPcdGet32 (PcdSystemMemoryUefiRegionSize)) {
+    return EFI_SUCCESS;
+  }
+
+  //
+  // Overlaps UefiPayload, split into smaller chunks
+  //
+  if ((MemoryMapEntry->Base <= PcdGet32 (PcdPayloadFdMemBase)) &&
+      ((MemoryMapEntry->Base + MemoryMapEntry->Size) >= PcdGet32 (PcdPayloadFdMemBase)))
+  {
+    MemoryMapEntrySplit.Type = E820_RAM;
+    MemoryMapEntrySplit.Base = MemoryMapEntry->Base;
+    MemoryMapEntrySplit.Size = PcdGet32 (PcdPayloadFdMemBase) - MemoryMapEntrySplit.Base;
+    Status                   = FindFreeMemForHobCallback (&MemoryMapEntrySplit, Params);
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+
+    if ((MemoryMapEntry->Base + MemoryMapEntry->Size) > (PcdGet32 (PcdPayloadFdMemBase) + PcdGet32 (PcdPayloadFdMemSize))) {
+      MemoryMapEntrySplit.Base = PcdGet32 (PcdPayloadFdMemBase) + PcdGet32 (PcdPayloadFdMemSize);
+      MemoryMapEntrySplit.Size = (MemoryMapEntry->Base + MemoryMapEntry->Size) - MemoryMapEntrySplit.Base;
+      Status                   = FindFreeMemForHobCallback (&MemoryMapEntrySplit, Params);
+      if (EFI_ERROR (Status)) {
+        return Status;
+      }
+    }
+
+    return EFI_SUCCESS;
+  }
+
+  *HobMemBase = MemoryMapEntry->Base;
+
+  return EFI_ALREADY_STARTED;
+}
+
+/**
    Callback function to build resource descriptor HOB
 
    This function build a HOB based on the memory map entry info.
@@ -176,7 +291,7 @@ MemInfoCallback (
   EFI_PHYSICAL_ADDRESS         Base;
   EFI_RESOURCE_TYPE            Type;
   UINT64                       Size;
-  EFI_RESOURCE_ATTRIBUTE_TYPE  Attribue;
+  EFI_RESOURCE_ATTRIBUTE_TYPE  Attribute;
 
   //
   // Skip everything not known to be usable DRAM.
@@ -192,15 +307,15 @@ MemInfoCallback (
   Base = MemoryMapEntry->Base;
   Size = MemoryMapEntry->Size;
 
-  Attribue = EFI_RESOURCE_ATTRIBUTE_PRESENT |
-             EFI_RESOURCE_ATTRIBUTE_INITIALIZED |
-             EFI_RESOURCE_ATTRIBUTE_TESTED |
-             EFI_RESOURCE_ATTRIBUTE_UNCACHEABLE |
-             EFI_RESOURCE_ATTRIBUTE_WRITE_COMBINEABLE |
-             EFI_RESOURCE_ATTRIBUTE_WRITE_THROUGH_CACHEABLE |
-             EFI_RESOURCE_ATTRIBUTE_WRITE_BACK_CACHEABLE;
+  Attribute = EFI_RESOURCE_ATTRIBUTE_PRESENT |
+              EFI_RESOURCE_ATTRIBUTE_INITIALIZED |
+              EFI_RESOURCE_ATTRIBUTE_TESTED |
+              EFI_RESOURCE_ATTRIBUTE_UNCACHEABLE |
+              EFI_RESOURCE_ATTRIBUTE_WRITE_COMBINEABLE |
+              EFI_RESOURCE_ATTRIBUTE_WRITE_THROUGH_CACHEABLE |
+              EFI_RESOURCE_ATTRIBUTE_WRITE_BACK_CACHEABLE;
 
-  BuildResourceDescriptorHob (Type, Attribue, (EFI_PHYSICAL_ADDRESS)Base, Size);
+  BuildResourceDescriptorHob (Type, Attribute, (EFI_PHYSICAL_ADDRESS)Base, Size);
   DEBUG ((DEBUG_INFO, "buildhob: base = 0x%lx, size = 0x%lx, type = 0x%x\n", Base, Size, Type));
 
   if (MemoryMapEntry->Type == E820_ACPI) {
@@ -220,17 +335,23 @@ MemInfoCallback (
 **/
 EFI_STATUS
 BuildHobFromBl (
-  VOID
+  IN OUT EFI_HOB_HANDOFF_INFO_TABLE  *HobInfo
   )
 {
   EFI_STATUS                        Status;
   ACPI_BOARD_INFO                   *AcpiBoardInfo;
+  SMMSTORE_INFO                     SmmStoreInfo;
+  SMMSTORE_INFO                     *NewSmmStoreInfo;
+  FIRMWARE_INFO                     FirmwareInfo;
+  FIRMWARE_INFO                     *NewFirmwareInfo;
   EFI_PEI_GRAPHICS_INFO_HOB         GfxInfo;
   EFI_PEI_GRAPHICS_INFO_HOB         *NewGfxInfo;
   EFI_PEI_GRAPHICS_DEVICE_INFO_HOB  GfxDeviceInfo;
   EFI_PEI_GRAPHICS_DEVICE_INFO_HOB  *NewGfxDeviceInfo;
   UNIVERSAL_PAYLOAD_SMBIOS_TABLE    *SmBiosTableHob;
   UNIVERSAL_PAYLOAD_ACPI_TABLE      *AcpiTableHob;
+  UINT64                            SmBiosEntryPoint;
+  EFI_BOOT_MODE                     BootMode;
 
   //
   // First find TOLUD
@@ -272,20 +393,52 @@ BuildHobFromBl (
   }
 
   //
-  // Creat SmBios table Hob
+  // Create guid hob for SmmStore
   //
-  SmBiosTableHob = BuildGuidHob (&gUniversalPayloadSmbiosTableGuid, sizeof (UNIVERSAL_PAYLOAD_SMBIOS_TABLE));
-  ASSERT (SmBiosTableHob != NULL);
-  SmBiosTableHob->Header.Revision = UNIVERSAL_PAYLOAD_SMBIOS_TABLE_REVISION;
-  SmBiosTableHob->Header.Length   = sizeof (UNIVERSAL_PAYLOAD_SMBIOS_TABLE);
-  DEBUG ((DEBUG_INFO, "Create smbios table gUniversalPayloadSmbiosTableGuid guid hob\n"));
-  Status = ParseSmbiosTable (SmBiosTableHob);
+  Status = ParseSmmStoreInfo (&SmmStoreInfo);
   if (!EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_INFO, "Detected Smbios Table at 0x%lx\n", SmBiosTableHob->SmBiosEntryPoint));
+    NewSmmStoreInfo = BuildGuidHob (&gEfiSmmStoreInfoHobGuid, sizeof (SmmStoreInfo));
+    ASSERT (NewSmmStoreInfo != NULL);
+    CopyMem (NewSmmStoreInfo, &SmmStoreInfo, sizeof (SmmStoreInfo));
+    DEBUG ((DEBUG_INFO, "Created SmmStore info hob\n"));
   }
 
   //
-  // Creat ACPI table Hob
+  // Create guid hob for firmware information
+  //
+  Status = ParseFirmwareInfo (&FirmwareInfo);
+  if (!EFI_ERROR (Status)) {
+    NewFirmwareInfo = BuildGuidHob (&gEfiFirmwareInfoHobGuid, sizeof (FirmwareInfo));
+    ASSERT (NewFirmwareInfo != NULL);
+    CopyMem (NewFirmwareInfo, &FirmwareInfo, sizeof (FirmwareInfo));
+    DEBUG ((DEBUG_INFO, "Created firmware info hob\n"));
+  }
+
+  //
+  // Get boot mode from bootloader and set it in HOB
+  //
+  Status = ParseBootMode (&BootMode);
+  if (!EFI_ERROR (Status)) {
+    HobInfo->BootMode = BootMode;
+    DEBUG ((DEBUG_INFO, "BootMode from bootloader: %x\n", BootMode));
+  }
+
+  //
+  // Create SmBios table Hob
+  //
+  Status = ParseSmbiosTable (&SmBiosEntryPoint);
+  if (!EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_INFO, "Detected Smbios Table at 0x%lx\n", SmBiosEntryPoint));
+    SmBiosTableHob = BuildGuidHob (&gUniversalPayloadSmbiosTableGuid, sizeof (UNIVERSAL_PAYLOAD_SMBIOS_TABLE));
+    ASSERT (SmBiosTableHob != NULL);
+    SmBiosTableHob->Header.Revision  = UNIVERSAL_PAYLOAD_SMBIOS_TABLE_REVISION;
+    SmBiosTableHob->Header.Length    = sizeof (UNIVERSAL_PAYLOAD_SMBIOS_TABLE);
+    SmBiosTableHob->SmBiosEntryPoint = SmBiosEntryPoint;
+    DEBUG ((DEBUG_INFO, "Create smbios table gUniversalPayloadSmbiosTableGuid guid hob\n"));
+  }
+
+  //
+  // Create ACPI table Hob
   //
   AcpiTableHob = BuildGuidHob (&gUniversalPayloadAcpiTableGuid, sizeof (UNIVERSAL_PAYLOAD_ACPI_TABLE));
   ASSERT (AcpiTableHob != NULL);
@@ -329,6 +482,15 @@ BuildHobFromBl (
     return Status;
   }
 
+  //
+  // Import update capsules, if there are any.
+  //
+  Status = ParseCapsules (BuildCvHob);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "Error when importing update capsules, Status = %r\n", Status));
+    return Status;
+  }
+
   return EFI_SUCCESS;
 }
 
@@ -341,24 +503,13 @@ BuildGenericHob (
   VOID
   )
 {
-  UINT32                       RegEax;
   UINT8                        PhysicalAddressBits;
   EFI_RESOURCE_ATTRIBUTE_TYPE  ResourceAttribute;
 
   // The UEFI payload FV
   BuildMemoryAllocationHob (PcdGet32 (PcdPayloadFdMemBase), PcdGet32 (PcdPayloadFdMemSize), EfiBootServicesData);
 
-  //
-  // Build CPU memory space and IO space hob
-  //
-  AsmCpuid (0x80000000, &RegEax, NULL, NULL, NULL);
-  if (RegEax >= 0x80000008) {
-    AsmCpuid (0x80000008, &RegEax, NULL, NULL, NULL);
-    PhysicalAddressBits = (UINT8)RegEax;
-  } else {
-    PhysicalAddressBits = 36;
-  }
-
+  PhysicalAddressBits = ArchGetPhysicalAddressBits ();
   BuildCpuHob (PhysicalAddressBits, 16);
 
   //
@@ -395,6 +546,7 @@ _ModuleEntryPoint (
   EFI_PEI_HOB_POINTERS                Hob;
   SERIAL_PORT_INFO                    SerialPortInfo;
   UNIVERSAL_PAYLOAD_SERIAL_PORT_INFO  *UniversalSerialPort;
+  EFI_HOB_HANDOFF_INFO_TABLE          *HobInfo;
 
   Status = PcdSet64S (PcdBootloaderParameter, BootloaderParameter);
   ASSERT_EFI_ERROR (Status);
@@ -404,10 +556,21 @@ _ModuleEntryPoint (
 
   // HOB region is used for HOB and memory allocation for this module
   MemBase    = PcdGet32 (PcdPayloadFdMemBase);
-  HobMemBase = ALIGN_VALUE (MemBase + PcdGet32 (PcdPayloadFdMemSize), SIZE_1MB);
-  HobMemTop  = HobMemBase + FixedPcdGet32 (PcdSystemMemoryUefiRegionSize);
+  HobMemBase = 0;
 
-  HobConstructor ((VOID *)MemBase, (VOID *)HobMemTop, (VOID *)HobMemBase, (VOID *)HobMemTop);
+  //
+  // Find a good place for HOB and memory allocation
+  //
+  ParseMemoryInfo (FindFreeMemForHobCallback, &HobMemBase);
+
+  ASSERT (HobMemBase != 0);
+  if (HobMemBase == 0) {
+    HobMemBase = ALIGN_VALUE (MemBase + PcdGet32 (PcdPayloadFdMemSize), SIZE_1MB);
+  }
+
+  HobMemTop = HobMemBase + FixedPcdGet32 (PcdSystemMemoryUefiRegionSize);
+
+  HobInfo = HobConstructor ((VOID *)MemBase, (VOID *)HobMemTop, (VOID *)HobMemBase, (VOID *)HobMemTop);
 
   //
   // Build serial port info
@@ -422,14 +585,24 @@ _ModuleEntryPoint (
     UniversalSerialPort->RegisterBase    = SerialPortInfo.BaseAddr;
     UniversalSerialPort->BaudRate        = SerialPortInfo.Baud;
     UniversalSerialPort->RegisterStride  = (UINT8)SerialPortInfo.RegWidth;
+    // Set PCD here (vs in PlatformHookLib.c) to avoid adding a new field to UniversalSerialPort struct
+    if (SerialPortInfo.InputHertz > 0) {
+      Status = PcdSet32S (PcdSerialClockRate, SerialPortInfo.InputHertz);
+      if (RETURN_ERROR (Status)) {
+        DEBUG ((DEBUG_ERROR, "Failed to set PcdSerialClockRate; Status = %r\n", Status));
+        return Status;
+      }
+    }
   }
 
   // The library constructors might depend on serial port, so call it after serial port hob
   ProcessLibraryConstructorList ();
   DEBUG ((DEBUG_INFO, "sizeof(UINTN) = 0x%x\n", sizeof (UINTN)));
+  DEBUG ((DEBUG_INFO, "MemBase       = 0x%llx\n", (UINT64)MemBase));
+  DEBUG ((DEBUG_INFO, "HobMemBase    = 0x%llx\n", (UINT64)HobMemBase));
 
   // Build HOB based on information from Bootloader
-  Status = BuildHobFromBl ();
+  Status = BuildHobFromBl (HobInfo);
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "BuildHobFromBl Status = %r\n", Status));
     return Status;
@@ -438,11 +611,27 @@ _ModuleEntryPoint (
   // Build other HOBs required by DXE
   BuildGenericHob ();
 
+  //
+  // Create Memory Type Information HOB
+  //
+  BuildGuidDataHob (
+    &gEfiMemoryTypeInformationGuid,
+    mDefaultMemoryTypeInformation,
+    sizeof (mDefaultMemoryTypeInformation)
+    );
+
   // Load the DXE Core
   Status = LoadDxeCore (&DxeCoreEntryPoint);
   ASSERT_EFI_ERROR (Status);
 
   DEBUG ((DEBUG_INFO, "DxeCoreEntryPoint = 0x%lx\n", DxeCoreEntryPoint));
+
+  //
+  // Switch to update mode if there is at least one capsule.
+  //
+  if (GetFirstHob (EFI_HOB_TYPE_UEFI_CAPSULE) != NULL) {
+    HobInfo->BootMode = BOOT_ON_FLASH_UPDATE;
+  }
 
   //
   // Mask off all legacy 8259 interrupt sources

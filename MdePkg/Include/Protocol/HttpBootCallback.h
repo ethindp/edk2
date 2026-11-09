@@ -9,8 +9,7 @@
 
 **/
 
-#ifndef __EFI_HTTP_BOOT_CALLBACK_H__
-#define __EFI_HTTP_BOOT_CALLBACK_H__
+#pragma once
 
 #define EFI_HTTP_BOOT_CALLBACK_PROTOCOL_GUID \
   { \
@@ -32,12 +31,12 @@ typedef enum {
   ///
   HttpBootDhcp6,
   ///
-  /// Data points to an EFI_HTTP_MESSAGE structure, whichcontians a HTTP request message
+  /// Data points to an EFI_HTTP_MESSAGE structure, which contains a HTTP request message
   /// to be transmitted.
   ///
   HttpBootHttpRequest,
   ///
-  /// Data points to an EFI_HTTP_MESSAGE structure, which contians a received HTTP
+  /// Data points to an EFI_HTTP_MESSAGE structure, which contains a received HTTP
   /// response message.
   ///
   HttpBootHttpResponse,
@@ -46,6 +45,10 @@ typedef enum {
   /// buffer of the entity body data.
   ///
   HttpBootHttpEntityBody,
+  ///
+  /// Data points to the authentication information to provide to the HTTP server.
+  ///
+  HttpBootHttpAuthInfo,
   HttpBootTypeMax
 } EFI_HTTP_BOOT_CALLBACK_DATA_TYPE;
 
@@ -90,5 +93,3 @@ struct _EFI_HTTP_BOOT_CALLBACK_PROTOCOL {
 };
 
 extern EFI_GUID  gEfiHttpBootCallbackProtocolGuid;
-
-#endif

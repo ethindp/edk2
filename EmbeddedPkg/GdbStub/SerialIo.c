@@ -283,7 +283,7 @@ GdbSerialReset (
   data buts, and stop bits on a serial device.
 
   @param  This             Protocol instance pointer.
-  @param  BaudRate         The requested baud rate. A BaudRate value of 0 will use the the
+  @param  BaudRate         The requested baud rate. A BaudRate value of 0 will use the
                            device's default interface speed.
   @param  ReceiveFifoDepth The requested depth of the FIFO on the receive side of the
                            serial interface. A ReceiveFifoDepth value of 0 will use
@@ -457,7 +457,7 @@ GDB_SERIAL_DEV  gdbSerialDevTemplate = {
     0, // ControlMask
     0, // Timeout
     0, // BaudRate
-    1, // RceiveFifoDepth
+    1, // ReceiveFifoDepth
     0, // DataBits
     0, // Parity
     0  // StopBits

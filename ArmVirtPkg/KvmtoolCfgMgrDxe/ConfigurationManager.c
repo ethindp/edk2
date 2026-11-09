@@ -1,7 +1,7 @@
 /** @file
   Configuration Manager Dxe
 
-  Copyright (c) 2021 - 2022, Arm Limited. All rights reserved.<BR>
+  Copyright (c) 2021 - 2026, Arm Limited. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -88,6 +88,15 @@ EDKII_PLATFORM_REPOSITORY_INFO  mKvmtoolPlatRepositoryInfo = {
       (EFI_ACPI_DESCRIPTION_HEADER *)dsdt_aml_code
     },
     //
+    // PPTT Table
+    //
+    {
+      EFI_ACPI_6_3_PROCESSOR_PROPERTIES_TOPOLOGY_TABLE_STRUCTURE_SIGNATURE,
+      EFI_ACPI_6_3_PROCESSOR_PROPERTIES_TOPOLOGY_TABLE_REVISION,
+      CREATE_STD_ACPI_TABLE_GEN_ID (EStdAcpiTableIdPptt),
+      NULL
+    },
+    //
     // SSDT Cpu Hierarchy Table
     //
     {
@@ -103,6 +112,15 @@ EDKII_PLATFORM_REPOSITORY_INFO  mKvmtoolPlatRepositoryInfo = {
       EFI_ACPI_6_3_DEBUG_PORT_2_TABLE_SIGNATURE,
       EFI_ACPI_DBG2_DEBUG_DEVICE_INFORMATION_STRUCT_REVISION,
       CREATE_STD_ACPI_TABLE_GEN_ID (EStdAcpiTableIdDbg2),
+      NULL
+    },
+    //
+    // SSDT Serial Port Table
+    //
+    {
+      EFI_ACPI_6_3_SECONDARY_SYSTEM_DESCRIPTION_TABLE_SIGNATURE,
+      0, // Unused
+      CREATE_STD_ACPI_TABLE_GEN_ID (EStdAcpiTableIdSsdtSerialPort),
       NULL
     },
     //
@@ -128,7 +146,7 @@ EDKII_PLATFORM_REPOSITORY_INFO  mKvmtoolPlatRepositoryInfo = {
     //
     {
       EFI_ACPI_6_3_IO_REMAPPING_TABLE_SIGNATURE,
-      EFI_ACPI_IO_REMAPPING_TABLE_REVISION,
+      EFI_ACPI_IO_REMAPPING_TABLE_REVISION_00,
       CREATE_STD_ACPI_TABLE_GEN_ID (EStdAcpiTableIdIort),
       NULL
     },
@@ -434,6 +452,8 @@ GetDeviceIdMappingArray (
   @param  [in]  Context       A pointer to the caller's context provided in
                               HwInfoParserInit ().
   @param  [in]  CmObjDesc     CM_OBJ_DESCRIPTOR containing the CmObj(s) to add.
+  @param  [in]  NewToken      Token for this object. If CM_NULL_TOKEN, then
+                              a new token is generated.
   @param  [out] Token         If provided and success, contain the token
                               generated for the CmObj.
 
@@ -447,6 +467,7 @@ HwInfoAdd (
   IN        HW_INFO_PARSER_HANDLE  ParserHandle,
   IN        VOID                   *Context,
   IN  CONST CM_OBJ_DESCRIPTOR      *CmObjDesc,
+  IN  CONST CM_OBJECT_TOKEN        NewToken,
   OUT       CM_OBJECT_TOKEN        *Token OPTIONAL
   )
 {
@@ -475,6 +496,7 @@ HwInfoAdd (
   Status = DynPlatRepoAddObject (
              PlatformRepo->DynamicPlatformRepo,
              CmObjDesc,
+             NewToken,
              Token
              );
   if (EFI_ERROR (Status)) {
@@ -632,6 +654,7 @@ GetStandardNameSpaceObject (
   EFI_STATUS                      Status;
   EDKII_PLATFORM_REPOSITORY_INFO  *PlatformRepo;
   UINTN                           AcpiTableCount;
+  BOOLEAN                         PciSupportPresent;
   CM_OBJ_DESCRIPTOR               CmObjDesc;
 
   if ((This == NULL) || (CmObject == NULL)) {
@@ -640,8 +663,9 @@ GetStandardNameSpaceObject (
     return EFI_INVALID_PARAMETER;
   }
 
-  Status       = EFI_NOT_FOUND;
-  PlatformRepo = This->PlatRepoInfo;
+  Status            = EFI_NOT_FOUND;
+  PlatformRepo      = This->PlatRepoInfo;
+  PciSupportPresent = TRUE;
 
   switch (GET_CM_OBJECT_ID (CmObjectId)) {
     case EStdObjCfgMgrInfo:
@@ -658,11 +682,13 @@ GetStandardNameSpaceObject (
       AcpiTableCount = ARRAY_SIZE (PlatformRepo->CmAcpiTableList);
 
       //
-      // Get Pci config space information.
+      // Get Pci interrupt map information.
       //
       Status = DynamicPlatRepoGetObject (
                  PlatformRepo->DynamicPlatformRepo,
-                 CREATE_CM_ARM_OBJECT_ID (EArmObjPciConfigSpaceInfo),
+                 CREATE_CM_ARCH_COMMON_OBJECT_ID (
+                   EArchCommonObjPciInterruptMapInfo
+                   ),
                  CM_NULL_TOKEN,
                  &CmObjDesc
                  );
@@ -672,31 +698,50 @@ GetStandardNameSpaceObject (
         // present, Kvmtool was launched without the PCIe option.
         // Therefore, reduce the table count by 3.
         //
-        AcpiTableCount -= 3;
+        AcpiTableCount   -= 3;
+        PciSupportPresent = FALSE;
       } else if (EFI_ERROR (Status)) {
         ASSERT_EFI_ERROR (Status);
         return Status;
       }
 
-      //
-      // Get the Gic version.
-      //
-      Status = DynamicPlatRepoGetObject (
-                 PlatformRepo->DynamicPlatformRepo,
-                 CREATE_CM_ARM_OBJECT_ID (EArmObjGicDInfo),
-                 CM_NULL_TOKEN,
-                 &CmObjDesc
-                 );
-      if (EFI_ERROR (Status)) {
-        ASSERT_EFI_ERROR (Status);
-        return Status;
-      }
+      if (PciSupportPresent) {
+        //
+        // Get the Gic version.
+        //
+        Status = DynamicPlatRepoGetObject (
+                   PlatformRepo->DynamicPlatformRepo,
+                   CREATE_CM_ARM_OBJECT_ID (EArmObjGicDInfo),
+                   CM_NULL_TOKEN,
+                   &CmObjDesc
+                   );
+        if (EFI_ERROR (Status)) {
+          ASSERT_EFI_ERROR (Status);
+          return Status;
+        }
 
-      if (((CM_ARM_GICD_INFO *)CmObjDesc.Data)->GicVersion < 3) {
-        //
-        // IORT is only required for GicV3/4
-        //
-        AcpiTableCount -= 1;
+        if (((CM_ARM_GICD_INFO *)CmObjDesc.Data)->GicVersion < 3) {
+          //
+          // IORT is only required for GicV3/4
+          //
+          AcpiTableCount -= 1;
+        } else {
+          //
+          // Check if we have support for ITS.
+          //
+          Status = DynamicPlatRepoGetObject (
+                     PlatformRepo->DynamicPlatformRepo,
+                     CREATE_CM_ARM_OBJECT_ID (EArmObjGicItsInfo),
+                     CM_NULL_TOKEN,
+                     &CmObjDesc
+                     );
+          if (EFI_ERROR (Status)) {
+            //
+            // IORT is only required for GicV3/4 if ITS is present.
+            //
+            AcpiTableCount -= 1;
+          }
+        }
       }
 
       Status = HandleCmObject (
@@ -717,6 +762,83 @@ GetStandardNameSpaceObject (
         Status
         ));
       break;
+  }
+
+  return Status;
+}
+
+/**
+  Return an ArchCommon namespace object.
+
+  @param [in]      This        Pointer to the Configuration Manager Protocol.
+  @param [in]      CmObjectId  The Configuration Manager Object ID.
+  @param [in]      Token       An optional token identifying the object. If
+                               unused this must be CM_NULL_TOKEN.
+  @param [in, out] CmObject    Pointer to the Configuration Manager Object
+                               descriptor describing the requested Object.
+
+  @retval EFI_SUCCESS           Success.
+  @retval EFI_INVALID_PARAMETER A parameter is invalid.
+  @retval EFI_NOT_FOUND         The required object information is not found.
+**/
+EFI_STATUS
+EFIAPI
+GetArchCommonNameSpaceObject (
+  IN  CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL  *CONST  This,
+  IN  CONST CM_OBJECT_ID                                  CmObjectId,
+  IN  CONST CM_OBJECT_TOKEN                               Token OPTIONAL,
+  IN  OUT   CM_OBJ_DESCRIPTOR                     *CONST  CmObject
+  )
+{
+  EFI_STATUS                      Status;
+  EDKII_PLATFORM_REPOSITORY_INFO  *PlatformRepo;
+
+  if ((This == NULL) || (CmObject == NULL)) {
+    ASSERT (This != NULL);
+    ASSERT (CmObject != NULL);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Status       = EFI_NOT_FOUND;
+  PlatformRepo = This->PlatRepoInfo;
+
+  //
+  // First check among the static objects.
+  //
+  switch (GET_CM_OBJECT_ID (CmObjectId)) {
+    case EArchCommonObjPowerManagementProfileInfo:
+      Status = HandleCmObject (
+                 CmObjectId,
+                 &PlatformRepo->PmProfileInfo,
+                 sizeof (PlatformRepo->PmProfileInfo),
+                 1,
+                 CmObject
+                 );
+      break;
+
+    default:
+      //
+      // No match found among the static objects.
+      // Check the dynamic objects.
+      //
+      Status = DynamicPlatRepoGetObject (
+                 PlatformRepo->DynamicPlatformRepo,
+                 CmObjectId,
+                 Token,
+                 CmObject
+                 );
+      break;
+  } // switch
+
+  if (Status == EFI_NOT_FOUND) {
+    DEBUG ((
+      DEBUG_INFO,
+      "INFO: CmObjectId " FMT_CM_OBJECT_ID ". Status = %r\n",
+      CmObjectId,
+      Status
+      ));
+  } else {
+    ASSERT_EFI_ERROR (Status);
   }
 
   return Status;
@@ -761,16 +883,6 @@ GetArmNameSpaceObject (
   // First check among the static objects.
   //
   switch (GET_CM_OBJECT_ID (CmObjectId)) {
-    case EArmObjPowerManagementProfileInfo:
-      Status = HandleCmObject (
-                 CmObjectId,
-                 &PlatformRepo->PmProfileInfo,
-                 sizeof (PlatformRepo->PmProfileInfo),
-                 1,
-                 CmObject
-                 );
-      break;
-
     case EArmObjItsGroup:
       Status = HandleCmObject (
                  CmObjectId,
@@ -928,6 +1040,9 @@ ArmKvmtoolPlatformGetObject (
   switch (GET_CM_NAMESPACE_ID (CmObjectId)) {
     case EObjNameSpaceStandard:
       Status = GetStandardNameSpaceObject (This, CmObjectId, Token, CmObject);
+      break;
+    case EObjNameSpaceArchCommon:
+      Status = GetArchCommonNameSpaceObject (This, CmObjectId, Token, CmObject);
       break;
     case EObjNameSpaceArm:
       Status = GetArmNameSpaceObject (This, CmObjectId, Token, CmObject);

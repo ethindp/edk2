@@ -1,11 +1,11 @@
 /** @file
   SRAT table parser
 
-  Copyright (c) 2016 - 2020, ARM Limited. All rights reserved.
+  Copyright (c) 2016 - 2026, Arm Limited. All rights reserved.
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
   @par Reference(s):
-    - ACPI 6.3 Specification - January 2019
+    - ACPI 6.7 Specification
 **/
 
 #include <IndustryStandard/Acpi.h>
@@ -25,6 +25,7 @@ STATIC ACPI_DESCRIPTION_HEADER_INFO  AcpiHdrInfo;
   This function validates the Reserved field in the SRAT table header.
 
   @param [in] Ptr     Pointer to the start of the field data.
+  @param [in] Length  Length of the field.
   @param [in] Context Pointer to context specific information e.g. this
                       could be a pointer to the ACPI table header.
 **/
@@ -32,8 +33,9 @@ STATIC
 VOID
 EFIAPI
 ValidateSratReserved (
-  IN UINT8  *Ptr,
-  IN VOID   *Context
+  IN UINT8   *Ptr,
+  IN UINT32  Length,
+  IN VOID    *Context
   )
 {
   if (*(UINT32 *)Ptr != 1) {
@@ -47,6 +49,7 @@ ValidateSratReserved (
   Affinity Structure.
 
   @param [in] Ptr     Pointer to the start of the field data.
+  @param [in] Length  Length of the field.
   @param [in] Context Pointer to context specific information e.g. this
                       could be a pointer to the ACPI table header.
 **/
@@ -54,8 +57,9 @@ STATIC
 VOID
 EFIAPI
 ValidateSratDeviceHandleType (
-  IN UINT8  *Ptr,
-  IN VOID   *Context
+  IN UINT8   *Ptr,
+  IN UINT32  Length,
+  IN VOID    *Context
   )
 {
   UINT8  DeviceHandleType;
@@ -77,13 +81,15 @@ ValidateSratDeviceHandleType (
 
   @param [in] Format  Format string for tracing the data.
   @param [in] Ptr     Pointer to the start of the buffer.
+  @param [in] Length  Length of the field.
 **/
 STATIC
 VOID
 EFIAPI
 DumpSratPciBdfNumber (
   IN CONST CHAR16  *Format,
-  IN UINT8         *Ptr
+  IN UINT8         *Ptr,
+  IN UINT32        Length
   )
 {
   CHAR16  Buffer[OUTPUT_FIELD_COLUMN_WIDTH];
@@ -165,13 +171,15 @@ STATIC CONST ACPI_PARSER  SratDeviceHandlePciParser[] = {
 
   @param [in] Format  Format string for tracing the data.
   @param [in] Ptr     Pointer to the start of the buffer.
+  @param [in] Length  Length of the field.
 **/
 STATIC
 VOID
 EFIAPI
 DumpSratDeviceHandle (
   IN CONST CHAR16  *Format,
-  IN UINT8         *Ptr
+  IN UINT8         *Ptr,
+  IN UINT32        Length
   )
 {
   if (SratDeviceHandleType == NULL) {
@@ -208,13 +216,15 @@ DumpSratDeviceHandle (
 
   @param [in] Format  Format string for tracing the data.
   @param [in] Ptr     Pointer to the start of the buffer.
+  @param [in] Length  Length of the field.
 **/
 STATIC
 VOID
 EFIAPI
 DumpSratApicProximity (
   IN CONST CHAR16  *Format,
-  IN UINT8         *Ptr
+  IN UINT8         *Ptr,
+  IN UINT32        Length
   )
 {
   UINT32  ProximityDomain;
@@ -332,6 +342,19 @@ STATIC CONST ACPI_PARSER  SratX2ApciAffinityParser[] = {
 };
 
 /**
+  An ACPI_PARSER array describing the GIC IRS Affinity structure.
+**/
+STATIC CONST ACPI_PARSER  SratGicIrsAffinityParser[] = {
+  { L"Type",             1, 0,  L"0x%x", NULL, NULL, NULL, NULL },
+  { L"Length",           1, 1,  L"0x%x", NULL, NULL, NULL, NULL },
+
+  { L"Reserved",         2, 2,  L"0x%x", NULL, NULL, NULL, NULL },
+  { L"Proximity Domain", 4, 4,  L"0x%x", NULL, NULL, NULL, NULL },
+  { L"IRS Id",           4, 8,  L"0x%x", NULL, NULL, NULL, NULL },
+  { L"Reserved",         4, 12, L"0x%x", NULL, NULL, NULL, NULL },
+};
+
+/**
   This function parses the ACPI SRAT table.
   When trace is enabled this function parses the SRAT table and
   traces the ACPI table fields.
@@ -366,10 +389,12 @@ ParseAcpiSrat (
   UINT32  MemoryAffinityIndex;
   UINT32  ApicSapicAffinityIndex;
   UINT32  X2ApicAffinityIndex;
+  UINT32  GicIrsAffinityIndex;
   CHAR8   Buffer[80]; // Used for AsciiName param of ParseAcpi
 
   GicCAffinityIndex             = 0;
   GicITSAffinityIndex           = 0;
+  GicIrsAffinityIndex           = 0;
   GenericInitiatorAffinityIndex = 0;
   MemoryAffinityIndex           = 0;
   ApicSapicAffinityIndex        = 0;
@@ -529,6 +554,23 @@ ParseAcpiSrat (
           ResourcePtr,
           *SratRALength,
           PARSER_PARAMS (SratX2ApciAffinityParser)
+          );
+        break;
+
+      case EFI_ACPI_6_7_GIC_IRS_AFFINITY:
+        AsciiSPrint (
+          Buffer,
+          sizeof (Buffer),
+          "GIC IRS Affinity Structure [%d]",
+          GicIrsAffinityIndex++
+          );
+        ParseAcpi (
+          TRUE,
+          2,
+          Buffer,
+          ResourcePtr,
+          *SratRALength,
+          PARSER_PARAMS (SratGicIrsAffinityParser)
           );
         break;
 

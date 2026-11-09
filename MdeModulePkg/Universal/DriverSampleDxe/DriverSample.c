@@ -858,6 +858,7 @@ ExtractConfig (
   @retval EFI_INVALID_PARAMETER  Configuration is NULL.
   @retval EFI_NOT_FOUND          Routing data doesn't match any storage in this
                                  driver.
+  @retval EFI_DEVICE_ERROR       If value is 44, return error for testing.
 
 **/
 EFI_STATUS
@@ -1063,6 +1064,11 @@ RouteConfig (
                                    );
   if (EFI_ERROR (Status)) {
     return Status;
+  }
+
+  if (PrivateData->Configuration.QuestionApply == 44) {
+    // Return error for verify the error handling of caller.
+    return EFI_DEVICE_ERROR;
   }
 
   //
@@ -1599,6 +1605,13 @@ DriverCallback (
           *ActionRequest = EFI_BROWSER_ACTION_REQUEST_FORM_DISCARD_EXIT;
           break;
 
+        case 0x1253:
+          //
+          // User change the value of "Question apply test".
+          //
+          *ActionRequest = EFI_BROWSER_ACTION_REQUEST_QUESTION_APPLY;
+          break;
+
         case 0x1231:
           //
           // 1. Check to see whether system support keyword.
@@ -1733,7 +1746,7 @@ DriverCallback (
   @param ImageHandle     Image handle this driver.
   @param SystemTable     Pointer to SystemTable.
 
-  @retval EFI_SUCESS     This function always complete successfully.
+  @retval EFI_SUCCESS    This function always complete successfully.
 
 **/
 EFI_STATUS
@@ -2188,11 +2201,18 @@ DriverSampleInit (
     HotKey.ScanCode = SCAN_F10;
     NewString       = HiiGetString (mPrivateData->HiiHandle[0], STRING_TOKEN (FUNCTION_TEN_STRING), NULL);
     ASSERT (NewString != NULL);
-    FormBrowserEx->RegisterHotKey (&HotKey, BROWSER_ACTION_SUBMIT, 0, NewString);
+    if (NewString != NULL) {
+      FormBrowserEx->RegisterHotKey (&HotKey, BROWSER_ACTION_SUBMIT, 0, NewString);
+      FreePool (NewString);
+    }
+
     HotKey.ScanCode = SCAN_F9;
     NewString       = HiiGetString (mPrivateData->HiiHandle[0], STRING_TOKEN (FUNCTION_NINE_STRING), NULL);
     ASSERT (NewString != NULL);
-    FormBrowserEx->RegisterHotKey (&HotKey, BROWSER_ACTION_DEFAULT, EFI_HII_DEFAULT_CLASS_STANDARD, NewString);
+    if (NewString != NULL) {
+      FormBrowserEx->RegisterHotKey (&HotKey, BROWSER_ACTION_DEFAULT, EFI_HII_DEFAULT_CLASS_STANDARD, NewString);
+      FreePool (NewString);
+    }
   }
 
   //

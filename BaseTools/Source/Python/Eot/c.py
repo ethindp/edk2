@@ -54,7 +54,7 @@ def GetArrayPattern():
 #  @return p:    the pattern of function pointer
 #
 def GetTypedefFuncPointerPattern():
-    p = re.compile('[_\w\s]*\([\w\s]*\*+\s*[_\w]+\s*\)\s*\(.*\)', re.DOTALL)
+    p = re.compile(r'[_\w\s]*\([\w\s]*\*+\s*[_\w]+\s*\)\s*\(.*\)', re.DOTALL)
     return p
 
 ## GetDB() method
@@ -107,7 +107,7 @@ def GetIdType(Str):
     elif List[1] == 'endif':
         Type = DataClass.MODEL_IDENTIFIER_MACRO_ENDIF
     elif List[1] == 'pragma':
-        Type = DataClass.MODEL_IDENTIFIER_MACRO_PROGMA
+        Type = DataClass.MODEL_IDENTIFIER_MACRO_PRAGMA
     else:
         Type = DataClass.MODEL_UNKNOWN
     return Type

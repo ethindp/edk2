@@ -53,7 +53,7 @@ ShellCommandGetManFileNameLevel2 (
   @param ImageHandle    the image handle of the process
   @param SystemTable    the EFI System Table pointer
 
-  @retval EFI_SUCCESS        the shell command handlers were installed sucessfully
+  @retval EFI_SUCCESS        the shell command handlers were installed successfully
   @retval EFI_UNSUPPORTED    the shell level required was not found.
 **/
 EFI_STATUS
@@ -148,10 +148,10 @@ ShellLevel2CommandsLibDestructor (
 }
 
 /**
-  returns a fully qualified directory (contains a map drive at the begining)
+  returns a fully qualified directory (contains a map drive at the beginning)
   path from a unknown directory path.
 
-  If Path is already fully qualified this will return a duplicat otherwise this
+  If Path is already fully qualified this will return a duplicate otherwise this
   will use get the current directory and use that to build the fully qualified
   version.
 
@@ -161,7 +161,7 @@ ShellLevel2CommandsLibDestructor (
 
   @retval NULL            A memory allocation failed
   @retval NULL            A fully qualified path could not be discovered.
-  @retval other           An allocated pointer to a fuly qualified path.
+  @retval other           An allocated pointer to a fully qualified path.
 **/
 CHAR16 *
 GetFullyQualifiedPath (
@@ -335,9 +335,11 @@ ShellLevel2StripQuotes (
     return EFI_OUT_OF_RESOURCES;
   }
 
-  for (Walker = *CleanString; Walker != NULL && *Walker != CHAR_NULL; Walker++) {
+  for (Walker = *CleanString; Walker != NULL && *Walker != CHAR_NULL;) {
     if (*Walker == L'\"') {
       CopyMem (Walker, Walker+1, StrSize (Walker) - sizeof (Walker[0]));
+    } else {
+      Walker++;
     }
   }
 

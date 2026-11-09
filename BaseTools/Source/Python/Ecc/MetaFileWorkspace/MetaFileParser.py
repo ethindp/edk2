@@ -31,6 +31,10 @@ from GenFds.FdfParser import FdfParser
 from Common.LongFilePathSupport import OpenLongFilePath as open
 from Common.LongFilePathSupport import CodecOpenLongFilePath
 
+## RegEx for finding file versions
+hexVersionPattern = re.compile(r'0[xX][\da-f-A-F]{5,8}')
+decVersionPattern = re.compile(r'\d+\.\d+')
+
 ## A decorator used to parse macro definition
 def ParseMacro(Parser):
     def MacroParser(self):
@@ -331,11 +335,19 @@ class MetaFileParser(object):
         Name, Value = self._ValueList[1], self._ValueList[2]
         # Sometimes, we need to make differences between EDK and EDK2 modules
         if Name == 'INF_VERSION':
-            try:
+            if hexVersionPattern.match(Value):
                 self._Version = int(Value, 0)
-            except:
+            elif decVersionPattern.match(Value):
+                ValueList = Value.split('.')
+                Major = int(ValueList[0], 0)
+                Minor = int(ValueList[1], 0)
+                if Major > 0xffff or Minor > 0xffff:
+                    EdkLogger.error('Parser', FORMAT_INVALID, "Invalid version number",
+                                    ExtraData=self._CurrentLine, File=self.MetaFile, Line=self._LineIndex + 1)
+                self._Version = int('0x{0:04x}{1:04x}'.format(Major, Minor), 0)
+            else:
                 EdkLogger.error('Parser', FORMAT_INVALID, "Invalid version number",
-                                ExtraData=self._CurrentLine, File=self.MetaFile, Line=self._LineIndex+1)
+                                ExtraData=self._CurrentLine, File=self.MetaFile, Line=self._LineIndex + 1)
         elif Name == 'MODULE_UNI_FILE':
             UniFile = os.path.join(os.path.dirname(self.MetaFile), Value)
             if os.path.exists(UniFile):
@@ -1829,14 +1841,14 @@ class DecParser(MetaFileParser):
 
         if EccGlobalData.gConfig.UniCheckPCDInfo == '1' or EccGlobalData.gConfig.UniCheckAll == '1' or EccGlobalData.gConfig.CheckAll == '1':
             # check Description, Prompt information
-            PatternDesc = re.compile('##\s*([\x21-\x7E\s]*)', re.S)
-            PatternPrompt = re.compile('#\s+@Prompt\s+([\x21-\x7E\s]*)', re.S)
+            PatternDesc = re.compile(r'##\s*([\x21-\x7E\s]*)', re.S)
+            PatternPrompt = re.compile(r'#\s+@Prompt\s+([\x21-\x7E\s]*)', re.S)
             Description = None
             Prompt = None
             # check @ValidRange, @ValidList and @Expression format valid
             ErrorCodeValid = '0x0 <= %s <= 0xFFFFFFFF'
-            PatternValidRangeIn = '(NOT)?\s*(\d+\s*-\s*\d+|0[xX][a-fA-F0-9]+\s*-\s*0[xX][a-fA-F0-9]+|LT\s*\d+|LT\s*0[xX][a-fA-F0-9]+|GT\s*\d+|GT\s*0[xX][a-fA-F0-9]+|LE\s*\d+|LE\s*0[xX][a-fA-F0-9]+|GE\s*\d+|GE\s*0[xX][a-fA-F0-9]+|XOR\s*\d+|XOR\s*0[xX][a-fA-F0-9]+|EQ\s*\d+|EQ\s*0[xX][a-fA-F0-9]+)'
-            PatternValidRng = re.compile('^' + '(NOT)?\s*' + PatternValidRangeIn + '$')
+            PatternValidRangeIn = r'(NOT)?\s*(\d+\s*-\s*\d+|0[xX][a-fA-F0-9]+\s*-\s*0[xX][a-fA-F0-9]+|LT\s*\d+|LT\s*0[xX][a-fA-F0-9]+|GT\s*\d+|GT\s*0[xX][a-fA-F0-9]+|LE\s*\d+|LE\s*0[xX][a-fA-F0-9]+|GE\s*\d+|GE\s*0[xX][a-fA-F0-9]+|XOR\s*\d+|XOR\s*0[xX][a-fA-F0-9]+|EQ\s*\d+|EQ\s*0[xX][a-fA-F0-9]+)'
+            PatternValidRng = re.compile('^' + r'(NOT)?\s*' + PatternValidRangeIn + '$')
             for Comment in self._Comments:
                 Comm = Comment[0].strip()
                 if not Comm:
@@ -2059,7 +2071,7 @@ class UniParser(object):
     def CheckKeyValid(self, Key, Contents=None):
         if not Contents:
             Contents = self.FileIn
-        KeyPattern = re.compile('#string\s+%s\s+.*?#language.*?".*?"' % Key, re.S)
+        KeyPattern = re.compile(r'#string\s+%s\s+.*?#language.*?".*?"' % Key, re.S)
         if KeyPattern.search(Contents):
             return True
         return False

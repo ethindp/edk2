@@ -1,14 +1,15 @@
 /** @file
   Header file for Terminal driver.
 
+Copyright (C) 2025 Advanced Micro Devices, Inc. All rights reserved.<BR>
 Copyright (c) 2006 - 2019, Intel Corporation. All rights reserved.<BR>
 Copyright (C) 2016 Silicon Graphics, Inc. All rights reserved.<BR>
+Copyright (c) 2025, Loongson Technology Corporation Limited. All rights reserved.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _TERMINAL_H_
-#define _TERMINAL_H_
+#pragma once
 
 #include <Uefi.h>
 
@@ -16,6 +17,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Guid/PcAnsi.h>
 #include <Guid/TtyTerm.h>
 #include <Guid/StatusCodeDataTypeVariable.h>
+#include <Guid/MdeModuleHii.h>
 
 #include <Protocol/SimpleTextOut.h>
 #include <Protocol/SerialIo.h>
@@ -160,8 +162,10 @@ typedef union {
 #define FOREGROUND_CONTROL_OFFSET  6
 #define BACKGROUND_CONTROL_OFFSET  11
 #define ROW_OFFSET                 2
-#define COLUMN_OFFSET              5
+#define COLUMN_OFFSET              6
 #define FW_BACK_OFFSET             2
+#define RESIZE_ROW_OFFSET          4
+#define RESIZE_COLUMN_OFFSET       8
 
 typedef struct {
   UINT16    Unicode;
@@ -223,6 +227,8 @@ TerminalConInReset (
   @retval EFI_SUCCESS         The keystroke information is returned successfully.
   @retval EFI_NOT_READY       There is no keystroke data available.
   @retval EFI_DEVICE_ERROR    The dependent serial device encounters error.
+  @retval EFI_UNSUPPORTED     The device does not support the ability to read
+                              keystroke data.
 
 **/
 EFI_STATUS
@@ -235,7 +241,7 @@ TerminalConInReadKeyStroke (
 /**
   Check if the key already has been registered.
 
-  @param  RegsiteredData           A pointer to a buffer that is filled in with the
+  @param  RegisteredData           A pointer to a buffer that is filled in with the
                                    keystroke state data for the key that was
                                    registered.
   @param  InputData                A pointer to a buffer that is filled in with the
@@ -248,7 +254,7 @@ TerminalConInReadKeyStroke (
 **/
 BOOLEAN
 IsKeyRegistered (
-  IN EFI_KEY_DATA  *RegsiteredData,
+  IN EFI_KEY_DATA  *RegisteredData,
   IN EFI_KEY_DATA  *InputData
   );
 
@@ -303,6 +309,8 @@ TerminalConInResetEx (
   @retval EFI_DEVICE_ERROR         The keystroke information was not returned due
                                    to hardware errors.
   @retval EFI_INVALID_PARAMETER    KeyData is NULL.
+  @retval EFI_UNSUPPORTED          The device does not support the ability to read
+                                   keystroke data.
 
 **/
 EFI_STATUS
@@ -1212,8 +1220,8 @@ AnsiRawDataToUnicode (
 Putty function key map:
   +=========+======+===========+=============+=============+=============+=========+
   |         | EFI  |           |             |             |             |         |
-  |         | Scan |           |             |  Normal     |             |         |
-  |   KEY   | Code |  VT100+   | Xterm R6    |  VT400      | Linux       | SCO     |
+  |         | Scan |  VT100+   |             |  Normal     |             |         |
+  |   KEY   | Code |  VTUTF8   | Xterm R6    |  VT400      | Linux       | SCO     |
   +=========+======+===========+=============+=============+=============+=========+
   | F1      | 0x0B | ESC O P   | ESC O P     | ESC [ 1 1 ~ | ESC [ [ A   | ESC [ M |
   | F2      | 0x0C | ESC O Q   | ESC O Q     | ESC [ 1 2 ~ | ESC [ [ B   | ESC [ N |
@@ -1245,8 +1253,8 @@ UnicodeToEfiKey (
   );
 
 /**
-  Check if input string is valid Ascii string, valid EFI control characters
-  or valid text graphics.
+  Check if input string is valid Ascii string, valid EFI control characters,
+  wide/narrow character or valid text graphics.
 
   @param  TerminalDevice          The terminal device.
   @param  WString                 The input string.
@@ -1446,5 +1454,3 @@ KeyNotifyProcessHandler (
   IN  EFI_EVENT  Event,
   IN  VOID       *Context
   );
-
-#endif

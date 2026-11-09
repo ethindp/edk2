@@ -1,17 +1,13 @@
 /** @file
   SMM STM support functions
 
-  Copyright (c) 2015 - 2018, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2015 - 2023, Intel Corporation. All rights reserved.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
 #include <PiMm.h>
-#include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
-#include <Library/MemoryAllocationLib.h>
-#include <Library/HobLib.h>
-#include <Library/DebugLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/SmmServicesTableLib.h>
 #include <Library/TpmMeasurementLib.h>
@@ -875,7 +871,7 @@ GetResourceSize (
                        If 0, list must be terminated by END_OF_RESOURCES.
 
   @retval EFI_SUCCESS            If resources are added
-  @retval EFI_INVALID_PARAMETER  If nested procedure detected resource failer
+  @retval EFI_INVALID_PARAMETER  If nested procedure detected resource failure
   @retval EFI_OUT_OF_RESOURCES   If nested procedure returned it and we cannot allocate more areas.
 
 **/
@@ -984,7 +980,7 @@ AddPiResource (
                        If 0, list must be terminated by END_OF_RESOURCES.
 
   @retval EFI_SUCCESS            If resources are deleted
-  @retval EFI_INVALID_PARAMETER  If nested procedure detected resource failer
+  @retval EFI_INVALID_PARAMETER  If nested procedure detected resource failure
 
 **/
 EFI_STATUS

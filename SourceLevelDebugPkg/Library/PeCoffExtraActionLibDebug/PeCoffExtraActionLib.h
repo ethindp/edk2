@@ -6,8 +6,7 @@
 
 **/
 
-#ifndef _PE_COFF_EXTRA_ACTION_LIB_H_
-#define _PE_COFF_EXTRA_ACTION_LIB_H_
+#pragma once
 
 #include <Base.h>
 #include <Library/PeCoffExtraActionLib.h>
@@ -34,7 +33,7 @@ extern UINTN  AsmInterruptHandle;
   @param[in]  InterruptType      Interrupt type.
 
   @retval  TRUE     IDT entries were setup by Debug Agent.
-  @retval  FALSE    IDT entries were not setuo by Debug Agent.
+  @retval  FALSE    IDT entries were not setup by Debug Agent.
 
 **/
 BOOLEAN
@@ -68,5 +67,3 @@ RestoreIdtEntry1 (
   IN  IA32_DESCRIPTOR           *IdtDescriptor,
   IN  IA32_IDT_GATE_DESCRIPTOR  *RestoredIdtEntry
   );
-
-#endif

@@ -21,7 +21,7 @@
   PLATFORM_VERSION               = 0.1
   DSC_SPECIFICATION              = 0x00010005
   OUTPUT_DIRECTORY               = Build/Embedded
-  SUPPORTED_ARCHITECTURES        = IA32|X64|ARM|AARCH64
+  SUPPORTED_ARCHITECTURES        = IA32|X64|AARCH64|RISCV64|LOONGARCH64
   BUILD_TARGETS                  = DEBUG|RELEASE|NOOPT
   SKUID_IDENTIFIER               = DEFAULT
 
@@ -56,7 +56,7 @@
   PrintLib|MdePkg/Library/BasePrintLib/BasePrintLib.inf
   UefiDecompressLib|MdePkg/Library/BaseUefiDecompressLib/BaseUefiDecompressLib.inf
 
-  ReportStatusCodeLib|MdeModulePkg/Library/PeiDxeDebugLibReportStatusCode/PeiDxeDebugLibReportStatusCode.inf
+  ReportStatusCodeLib|MdeModulePkg/Library/PeiReportStatusCodeLib/PeiReportStatusCodeLib.inf
 
   PeCoffGetEntryPointLib|MdePkg/Library/BasePeCoffGetEntryPointLib/BasePeCoffGetEntryPointLib.inf
   PeCoffLib|MdePkg/Library/BasePeCoffLib/BasePeCoffLib.inf
@@ -66,7 +66,6 @@
 
   SerialPortLib|MdePkg/Library/BaseSerialPortLibNull/BaseSerialPortLibNull.inf
   RealTimeClockLib|EmbeddedPkg/Library/TemplateRealTimeClockLib/TemplateRealTimeClockLib.inf
-  EfiResetSystemLib|EmbeddedPkg/Library/TemplateResetSystemLib/TemplateResetSystemLib.inf
   GdbSerialLib|EmbeddedPkg/Library/GdbSerialLib/GdbSerialLib.inf
 
 
@@ -91,7 +90,7 @@
   PcdLib|MdePkg/Library/BasePcdLibNull/BasePcdLibNull.inf
 
   AcpiLib|EmbeddedPkg/Library/AcpiLib/AcpiLib.inf
-  FdtLib|EmbeddedPkg/Library/FdtLib/FdtLib.inf
+  FdtLib|MdePkg/Library/BaseFdtLib/BaseFdtLib.inf
 
   # Shell libraries
   ShellLib|ShellPkg/Library/UefiShellLib/UefiShellLib.inf
@@ -124,16 +123,11 @@
 [LibraryClasses.common.SEC]
   ExtractGuidedSectionLib|EmbeddedPkg/Library/PrePiExtractGuidedSectionLib/PrePiExtractGuidedSectionLib.inf
 
-[LibraryClasses.ARM, LibraryClasses.AARCH64]
-  ArmGicLib|ArmPkg/Drivers/ArmGic/ArmGicLib.inf
-  ArmSmcLib|ArmPkg/Library/ArmSmcLib/ArmSmcLib.inf
+[LibraryClasses.AARCH64]
+  ArmSmcLib|MdePkg/Library/ArmSmcLib/ArmSmcLib.inf
   SemihostLib|ArmPkg/Library/SemihostLib/SemihostLib.inf
-  NULL|ArmPkg/Library/CompilerIntrinsicsLib/CompilerIntrinsicsLib.inf
 
-  # Add support for GCC stack protector
-  NULL|MdePkg/Library/BaseStackCheckLib/BaseStackCheckLib.inf
-
-  ArmLib|ArmPkg/Library/ArmLib/ArmBaseLib.inf
+  ArmLib|MdePkg/Library/ArmLib/ArmBaseLib.inf
 
 ################################################################################
 #
@@ -172,7 +166,7 @@
   gEmbeddedTokenSpaceGuid.PcdPrePiStackSize|0
 
 #
-# Optinal feature to help prevent EFI memory map fragments
+# Optional feature to help prevent EFI memory map fragments
 # Turned on and off via: PcdPrePiProduceMemoryTypeInformationHob
 # Values are in EFI Pages (4K). DXE Core will make sure that
 # at least this much of each type of memory can be allocated
@@ -199,7 +193,7 @@
   gEmbeddedTokenSpaceGuid.PcdTimerPeriod|100000
 
 [BuildOptions]
-  RVCT:*_*_ARM_PLATFORM_FLAGS == --cpu=7-A.security
+  RELEASE_*_*_CC_FLAGS  = -DMDEPKG_NDEBUG
   *_*_*_CC_FLAGS  = -DDISABLE_NEW_DEPRECATED_INTERFACES
 
 ################################################################################
@@ -212,7 +206,6 @@
   EmbeddedPkg/Library/GdbSerialLib/GdbSerialLib.inf
   EmbeddedPkg/Library/PrePiExtractGuidedSectionLib/PrePiExtractGuidedSectionLib.inf
   EmbeddedPkg/Library/PrePiLib/PrePiLib.inf
-  EmbeddedPkg/Library/TemplateResetSystemLib/TemplateResetSystemLib.inf
   EmbeddedPkg/Library/TemplateRealTimeClockLib/TemplateRealTimeClockLib.inf
   EmbeddedPkg/Library/CoherentDmaLib/CoherentDmaLib.inf
   EmbeddedPkg/Library/NonCoherentDmaLib/NonCoherentDmaLib.inf
@@ -221,7 +214,6 @@
 
   EmbeddedPkg/EmbeddedMonotonicCounter/EmbeddedMonotonicCounter.inf
   EmbeddedPkg/RealTimeClockRuntimeDxe/RealTimeClockRuntimeDxe.inf
-  EmbeddedPkg/ResetRuntimeDxe/ResetRuntimeDxe.inf
   EmbeddedPkg/SimpleTextInOutSerial/SimpleTextInOutSerial.inf
   EmbeddedPkg/MetronomeDxe/MetronomeDxe.inf {
     <LibraryClasses>
@@ -232,7 +224,6 @@
 
   EmbeddedPkg/Library/AcpiLib/AcpiLib.inf
   EmbeddedPkg/Library/DebugAgentTimerLibNull/DebugAgentTimerLibNull.inf
-  EmbeddedPkg/Library/FdtLib/FdtLib.inf
   EmbeddedPkg/Library/PrePiHobLib/PrePiHobLib.inf
   EmbeddedPkg/Library/PrePiMemoryAllocationLib/PrePiMemoryAllocationLib.inf
 
@@ -240,16 +231,18 @@
   EmbeddedPkg/Drivers/DtPlatformDxe/DtPlatformDxe.inf
   EmbeddedPkg/Drivers/FdtClientDxe/FdtClientDxe.inf
 
+  EmbeddedPkg/Drivers/MemoryAttributeManagerDxe/MemoryAttributeManagerDxe.inf
+
   EmbeddedPkg/Drivers/NonCoherentIoMmuDxe/NonCoherentIoMmuDxe.inf {
     <LibraryClasses>
       DmaLib|EmbeddedPkg/Library/NonCoherentDmaLib/NonCoherentDmaLib.inf
   }
 
-[Components.ARM, Components.AARCH64]
+[Components.AARCH64]
   EmbeddedPkg/Application/AndroidBoot/AndroidBootApp.inf
   EmbeddedPkg/Application/AndroidFastboot/AndroidFastbootApp.inf
   EmbeddedPkg/Drivers/AndroidFastbootTransportUsbDxe/FastbootTransportUsbDxe.inf
   EmbeddedPkg/Drivers/AndroidFastbootTransportTcpDxe/FastbootTransportTcpDxe.inf
 
-[Components.IA32, Components.X64, Components.ARM]
+[Components.IA32, Components.X64]
   EmbeddedPkg/GdbStub/GdbStub.inf

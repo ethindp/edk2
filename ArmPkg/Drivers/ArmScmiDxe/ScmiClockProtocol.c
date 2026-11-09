@@ -207,10 +207,9 @@ ClockDescribeRates (
   Cmd.ProtocolId = ScmiProtocolIdClock;
   Cmd.MessageId  = ScmiMessageIdClockDescribeRates;
 
-  *MessageParams++ = ClockId;
-
   do {
-    *MessageParams = RateIndex;
+    MessageParams[0] = ClockId;
+    MessageParams[1] = RateIndex;
 
     // Set Payload length, note PayloadLength is a IN/OUT parameter.
     PayloadLength = sizeof (ClockId) + sizeof (RateIndex);
@@ -236,12 +235,7 @@ ClockDescribeRates (
       *TotalRates = NUM_RATES (DescribeRates->NumRatesFlags)
                     + NUM_REMAIN_RATES (DescribeRates->NumRatesFlags);
 
-      if (*Format == ScmiClockRateFormatDiscrete) {
-        RequiredArraySize = (*TotalRates) * sizeof (UINT64);
-      } else {
-        // We need to return triplet of 64 bit value for each rate
-        RequiredArraySize = (*TotalRates) * 3 * sizeof (UINT64);
-      }
+      RequiredArraySize = (*TotalRates) * sizeof (UINT64);
 
       if (RequiredArraySize > (*RateArraySize)) {
         *RateArraySize = RequiredArraySize;
@@ -259,23 +253,21 @@ ClockDescribeRates (
           ConvertTo64Bit (Rate->Low, Rate->High);
       }
     } else {
-      for (RateNo = 0; RateNo < NUM_RATES (DescribeRates->NumRatesFlags); RateNo++) {
-        // Linear clock rates from minimum to maximum in steps
-        // Minimum clock rate.
-        Rate                                    = &DescribeRates->Rates[RateOffset++];
-        RateArray[RateIndex].ContinuousRate.Min =
-          ConvertTo64Bit (Rate->Low, Rate->High);
+      // Linear clock rates from minimum to maximum in steps
+      // Minimum clock rate.
+      Rate                                    = &DescribeRates->Rates[RateOffset++];
+      RateArray[RateIndex].ContinuousRate.Min =
+        ConvertTo64Bit (Rate->Low, Rate->High);
 
-        Rate = &DescribeRates->Rates[RateOffset++];
-        // Maximum clock rate.
-        RateArray[RateIndex].ContinuousRate.Max =
-          ConvertTo64Bit (Rate->Low, Rate->High);
+      Rate = &DescribeRates->Rates[RateOffset++];
+      // Maximum clock rate.
+      RateArray[RateIndex].ContinuousRate.Max =
+        ConvertTo64Bit (Rate->Low, Rate->High);
 
-        Rate = &DescribeRates->Rates[RateOffset++];
-        // Step.
-        RateArray[RateIndex++].ContinuousRate.Step =
-          ConvertTo64Bit (Rate->Low, Rate->High);
-      }
+      Rate = &DescribeRates->Rates[RateOffset++];
+      // Step.
+      RateArray[RateIndex++].ContinuousRate.Step =
+        ConvertTo64Bit (Rate->Low, Rate->High);
     }
   } while (NUM_REMAIN_RATES (DescribeRates->NumRatesFlags) != 0);
 

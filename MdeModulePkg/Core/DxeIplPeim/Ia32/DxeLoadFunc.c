@@ -1,7 +1,7 @@
 /** @file
   Ia32-specific functionality for DxeLoad.
 
-Copyright (c) 2006 - 2018, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2006 - 2023, Intel Corporation. All rights reserved.<BR>
 Copyright (c) 2017, AMD Incorporated. All rights reserved.<BR>
 
 SPDX-License-Identifier: BSD-2-Clause-Patent
@@ -11,8 +11,6 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include "DxeIpl.h"
 #include "VirtualMemory.h"
 
-#define IDT_ENTRY_COUNT  32
-
 typedef struct _X64_IDT_TABLE {
   //
   // Reserved 4 bytes preceding PeiService and IdtTable,
@@ -20,7 +18,7 @@ typedef struct _X64_IDT_TABLE {
   //
   UINT32                     Reserved;
   CONST EFI_PEI_SERVICES     **PeiService;
-  X64_IDT_GATE_DESCRIPTOR    IdtTable[IDT_ENTRY_COUNT];
+  X64_IDT_GATE_DESCRIPTOR    IdtTable[X86_CPU_INTERRUPT_NUM];
 } X64_IDT_TABLE;
 
 //
@@ -66,7 +64,7 @@ GLOBAL_REMOVE_IF_UNREFERENCED CONST IA32_DESCRIPTOR  gGdt = {
 };
 
 GLOBAL_REMOVE_IF_UNREFERENCED  IA32_DESCRIPTOR  gLidtDescriptor = {
-  sizeof (X64_IDT_GATE_DESCRIPTOR) * IDT_ENTRY_COUNT - 1,
+  sizeof (X64_IDT_GATE_DESCRIPTOR) * X86_CPU_INTERRUPT_NUM - 1,
   0
 };
 
@@ -166,7 +164,7 @@ Create4GPageTablesIa32Pae (
   // Protect the page table by marking the memory used for page table to be
   // read-only.
   //
-  EnablePageTableProtection ((UINTN)PageMap, FALSE);
+  EnablePageTableProtection ((UINTN)PageMap, 3);
 
   return (UINTN)PageMap;
 }
@@ -265,21 +263,13 @@ HandOffToDxeCore (
   EFI_PEI_VECTOR_HANDOFF_INFO_PPI  *VectorHandoffInfoPpi;
   BOOLEAN                          BuildPageTablesIa32Pae;
 
-  //
-  // Clear page 0 and mark it as allocated if NULL pointer detection is enabled.
-  //
-  if (IsNullDetectionEnabled ()) {
-    ClearFirst4KPage (HobList.Raw);
-    BuildMemoryAllocationHob (0, EFI_PAGES_TO_SIZE (1), EfiBootServicesData);
-  }
-
   Status = PeiServicesAllocatePages (EfiBootServicesData, EFI_SIZE_TO_PAGES (STACK_SIZE), &BaseOfStack);
   ASSERT_EFI_ERROR (Status);
 
   if (FeaturePcdGet (PcdDxeIplSwitchToLongMode)) {
     //
     // Compute the top of the stack we were allocated, which is used to load X64 dxe core.
-    // Pre-allocate a 32 bytes which confroms to x64 calling convention.
+    // Pre-allocate a 32 bytes which conforms to x64 calling convention.
     //
     // The first four parameters to a function are passed in rcx, rdx, r8 and r9.
     // Any further parameters are pushed on the stack. Furthermore, space (4 * 8bytes) for the
@@ -327,7 +317,7 @@ HandOffToDxeCore (
 
     Status = PeiServicesAllocatePages (
                EfiBootServicesData,
-               EFI_SIZE_TO_PAGES (sizeof (X64_IDT_TABLE) + SizeOfTemplate * IDT_ENTRY_COUNT),
+               EFI_SIZE_TO_PAGES (sizeof (X64_IDT_TABLE) + SizeOfTemplate * X86_CPU_INTERRUPT_NUM),
                &VectorAddress
                );
     ASSERT_EFI_ERROR (Status);
@@ -341,7 +331,7 @@ HandOffToDxeCore (
 
     VectorAddress = (EFI_PHYSICAL_ADDRESS)(UINTN)(IdtTableForX64 + 1);
     IdtTable      = IdtTableForX64->IdtTable;
-    for (Index = 0; Index < IDT_ENTRY_COUNT; Index++) {
+    for (Index = 0; Index < X86_CPU_INTERRUPT_NUM; Index++) {
       IdtTable[Index].Ia32IdtEntry.Bits.GateType   =  0x8e;
       IdtTable[Index].Ia32IdtEntry.Bits.Reserved_0 =  0;
       IdtTable[Index].Ia32IdtEntry.Bits.Selector   =  SYS_CODE64_SEL;
@@ -369,7 +359,7 @@ HandOffToDxeCore (
     DEBUG ((
       DEBUG_INFO,
       "%a() Stack Base: 0x%lx, Stack Size: 0x%x\n",
-      __FUNCTION__,
+      __func__,
       BaseOfStack,
       STACK_SIZE
       ));
@@ -457,7 +447,7 @@ HandOffToDxeCore (
     DEBUG ((
       DEBUG_INFO,
       "%a() Stack Base: 0x%lx, Stack Size: 0x%x\n",
-      __FUNCTION__,
+      __func__,
       BaseOfStack,
       STACK_SIZE
       ));

@@ -6,8 +6,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _SMBIOS_DXE_H_
-#define _SMBIOS_DXE_H_
+#pragma once
 
 #include <PiDxe.h>
 
@@ -136,7 +135,9 @@ BOOLEAN
 IsValidSmbios30Table (
   IN  VOID   *TableEntry,
   OUT VOID   **TableAddress,
-  OUT UINTN  *TableMaximumSize
+  OUT UINTN  *TableMaximumSize,
+  OUT UINT8  *MajorVersion,
+  OUT UINT8  *MinorVersion
   );
 
 /**
@@ -155,7 +156,9 @@ BOOLEAN
 IsValidSmbios20Table (
   IN  VOID   *TableEntry,
   OUT VOID   **TableAddress,
-  OUT UINTN  *TableMaximumSize
+  OUT UINTN  *TableMaximumSize,
+  OUT UINT8  *MajorVersion,
+  OUT UINT8  *MinorVersion
   );
 
 /**
@@ -174,11 +177,11 @@ BOOLEAN
 (*IS_SMBIOS_TABLE_VALID) (
   IN  VOID   *TableEntry,
   OUT VOID   **TableAddress,
-  OUT UINTN  *TableMaximumSize
+  OUT UINTN  *TableMaximumSize,
+  OUT UINT8  *MajorVersion,
+  OUT UINT8  *MinorVersion
   );
 typedef struct {
   EFI_GUID                 *Guid;
   IS_SMBIOS_TABLE_VALID    IsValid;
 } IS_SMBIOS_TABLE_VALID_ENTRY;
-
-#endif

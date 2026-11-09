@@ -6,6 +6,9 @@
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 ##
 {
+    "PrEval": {
+        "DscPath": "UefiCpuPkg.dsc",
+    },
     "LicenseCheck": {
         "IgnoreFiles": []
     },
@@ -15,6 +18,15 @@
         ##     "<ErrorID>", "<KeyWord>"
         ## ]
         "ExceptionList": [
+          "8006", "main",
+          "8005", "GENERAL_REGISTER.R8",
+          "8005", "GENERAL_REGISTER.R9",
+          "8005", "GENERAL_REGISTER.R10",
+          "8005", "GENERAL_REGISTER.R11",
+          "8005", "GENERAL_REGISTER.R12",
+          "8005", "GENERAL_REGISTER.R13",
+          "8005", "GENERAL_REGISTER.R14",
+          "8005", "GENERAL_REGISTER.R15"
         ],
         ## Both file path and directory path are accepted.
         "IgnoreFiles": [
@@ -38,7 +50,8 @@
         ],
         # For host based unit tests
         "AcceptableDependencies-HOST_APPLICATION":[
-            "UnitTestFrameworkPkg/UnitTestFrameworkPkg.dec"
+            "UnitTestFrameworkPkg/UnitTestFrameworkPkg.dec",
+            "CryptoPkg/CryptoPkg.dec"
         ],
         # For UEFI shell based apps
         "AcceptableDependencies-UEFI_APPLICATION":[],
@@ -60,7 +73,7 @@
         "IgnoreGuidName": ["SecCore", "ResetVector"], # Expected duplication for gEfiFirmwareVolumeTopFileGuid
         "IgnoreGuidValue": [],
         "IgnoreFoldersAndFiles": [],
-        "IgnoreDuplicates": []
+        "IgnoreDuplicates": ["gEdkiiPeiMpServices2PpiGuid=gEfiPeiMpServices2PpiGuid"]
     },
     "LibraryClassCheck": {
         "IgnoreHeaderFile": []
@@ -73,5 +86,11 @@
         "ExtendWords": [],           # words to extend to the dictionary for this package
         "IgnoreStandardPaths": [],   # Standard Plugin defined paths that should be ignore
         "AdditionalIncludePaths": [] # Additional paths to spell check (wildcards supported)
+    },
+
+    ## options defined .pytool/Plugin/MarkdownLintCheck
+    "MarkdownLintCheck": {
+        "AuditOnly": True,           # If True, log all errors and then mark as skipped
+        "IgnoreFiles": []            # package root relative file, folder, or glob pattern to ignore
     }
 }

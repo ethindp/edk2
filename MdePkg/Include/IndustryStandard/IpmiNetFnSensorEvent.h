@@ -10,11 +10,11 @@
   and Appendix H, Sub-function Assignments.
 
   Copyright (c) 1999 - 2015, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) Microsoft Corporation.
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#ifndef _IPMI_NET_FN_SENSOR_EVENT_H_
-#define _IPMI_NET_FN_SENSOR_EVENT_H_
+#pragma once
 
 #pragma pack(1)
 //
@@ -42,5 +42,49 @@ typedef struct {
   UINT8    OEMEvData3;
 } IPMI_PLATFORM_EVENT_MESSAGE_DATA_REQUEST;
 
+//
+// Definitions for Set Sensor Thresholds command
+//
+#define IPMI_SENSOR_SET_SENSOR_THRESHOLDS  0x26
+
+typedef union {
+  struct _SENSOR_BITS {
+    UINT8    LowerNonCriticalThreshold    : 1;
+    UINT8    LowerCriticalThreshold       : 1;
+    UINT8    LowerNonRecoverableThreshold : 1;
+    UINT8    UpperNonCriticalThreshold    : 1;
+    UINT8    UpperCriticalThreshold       : 1;
+    UINT8    UpperNonRecoverableThreshold : 1;
+    UINT8    Reserved                     : 2;
+  } Bits;
+  UINT8    Uint8;
+} SENSOR_BITS;
+
+typedef struct _IPMI_SENSOR_SET_SENSOR_THRESHOLD_REQUEST_DATA {
+  UINT8          SensorNumber;
+  SENSOR_BITS    SetBitEnable;
+  UINT8          LowerNonCriticalThreshold;
+  UINT8          LowerCriticalThreshold;
+  UINT8          LowerNonRecoverableThreshold;
+  UINT8          UpperNonCriticalThreshold;
+  UINT8          UpperCriticalThreshold;
+  UINT8          UpperNonRecoverableThreshold;
+} IPMI_SENSOR_SET_SENSOR_THRESHOLD_REQUEST_DATA;
+
+//
+// Definitions for Get Sensor Thresholds command
+//
+#define IPMI_SENSOR_GET_SENSOR_THRESHOLDS  0x27
+
+typedef struct _IPMI_SENSOR_GET_SENSOR_THRESHOLD_RESPONSE_DATA {
+  UINT8          CompletionCode;
+  SENSOR_BITS    GetBitEnable;
+  UINT8          LowerNonCriticalThreshold;
+  UINT8          LowerCriticalThreshold;
+  UINT8          LowerNonRecoverableThreshold;
+  UINT8          UpperNonCriticalThreshold;
+  UINT8          UpperCriticalThreshold;
+  UINT8          UpperNonRecoverableThreshold;
+} IPMI_SENSOR_GET_SENSOR_THRESHOLD_RESPONSE_DATA;
+
 #pragma pack()
-#endif

@@ -11,13 +11,12 @@
 
 #include <PiPei.h>
 
-#include <Library/PeimEntryPoint.h>
 #include <Library/BaseLib.h>
 #include <Library/DebugLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/PeiServicesLib.h>
 #include <Library/PcdLib.h>
-#include <Library/UefiCpuLib.h>
+#include <Library/CpuLib.h>
 #include <Library/DebugAgentLib.h>
 #include <Library/IoLib.h>
 #include <Library/PeCoffLib.h>
@@ -26,16 +25,17 @@
 #include <Library/ExtractGuidedSectionLib.h>
 #include <Library/LocalApicLib.h>
 #include <Library/CpuExceptionHandlerLib.h>
-
 #include <Ppi/TemporaryRamSupport.h>
-
+#include <Ppi/MpInitLibDep.h>
+#include <Library/TdxHelperLib.h>
+#include <Library/CcProbeLib.h>
+#include <Register/Intel/ArchitecturalMsr.h>
+#include <Register/Intel/Cpuid.h>
 #include "AmdSev.h"
-
-#define SEC_IDT_ENTRY_COUNT  34
 
 typedef struct _SEC_IDT_TABLE {
   EFI_PEI_SERVICES            *PeiService;
-  IA32_IDT_GATE_DESCRIPTOR    IdtTable[SEC_IDT_ENTRY_COUNT];
+  IA32_IDT_GATE_DESCRIPTOR    IdtTable[X86_CPU_INTERRUPT_NUM];
 } SEC_IDT_TABLE;
 
 VOID
@@ -60,11 +60,29 @@ EFI_PEI_TEMPORARY_RAM_SUPPORT_PPI  mTemporaryRamSupportPpi = {
   TemporaryRamMigration
 };
 
-EFI_PEI_PPI_DESCRIPTOR  mPrivateDispatchTable[] = {
+EFI_PEI_PPI_DESCRIPTOR  mPrivateDispatchTableMp[] = {
   {
-    (EFI_PEI_PPI_DESCRIPTOR_PPI | EFI_PEI_PPI_DESCRIPTOR_TERMINATE_LIST),
+    (EFI_PEI_PPI_DESCRIPTOR_PPI),
     &gEfiTemporaryRamSupportPpiGuid,
     &mTemporaryRamSupportPpi
+  },
+  {
+    (EFI_PEI_PPI_DESCRIPTOR_PPI | EFI_PEI_PPI_DESCRIPTOR_TERMINATE_LIST),
+    &gEfiPeiMpInitLibMpDepPpiGuid,
+    NULL
+  },
+};
+
+EFI_PEI_PPI_DESCRIPTOR  mPrivateDispatchTableUp[] = {
+  {
+    (EFI_PEI_PPI_DESCRIPTOR_PPI),
+    &gEfiTemporaryRamSupportPpiGuid,
+    &mTemporaryRamSupportPpi
+  },
+  {
+    (EFI_PEI_PPI_DESCRIPTOR_PPI | EFI_PEI_PPI_DESCRIPTOR_TERMINATE_LIST),
+    &gEfiPeiMpInitLibUpDepPpiGuid,
+    NULL
   },
 };
 
@@ -367,7 +385,7 @@ DecompressMemFvs (
     DEBUG_VERBOSE,
     "%a: OutputBuffer@%p+0x%x ScratchBuffer@%p+0x%x "
     "PcdOvmfDecompressionScratchEnd=0x%x\n",
-    __FUNCTION__,
+    __func__,
     OutputBuffer,
     OutputBufferSize,
     ScratchBuffer,
@@ -725,6 +743,46 @@ FindAndReportEntryPoints (
   return;
 }
 
+//
+// Enable MTRR early, set default type to write back.
+// Needed to make sure caching is enabled,
+// without this lzma decompress can be very slow.
+//
+STATIC
+VOID
+SecMtrrSetup (
+  VOID
+  )
+{
+  CPUID_VERSION_INFO_EDX           Edx;
+  MSR_IA32_MTRR_DEF_TYPE_REGISTER  DefType;
+
+  AsmCpuid (CPUID_VERSION_INFO, NULL, NULL, NULL, &Edx.Uint32);
+  if (!Edx.Bits.MTRR) {
+    return;
+  }
+
+ #if defined (TDX_GUEST_SUPPORTED)
+  if (CcProbe () == CcGuestTypeIntelTdx) {
+    //
+    // According to TDX Spec, the default MTRR type is enforced to WB
+    // and CR0.CD is enforced to 0.
+    // The TD guest has to disable MTRR otherwise it tries to
+    // program MTRRs to disable caching. CR0.CD=1 results in the
+    // unexpected #VE.
+    //
+    DEBUG ((DEBUG_INFO, "%a: Skip TD-Guest\n", __func__));
+    return;
+  }
+
+ #endif
+
+  DefType.Uint64    = AsmReadMsr64 (MSR_IA32_MTRR_DEF_TYPE);
+  DefType.Bits.Type = MSR_IA32_MTRR_CACHE_WRITE_BACK;
+  DefType.Bits.E    = 1; /* enable */
+  AsmWriteMsr64 (MSR_IA32_MTRR_DEF_TYPE, DefType.Uint64);
+}
+
 VOID
 EFIAPI
 SecCoreStartupWithStack (
@@ -737,6 +795,33 @@ SecCoreStartupWithStack (
   IA32_DESCRIPTOR       IdtDescriptor;
   UINT32                Index;
   volatile UINT8        *Table;
+
+ #if defined (TDX_GUEST_SUPPORTED)
+  if (CcProbe () == CcGuestTypeIntelTdx) {
+    //
+    // From the security perspective all the external input should be measured before
+    // it is consumed. TdHob and Configuration FV (Cfv) image are passed from VMM
+    // and should be measured here.
+    //
+    if (EFI_ERROR (TdxHelperMeasureTdHob ())) {
+      CpuDeadLoop ();
+    }
+
+    if (EFI_ERROR (TdxHelperMeasureCfvImage ())) {
+      CpuDeadLoop ();
+    }
+
+    //
+    // For Td guests, the memory map info is in TdHobLib. It should be processed
+    // first so that the memory is accepted. Otherwise access to the unaccepted
+    // memory will trigger tripple fault.
+    //
+    if (TdxHelperProcessTdHob () != EFI_SUCCESS) {
+      CpuDeadLoop ();
+    }
+  }
+
+ #endif
 
   //
   // To ensure SMM can't be compromised on S3 resume, we must force re-init of
@@ -756,13 +841,19 @@ SecCoreStartupWithStack (
   // we use a loop rather than CopyMem.
   //
   IdtTableInStack.PeiService = NULL;
-  for (Index = 0; Index < SEC_IDT_ENTRY_COUNT; Index++) {
-    UINT8  *Src;
-    UINT8  *Dst;
-    UINTN  Byte;
 
-    Src = (UINT8 *)&mIdtEntryTemplate;
-    Dst = (UINT8 *)&IdtTableInStack.IdtTable[Index];
+  for (Index = 0; Index < X86_CPU_INTERRUPT_NUM; Index++) {
+    //
+    // Declare the local variables that actually move the data elements as
+    // volatile to prevent the optimizer from replacing this function with
+    // the intrinsic memcpy()
+    //
+    CONST UINT8     *Src;
+    volatile UINT8  *Dst;
+    UINTN           Byte;
+
+    Src = (CONST UINT8 *)&mIdtEntryTemplate;
+    Dst = (volatile UINT8 *)&IdtTableInStack.IdtTable[Index];
     for (Byte = 0; Byte < sizeof (mIdtEntryTemplate); Byte++) {
       Dst[Byte] = Src[Byte];
     }
@@ -792,13 +883,14 @@ SecCoreStartupWithStack (
     InitializeCpuExceptionHandlers (NULL);
   }
 
-  ProcessLibraryConstructorList (NULL, NULL);
+  ProcessLibraryConstructorList ();
 
   if (!SevEsIsEnabled ()) {
     //
-    // For non SEV-ES guests, just load the IDTR.
+    // For non SEV-ES guests, now load the IDTR and initialize the exception handlers.
     //
     AsmWriteIdtr (&IdtDescriptor);
+    InitializeCpuExceptionHandlers (NULL);
   } else {
     //
     // Under SEV-ES, the hypervisor can't modify CR0 and so can't enable
@@ -807,6 +899,17 @@ SecCoreStartupWithStack (
     //
     AsmEnableCache ();
   }
+
+ #if defined (TDX_GUEST_SUPPORTED)
+  if (CcProbe () == CcGuestTypeIntelTdx) {
+    //
+    // InitializeCpuExceptionHandlers () should be called in Td guests so that
+    // #VE exceptions can be handled correctly.
+    //
+    InitializeCpuExceptionHandlers (NULL);
+  }
+
+ #endif
 
   DEBUG ((
     DEBUG_INFO,
@@ -876,8 +979,14 @@ SecCoreStartupWithStack (
   // interrupts before initializing the Debug Agent and the debug timer is
   // enabled.
   //
+  SecMapApicBaseUnencrypted ();
   InitializeApicTimer (0, MAX_UINT32, TRUE, 5);
   DisableApicTimerInterrupt ();
+
+  //
+  // Initialize MTRR
+  //
+  SecMtrrSetup ();
 
   //
   // Initialize Debug Agent to support source level debug in SEC/PEI phases before memory ready.
@@ -904,6 +1013,7 @@ SecStartupPhase2 (
   EFI_SEC_PEI_HAND_OFF        *SecCoreData;
   EFI_FIRMWARE_VOLUME_HEADER  *BootFv;
   EFI_PEI_CORE_ENTRY_POINT    PeiCoreEntryPoint;
+  EFI_PEI_PPI_DESCRIPTOR      *EfiPeiPpiDescriptor;
 
   SecCoreData = (EFI_SEC_PEI_HAND_OFF *)Context;
 
@@ -917,9 +1027,19 @@ SecStartupPhase2 (
   SecCoreData->BootFirmwareVolumeSize = (UINTN)BootFv->FvLength;
 
   //
+  // Td guest is required to use the MpInitLibUp (unique-processor version).
+  // Other guests use the MpInitLib (multi-processor version).
+  //
+  if (CcProbe () == CcGuestTypeIntelTdx) {
+    EfiPeiPpiDescriptor = (EFI_PEI_PPI_DESCRIPTOR *)&mPrivateDispatchTableUp;
+  } else {
+    EfiPeiPpiDescriptor = (EFI_PEI_PPI_DESCRIPTOR *)&mPrivateDispatchTableMp;
+  }
+
+  //
   // Transfer the control to the PEI core
   //
-  (*PeiCoreEntryPoint)(SecCoreData, (EFI_PEI_PPI_DESCRIPTOR *)&mPrivateDispatchTable);
+  (*PeiCoreEntryPoint)(SecCoreData, EfiPeiPpiDescriptor);
 
   //
   // If we get here then the PEI Core returned, which is not recoverable.

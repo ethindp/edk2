@@ -22,24 +22,10 @@
 
 
 #
-#  VALID_ARCHITECTURES           = IA32 X64 ARM AARCH64
+#  VALID_ARCHITECTURES           = IA32 X64 AARCH64
 #
 
-[Sources]
-  MemLibInternals.h
-
 [Sources.Ia32]
-  Ia32/ScanMem64.nasm
-  Ia32/ScanMem32.nasm
-  Ia32/ScanMem16.nasm
-  Ia32/ScanMem8.nasm
-  Ia32/CompareMem.nasm
-  Ia32/ZeroMem.nasm
-  Ia32/SetMem64.nasm
-  Ia32/SetMem32.nasm
-  Ia32/SetMem16.nasm
-  Ia32/SetMem.nasm
-  Ia32/CopyMem.nasm
   Ia32/ScanMem64.nasm
   Ia32/ScanMem32.nasm
   Ia32/ScanMem16.nasm
@@ -69,7 +55,7 @@
   X64/IsZeroBuffer.nasm
   MemLibGuid.c
 
-[Defines.ARM, Defines.AARCH64]
+[Defines.AARCH64]
   #
   # The ARM implementations of this library may perform unaligned accesses, and
   # may use DC ZVA instructions that are only allowed when the MMU and D-cache
@@ -78,37 +64,24 @@
   #
   LIBRARY_CLASS = BaseMemoryLib|DXE_CORE DXE_DRIVER DXE_RUNTIME_DRIVER UEFI_DRIVER UEFI_APPLICATION
 
-[Sources.ARM]
-  Arm/ScanMem.S       |GCC
-  Arm/SetMem.S        |GCC
-  Arm/CopyMem.S       |GCC
-  Arm/CompareMem.S    |GCC
-  Arm/CompareGuid.S   |GCC
-
-  Arm/ScanMem.asm     |RVCT
-  Arm/SetMem.asm      |RVCT
-  Arm/CopyMem.asm     |RVCT
-  Arm/CompareMem.asm  |RVCT
-  Arm/CompareGuid.asm |RVCT
-
 [Sources.AARCH64]
   AArch64/ScanMem.S
   AArch64/SetMem.S
   AArch64/CopyMem.S
   AArch64/CompareMem.S
   AArch64/CompareGuid.S
-
-[Sources.ARM, Sources.AARCH64]
-  Arm/ScanMemGeneric.c
-  Arm/MemLibGuid.c
+  AArch64/ScanMemGeneric.c
+  AArch64/MemLibGuid.c
 
 [Sources]
+  MemLibInternals.h
   ScanMem64Wrapper.c
   ScanMem32Wrapper.c
   ScanMem16Wrapper.c
   ScanMem8Wrapper.c
   ZeroMemWrapper.c
   CompareMemWrapper.c
+  SetMemNWrapper.c
   SetMem64Wrapper.c
   SetMem32Wrapper.c
   SetMem16Wrapper.c

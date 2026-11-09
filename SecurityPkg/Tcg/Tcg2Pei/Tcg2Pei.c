@@ -21,6 +21,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 #include <Guid/TcgEventHob.h>
 #include <Guid/MeasuredFvHob.h>
+#include <Guid/FirmwareVolumeMeasurementExcludedHob.h>
 #include <Guid/TpmInstance.h>
 #include <Guid/MigratedFvInfo.h>
 
@@ -29,6 +30,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Library/PeiServicesLib.h>
 #include <Library/PeimEntryPoint.h>
 #include <Library/Tpm2CommandLib.h>
+#include <Library/Tpm2HelpLib.h>
 #include <Library/Tpm2DeviceLib.h>
 #include <Library/HashLib.h>
 #include <Library/HobLib.h>
@@ -41,7 +43,12 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Library/ResetSystemLib.h>
 #include <Library/PrintLib.h>
 
-#define PERF_ID_TCG2_PEI  0x3080
+//
+// HobLength is UINT16 and HOBs are 8-byte aligned, making 0xFFF8 the largest
+// valid HOB length. Subtract the GUID HOB header to get the maximum data size
+// accepted by BuildGuidHob().
+//
+#define MAX_EXCLUDED_FV_HOB_DATA_SIZE  (0xFFF8 - sizeof (EFI_HOB_GUID_TYPE))
 
 typedef struct {
   EFI_GUID                     *EventGuid;
@@ -214,9 +221,18 @@ EndofPeiSignalNotifyCallBack (
   IN VOID                       *Ppi
   )
 {
-  MEASURED_HOB_DATA  *MeasuredHobData;
+  MEASURED_HOB_DATA                                      *MeasuredHobData;
+  EDKII_FIRMWARE_VOLUME_MEASUREMENT_EXCLUDED_HOB_DATA    *ExcludedHobData;
+  EFI_PEI_FIRMWARE_VOLUME_INFO_MEASUREMENT_EXCLUDED_PPI  *MeasurementExcludedFvPpi;
+  UINT32                                                 Instance;
+  UINT32                                                 Count;
+  UINT32                                                 HobIndex;
+  UINTN                                                  ExcludedHobDataSize;
+  EFI_STATUS                                             Status;
 
-  MeasuredHobData = NULL;
+  MeasuredHobData          = NULL;
+  ExcludedHobData          = NULL;
+  MeasurementExcludedFvPpi = NULL;
 
   PERF_CALLBACK_BEGIN (&gEfiEndOfPeiSignalPpiGuid);
 
@@ -244,6 +260,94 @@ EndofPeiSignalNotifyCallBack (
     //
     CopyMem (&MeasuredHobData->MeasuredFvBuf[mMeasuredBaseFvIndex], mMeasuredChildFvInfo, sizeof (EFI_PLATFORM_FIRMWARE_BLOB) * (mMeasuredChildFvIndex));
   }
+
+  //
+  // Create a GUID HOB to save all excluded FVs for DXE
+  //
+
+  //
+  // Get count
+  //
+  Count               = 0;
+  ExcludedHobDataSize = sizeof (EDKII_FIRMWARE_VOLUME_MEASUREMENT_EXCLUDED_HOB_DATA);
+  for (Instance = 0; ; Instance++) {
+    Status = PeiServicesLocatePpi (
+               &gEfiPeiFirmwareVolumeInfoMeasurementExcludedPpiGuid,
+               Instance,
+               NULL,
+               (VOID **)&MeasurementExcludedFvPpi
+               );
+    if (EFI_ERROR (Status)) {
+      break;
+    }
+
+    //
+    // Ensure the entries fit in the data portion of a single GUID HOB.
+    //
+    if (MeasurementExcludedFvPpi->Count >
+        ((MAX_EXCLUDED_FV_HOB_DATA_SIZE - ExcludedHobDataSize) /
+         sizeof (EFI_PEI_FIRMWARE_VOLUME_INFO_MEASUREMENT_EXCLUDED_FV)))
+    {
+      DEBUG ((
+        DEBUG_ERROR,
+        "ExcludedFvPpi entries exceed the maximum GUID HOB data size of 0x%x bytes\n",
+        MAX_EXCLUDED_FV_HOB_DATA_SIZE
+        ));
+      Count = 0;
+      break;
+    }
+
+    Count               += MeasurementExcludedFvPpi->Count;
+    ExcludedHobDataSize += sizeof (EFI_PEI_FIRMWARE_VOLUME_INFO_MEASUREMENT_EXCLUDED_FV) * MeasurementExcludedFvPpi->Count;
+  }
+
+  // Check if there are any excluded FVs
+  if (Count > 0) {
+    DEBUG ((DEBUG_INFO, "Found %u FVs excluded.  Publishing hob.\n", Count));
+    ExcludedHobData = BuildGuidHob (
+                        &gEdkiiFirmwareVolumeMeasurementExcludedHobGuid,
+                        ExcludedHobDataSize
+                        );
+
+    // Check the allocation before writing data
+    if (ExcludedHobData == NULL) {
+      DEBUG ((
+        DEBUG_ERROR,
+        "Failed to allocate 0x%x bytes of memory for FirmwareVolumeMeasurementExcludedHob.  Excluded FVs will not be shared with Dxe Phase.\n",
+        ExcludedHobDataSize
+        ));
+    } else {
+      ExcludedHobData->NumberOfEntries = 0;
+      //
+      // Copy FV info to hob data
+      //
+      HobIndex = 0;
+      for (Instance = 0; ; Instance++) {
+        Status = PeiServicesLocatePpi (
+                   &gEfiPeiFirmwareVolumeInfoMeasurementExcludedPpiGuid,
+                   Instance,
+                   NULL,
+                   (VOID **)&MeasurementExcludedFvPpi
+                   );
+        if (EFI_ERROR (Status)) {
+          break;
+        }
+
+        if (MeasurementExcludedFvPpi->Count == 0) {
+          DEBUG ((DEBUG_ERROR, "ExcludedFvPpi has invalid count %u\n", MeasurementExcludedFvPpi->Count));
+          ASSERT (MeasurementExcludedFvPpi->Count > 0);
+        } else if (MeasurementExcludedFvPpi->Count > Count - HobIndex) {
+          DEBUG ((DEBUG_ERROR, "ExcludedFvPpi count 0x%x exceeds remaining HOB capacity 0x%x\n", MeasurementExcludedFvPpi->Count, Count - HobIndex));
+          ASSERT (MeasurementExcludedFvPpi->Count <= Count - HobIndex);
+        } else {
+          CopyMem (&ExcludedHobData->ExcludedFvs[HobIndex], &MeasurementExcludedFvPpi->Fv[0], sizeof (EFI_PEI_FIRMWARE_VOLUME_INFO_MEASUREMENT_EXCLUDED_FV) * MeasurementExcludedFvPpi->Count);
+          HobIndex += MeasurementExcludedFvPpi->Count;
+        }
+      }
+
+      ExcludedHobData->NumberOfEntries = HobIndex;
+    }
+  }  // Done with Excluded Fv Hob
 
   PERF_CALLBACK_END (&gEfiEndOfPeiSignalPpiGuid);
 
@@ -273,7 +377,11 @@ SyncPcrAllocationsAndPcrMask (
   // Determine the current TPM support and the Platform PCR mask.
   //
   Status = Tpm2GetCapabilitySupportedAndActivePcrs (&TpmHashAlgorithmBitmap, &TpmActivePcrBanks);
-  ASSERT_EFI_ERROR (Status);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "%a - Failed to determine TPM capabilities!\n", __func__));
+    ASSERT_EFI_ERROR (Status);
+    return;
+  }
 
   DEBUG ((DEBUG_INFO, "Tpm2GetCapabilitySupportedAndActivePcrs - TpmHashAlgorithmBitmap: 0x%08x\n", TpmHashAlgorithmBitmap));
   DEBUG ((DEBUG_INFO, "Tpm2GetCapabilitySupportedAndActivePcrs - TpmActivePcrBanks 0x%08x\n", TpmActivePcrBanks));
@@ -312,10 +420,10 @@ SyncPcrAllocationsAndPcrMask (
     NewTpmActivePcrBanks &= BiosHashAlgorithmBitmap;
     DEBUG ((DEBUG_INFO, "NewTpmActivePcrBanks 0x%08x\n", NewTpmActivePcrBanks));
 
-    DEBUG ((DEBUG_INFO, "%a - Reallocating PCR banks from 0x%X to 0x%X.\n", __FUNCTION__, TpmActivePcrBanks, NewTpmActivePcrBanks));
+    DEBUG ((DEBUG_INFO, "%a - Reallocating PCR banks from 0x%X to 0x%X.\n", __func__, TpmActivePcrBanks, NewTpmActivePcrBanks));
 
     if (NewTpmActivePcrBanks == 0) {
-      DEBUG ((DEBUG_ERROR, "%a - No viable PCRs active! Please set a less restrictive value for PcdTpm2HashMask!\n", __FUNCTION__));
+      DEBUG ((DEBUG_ERROR, "%a - No viable PCRs active! Please set a less restrictive value for PcdTpm2HashMask!\n", __func__));
       ASSERT (FALSE);
     } else {
       DEBUG ((DEBUG_ERROR, "Tpm2PcrAllocateBanks (TpmHashAlgorithmBitmap: 0x%08x, NewTpmActivePcrBanks: 0x%08x)\n", TpmHashAlgorithmBitmap, NewTpmActivePcrBanks));
@@ -324,7 +432,7 @@ SyncPcrAllocationsAndPcrMask (
         //
         // We can't do much here, but we hope that this doesn't happen.
         //
-        DEBUG ((DEBUG_ERROR, "%a - Failed to reallocate PCRs!\n", __FUNCTION__));
+        DEBUG ((DEBUG_ERROR, "%a - Failed to reallocate PCRs!\n", __func__));
         ASSERT_EFI_ERROR (Status);
       }
 
@@ -342,9 +450,9 @@ SyncPcrAllocationsAndPcrMask (
   if ((Tpm2PcrMask & TpmHashAlgorithmBitmap) != Tpm2PcrMask) {
     NewTpm2PcrMask = Tpm2PcrMask & TpmHashAlgorithmBitmap;
 
-    DEBUG ((DEBUG_INFO, "%a - Updating PcdTpm2HashMask from 0x%X to 0x%X.\n", __FUNCTION__, Tpm2PcrMask, NewTpm2PcrMask));
+    DEBUG ((DEBUG_INFO, "%a - Updating PcdTpm2HashMask from 0x%X to 0x%X.\n", __func__, Tpm2PcrMask, NewTpm2PcrMask));
     if (NewTpm2PcrMask == 0) {
-      DEBUG ((DEBUG_ERROR, "%a - No viable PCRs supported! Please set a less restrictive value for PcdTpm2HashMask!\n", __FUNCTION__));
+      DEBUG ((DEBUG_ERROR, "%a - No viable PCRs supported! Please set a less restrictive value for PcdTpm2HashMask!\n", __func__));
       ASSERT (FALSE);
     }
 
@@ -387,7 +495,7 @@ LogHashEvent (
       DEBUG ((DEBUG_INFO, "  LogFormat - 0x%08x\n", mTcg2EventInfo[Index].LogFormat));
       switch (mTcg2EventInfo[Index].LogFormat) {
         case EFI_TCG2_EVENT_LOG_FORMAT_TCG_1_2:
-          Status = GetDigestFromDigestList (TPM_ALG_SHA1, DigestList, &NewEventHdr->Digest);
+          Status = Tpm2GetDigestFromDigestList (TPM_ALG_SHA1, DigestList, &NewEventHdr->Digest);
           if (!EFI_ERROR (Status)) {
             HobData = BuildGuidHob (
                         &gTcgEventEntryHobGuid,
@@ -406,12 +514,12 @@ LogHashEvent (
           break;
         case EFI_TCG2_EVENT_LOG_FORMAT_TCG_2:
           //
-          // Use GetDigestListSize (DigestList) in the GUID HOB DataLength calculation
+          // Use Tpm2GetDigestListSize (DigestList) in the GUID HOB DataLength calculation
           // to reserve enough buffer to hold TPML_DIGEST_VALUES compact binary.
           //
           HobData = BuildGuidHob (
                       &gTcgEvent2EntryHobGuid,
-                      sizeof (TcgPcrEvent2->PCRIndex) + sizeof (TcgPcrEvent2->EventType) + GetDigestListSize (DigestList) + sizeof (TcgPcrEvent2->EventSize) + NewEventHdr->EventSize
+                      sizeof (TcgPcrEvent2->PCRIndex) + sizeof (TcgPcrEvent2->EventType) + Tpm2GetDigestListSize (DigestList) + sizeof (TcgPcrEvent2->EventSize) + NewEventHdr->EventSize
                       );
           if (HobData == NULL) {
             RetStatus = EFI_OUT_OF_RESOURCES;
@@ -422,7 +530,7 @@ LogHashEvent (
           TcgPcrEvent2->PCRIndex  = NewEventHdr->PCRIndex;
           TcgPcrEvent2->EventType = NewEventHdr->EventType;
           DigestBuffer            = (UINT8 *)&TcgPcrEvent2->Digest;
-          DigestBuffer            = CopyDigestListToBuffer (DigestBuffer, DigestList, PcdGet32 (PcdTpm2HashMask));
+          DigestBuffer            = Tpm2CopyDigestListToBuffer (DigestBuffer, DigestList, PcdGet32 (PcdTpm2HashMask));
           CopyMem (DigestBuffer, &NewEventHdr->EventSize, sizeof (TcgPcrEvent2->EventSize));
           DigestBuffer = DigestBuffer + sizeof (TcgPcrEvent2->EventSize);
           CopyMem (DigestBuffer, NewEventData, NewEventHdr->EventSize);
@@ -685,7 +793,7 @@ MeasureFvImage (
       PreHashInfo = (HASH_INFO *)(PrehashedFvPpi + 1);
       for (Index = 0, DigestCount = 0; Index < PrehashedFvPpi->Count; Index++) {
         DEBUG ((DEBUG_INFO, "Hash Algo ID in PrehashedFvPpi=0x%x\n", PreHashInfo->HashAlgoId));
-        HashAlgoMask = GetHashMaskFromAlgo (PreHashInfo->HashAlgoId);
+        HashAlgoMask = Tpm2GetHashMaskFromAlgo (PreHashInfo->HashAlgoId);
         if ((Tpm2HashMask & HashAlgoMask) != 0 ) {
           //
           // Hash is required, copy it to DigestList
@@ -835,7 +943,7 @@ MeasureMainBios (
   EFI_FV_INFO                  VolumeInfo;
   EFI_PEI_FIRMWARE_VOLUME_PPI  *FvPpi;
 
-  PERF_START_EX (mFileHandle, "EventRec", "Tcg2Pei", 0, PERF_ID_TCG2_PEI);
+  PERF_FUNCTION_BEGIN ();
 
   //
   // Only measure BFV at the very beginning. Other parts of Static Core Root of
@@ -866,7 +974,7 @@ MeasureMainBios (
 
   Status = MeasureFvImage ((EFI_PHYSICAL_ADDRESS)(UINTN)VolumeInfo.FvStart, VolumeInfo.FvSize);
 
-  PERF_END_EX (mFileHandle, "EventRec", "Tcg2Pei", 0, PERF_ID_TCG2_PEI + 1);
+  PERF_FUNCTION_END ();
 
   return Status;
 }
@@ -1088,6 +1196,8 @@ PeimEntryMA (
       }
 
       if (EFI_ERROR (Status)) {
+        DEBUG ((DEBUG_ERROR, "Tcg2Pei::%a - TPM failed Startup!\n", __func__));
+        ASSERT_EFI_ERROR (Status);
         goto Done;
       }
     }
@@ -1120,6 +1230,7 @@ PeimEntryMA (
       if (PcdGet8 (PcdTpm2SelfTestPolicy) == 1) {
         Status = Tpm2SelfTest (NO);
         if (EFI_ERROR (Status)) {
+          DEBUG ((DEBUG_ERROR, "Tcg2Pei::%a - TPM failed Startup!\n", __func__));
           goto Done;
         }
       }

@@ -3,6 +3,7 @@
 #
 # Copyright (c) 2019, Intel Corporation. All rights reserved.<BR>
 # (C) Copyright 2020 Hewlett Packard Enterprise Development LP<BR>
+# Copyright (c) 2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 #    SPDX-License-Identifier: BSD-2-Clause-Patent
 #
@@ -17,15 +18,18 @@
   LIBRARY_CLASS                  = RedfishCrtLib|DXE_DRIVER UEFI_APPLICATION UEFI_DRIVER
 
 #
-#  VALID_ARCHITECTURES           = IA32 X64 ARM AARCH64 RISCV64
+#  VALID_ARCHITECTURES           = IA32 X64 AARCH64 RISCV64
 #
 
 [Sources]
   RedfishCrtLib.c
 
+[Sources.IA32]
+  Ia32/MathFtol.c           | MSFT
+
 [LibraryClasses]
   BaseLib
-  BaseSortLib
+  SortLib
   DebugLib
   MemoryAllocationLib
   UefiRuntimeServicesTableLib
@@ -35,4 +39,5 @@
   MdeModulePkg/MdeModulePkg.dec
   RedfishPkg/RedfishPkg.dec
 
-
+[BuildOptions]
+  MSFT:*_*_IA32_CC_FLAGS = /GL-

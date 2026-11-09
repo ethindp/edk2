@@ -9,7 +9,7 @@
   This driver will have external input - variable and ACPINvs data in SMM mode.
   This external input must be validated carefully to avoid security issue.
 
-Copyright (c) 2015 - 2018, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2015 - 2024, Intel Corporation. All rights reserved.<BR>
 Copyright (c) Microsoft Corporation.
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -22,6 +22,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Guid/TpmInstance.h>
 #include <Guid/TpmNvsMm.h>
 #include <Guid/PiSmmCommunicationRegionTable.h>
+#include <Guid/Tcg2AcpiCommunicateBuffer.h>
 
 #include <Protocol/AcpiTable.h>
 #include <Protocol/Tcg2Protocol.h>
@@ -38,7 +39,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Library/Tpm2DeviceLib.h>
 #include <Library/Tpm2CommandLib.h>
 #include <Library/UefiLib.h>
-#include <Library/MmUnblockMemoryLib.h>
+#include <Library/HobLib.h>
 
 //
 // Physical Presence Interface Version supported by Platform
@@ -73,39 +74,6 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 //
 #define MAX_PRS_INT_BUF_SIZE  (15*4)
 
-#pragma pack(1)
-
-typedef struct {
-  EFI_ACPI_DESCRIPTION_HEADER    Header;
-  // Flags field is replaced in version 4 and above
-  //    BIT0~15:  PlatformClass      This field is only valid for version 4 and above
-  //    BIT16~31: Reserved
-  UINT32                         Flags;
-  UINT64                         AddressOfControlArea;
-  UINT32                         StartMethod;
-  UINT8                          PlatformSpecificParameters[12]; // size up to 12
-  UINT32                         Laml;                           // Optional
-  UINT64                         Lasa;                           // Optional
-} EFI_TPM2_ACPI_TABLE_V4;
-
-#pragma pack()
-
-EFI_TPM2_ACPI_TABLE_V4  mTpm2AcpiTemplate = {
-  {
-    EFI_ACPI_5_0_TRUSTED_COMPUTING_PLATFORM_2_TABLE_SIGNATURE,
-    sizeof (mTpm2AcpiTemplate),
-    EFI_TPM2_ACPI_TABLE_REVISION,
-    //
-    // Compiler initializes the remaining bytes to 0
-    // These fields should be filled in in production
-    //
-  },
-  0, // BIT0~15:  PlatformClass
-     // BIT16~31: Reserved
-  0,                                    // Control Area
-  EFI_TPM2_ACPI_TABLE_START_METHOD_TIS, // StartMethod
-};
-
 TCG_NVS  *mTcgNvs;
 
 /**
@@ -116,7 +84,7 @@ TCG_NVS  *mTcgNvs;
   @param[in]      Name           The name string to find in TPM table.
   @param[in]      Size           The size of the region to find.
 
-  @return                        The allocated address for the found region.
+  @return                        The Acpi Communicate Buffer for the found region.
 
 **/
 VOID *
@@ -126,9 +94,10 @@ AssignOpRegion (
   UINT16                       Size
   )
 {
-  EFI_STATUS            Status;
-  AML_OP_REGION_32_8    *OpRegion;
-  EFI_PHYSICAL_ADDRESS  MemoryAddress;
+  AML_OP_REGION_32_8            *OpRegion;
+  EFI_PHYSICAL_ADDRESS          MemoryAddress;
+  EFI_HOB_GUID_TYPE             *GuidHob;
+  TCG2_ACPI_COMMUNICATE_BUFFER  *Tcg2AcpiCommunicateBufferHob;
 
   MemoryAddress = SIZE_4GB - 1;
 
@@ -144,16 +113,16 @@ AssignOpRegion (
         (OpRegion->DWordPrefix == AML_DWORD_PREFIX) &&
         (OpRegion->BytePrefix  == AML_BYTE_PREFIX))
     {
-      Status = gBS->AllocatePages (AllocateMaxAddress, EfiACPIMemoryNVS, EFI_SIZE_TO_PAGES (Size), &MemoryAddress);
-      ASSERT_EFI_ERROR (Status);
+      GuidHob = GetFirstGuidHob (&gEdkiiTcg2AcpiCommunicateBufferHobGuid);
+      ASSERT (GuidHob != NULL);
+      Tcg2AcpiCommunicateBufferHob = GET_GUID_HOB_DATA (GuidHob);
+      MemoryAddress                = Tcg2AcpiCommunicateBufferHob->Tcg2AcpiCommunicateBuffer;
+      ASSERT (MemoryAddress != 0);
+      ASSERT (EFI_PAGES_TO_SIZE ((UINTN)Tcg2AcpiCommunicateBufferHob->Pages) >= Size);
+
       ZeroMem ((VOID *)(UINTN)MemoryAddress, Size);
       OpRegion->RegionOffset = (UINT32)(UINTN)MemoryAddress;
       OpRegion->RegionLen    = (UINT8)Size;
-      // Request to unblock this region from MM core
-      Status = MmUnblockMemoryRequest (MemoryAddress, EFI_SIZE_TO_PAGES (Size));
-      if ((Status != EFI_UNSUPPORTED) && EFI_ERROR (Status)) {
-        ASSERT_EFI_ERROR (Status);
-      }
 
       break;
     }
@@ -188,14 +157,14 @@ ExchangeCommonBuffer (
 
   // Step 0: Sanity check for input argument
   if (TcgNvs == NULL) {
-    DEBUG ((DEBUG_ERROR, "%a - Input argument is NULL!\n", __FUNCTION__));
+    DEBUG ((DEBUG_ERROR, "%a - Input argument is NULL!\n", __func__));
     return EFI_INVALID_PARAMETER;
   }
 
   // Step 1: Grab the common buffer header
   Status = EfiGetSystemConfigurationTable (&gEdkiiPiSmmCommunicationRegionTableGuid, (VOID **)&PiSmmCommunicationRegionTable);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "%a - Failed to locate SMM communciation common buffer - %r!\n", __FUNCTION__, Status));
+    DEBUG ((DEBUG_ERROR, "%a - Failed to locate SMM communciation common buffer - %r!\n", __func__, Status));
     return Status;
   }
 
@@ -215,7 +184,7 @@ ExchangeCommonBuffer (
 
   if (Index >= PiSmmCommunicationRegionTable->NumberOfEntries) {
     // Could not find one that meets our goal...
-    DEBUG ((DEBUG_ERROR, "%a - Could not find a common buffer that is big enough for NVS!\n", __FUNCTION__));
+    DEBUG ((DEBUG_ERROR, "%a - Could not find a common buffer that is big enough for NVS!\n", __func__));
     return EFI_OUT_OF_RESOURCES;
   }
 
@@ -236,9 +205,9 @@ ExchangeCommonBuffer (
   Status = gBS->LocateProtocol (&gEfiMmCommunicationProtocolGuid, NULL, (VOID **)&MmCommunication);
   if (!EFI_ERROR (Status)) {
     Status = MmCommunication->Communicate (MmCommunication, CommHeader, &CommBufferSize);
-    DEBUG ((DEBUG_INFO, "%a - Communicate() = %r\n", __FUNCTION__, Status));
+    DEBUG ((DEBUG_INFO, "%a - Communicate() = %r\n", __func__, Status));
   } else {
-    DEBUG ((DEBUG_ERROR, "%a - Failed to locate MmCommunication protocol - %r\n", __FUNCTION__, Status));
+    DEBUG ((DEBUG_ERROR, "%a - Failed to locate MmCommunication protocol - %r\n", __func__, Status));
     return Status;
   }
 
@@ -250,7 +219,7 @@ ExchangeCommonBuffer (
     DEBUG ((
       DEBUG_INFO,
       "%a Communication returned software SMI value. PP: 0x%x; MC: 0x%x.\n",
-      __FUNCTION__,
+      __func__,
       TcgNvs->PhysicalPresence.SoftwareSmi,
       TcgNvs->MemoryClear.SoftwareSmi
       ));
@@ -639,7 +608,7 @@ UpdateHID (
         CopyMem (DataPtr, Hid, TPM_HID_ACPI_SIZE);
       }
 
-      DEBUG ((DEBUG_INFO, "TPM2 ACPI _HID is patched to %a\n", DataPtr));
+      DEBUG ((DEBUG_INFO, "TPM2 ACPI _HID is patched to %a\n", Hid));
 
       return Status;
     }
@@ -723,7 +692,7 @@ PublishAcpiTable (
     PossibleIrqNumBuf     = (UINT32 *)PcdGetPtr (PcdTpm2PossibleIrqNumBuf);
     PossibleIrqNumBufSize = (UINT32)PcdGetSize (PcdTpm2PossibleIrqNumBuf);
 
-    if ((PossibleIrqNumBufSize <= MAX_PRS_INT_BUF_SIZE) && ((PossibleIrqNumBufSize % sizeof (UINT32)) == 0)) {
+    if ((PossibleIrqNumBufSize <= MAX_PRS_INT_BUF_SIZE) && IS_ALIGNED (PossibleIrqNumBufSize, sizeof (UINT32))) {
       Status = UpdatePossibleResource (Table, PossibleIrqNumBuf, PossibleIrqNumBufSize, &IsShortFormPkgLength);
       DEBUG ((
         DEBUG_INFO,
@@ -778,12 +747,18 @@ PublishTpm2 (
   VOID
   )
 {
-  EFI_STATUS                  Status;
-  EFI_ACPI_TABLE_PROTOCOL     *AcpiTable;
-  UINTN                       TableKey;
-  UINT64                      OemTableId;
-  EFI_TPM2_ACPI_CONTROL_AREA  *ControlArea;
-  TPM2_PTP_INTERFACE_TYPE     InterfaceType;
+  EFI_STATUS                    Status;
+  EFI_ACPI_TABLE_PROTOCOL       *AcpiTable;
+  UINTN                         TableKey;
+  UINT64                        OemTableId;
+  EFI_TPM2_ACPI_CONTROL_AREA    *ControlArea;
+  TPM2_PTP_INTERFACE_TYPE       InterfaceType;
+  EFI_TPM2_ACPI_TABLE_V4        *Tpm2AcpiTableV4;
+  EFI_TPM2_ACPI_TABLE_V5        *Tpm2AcpiTableV5;
+  EFI_TPM2_ACPI_TABLE_TEMPLATE  Tpm2AcpiTemplate;
+
+  // Zero the template so its measured contents are deterministic.
+  ZeroMem (&Tpm2AcpiTemplate, sizeof (Tpm2AcpiTemplate));
 
   //
   // Measure to PCR[0] with event EV_POST_CODE ACPI DATA.
@@ -796,70 +771,106 @@ PublishTpm2 (
     EV_POST_CODE,
     EV_POSTCODE_INFO_ACPI_DATA,
     ACPI_DATA_LEN,
-    &mTpm2AcpiTemplate,
-    mTpm2AcpiTemplate.Header.Length
+    &Tpm2AcpiTemplate,
+    sizeof (EFI_TPM2_ACPI_TABLE_TEMPLATE)
     );
 
-  mTpm2AcpiTemplate.Header.Revision = PcdGet8 (PcdTpm2AcpiTableRev);
-  DEBUG ((DEBUG_INFO, "Tpm2 ACPI table revision is %d\n", mTpm2AcpiTemplate.Header.Revision));
+  Tpm2AcpiTemplate.Header.Signature = EFI_ACPI_5_0_TRUSTED_COMPUTING_PLATFORM_2_TABLE_SIGNATURE;
+  Tpm2AcpiTemplate.Header.Revision  = PcdGet8 (PcdTpm2AcpiTableRev);
+  DEBUG ((DEBUG_INFO, "Tpm2 ACPI table revision is %d\n", Tpm2AcpiTemplate.Header.Revision));
 
   //
   // PlatformClass is only valid for version 4 and above
   //    BIT0~15:  PlatformClass
   //    BIT16~31: Reserved
   //
-  if (mTpm2AcpiTemplate.Header.Revision >= EFI_TPM2_ACPI_TABLE_REVISION_4) {
-    mTpm2AcpiTemplate.Flags = (mTpm2AcpiTemplate.Flags & 0xFFFF0000) | PcdGet8 (PcdTpmPlatformClass);
-    DEBUG ((DEBUG_INFO, "Tpm2 ACPI table PlatformClass is %d\n", (mTpm2AcpiTemplate.Flags & 0x0000FFFF)));
+  if (Tpm2AcpiTemplate.Header.Revision >= EFI_TPM2_ACPI_TABLE_REVISION_4) {
+    Tpm2AcpiTemplate.Flags = (Tpm2AcpiTemplate.Flags & 0xFFFF0000) | PcdGet8 (PcdTpmPlatformClass);
+    DEBUG ((DEBUG_INFO, "Tpm2 ACPI table PlatformClass is %d\n", (Tpm2AcpiTemplate.Flags & 0x0000FFFF)));
   }
 
-  mTpm2AcpiTemplate.Laml = PcdGet32 (PcdTpm2AcpiTableLaml);
-  mTpm2AcpiTemplate.Lasa = PcdGet64 (PcdTpm2AcpiTableLasa);
-  if ((mTpm2AcpiTemplate.Header.Revision < EFI_TPM2_ACPI_TABLE_REVISION_4) ||
-      (mTpm2AcpiTemplate.Laml == 0) || (mTpm2AcpiTemplate.Lasa == 0))
-  {
-    //
-    // If version is smaller than 4 or Laml/Lasa is not valid, rollback to original Length.
-    //
-    mTpm2AcpiTemplate.Header.Length = sizeof (EFI_TPM2_ACPI_TABLE);
+  switch (Tpm2AcpiTemplate.Header.Revision) {
+    case EFI_TPM2_ACPI_TABLE_REVISION_3:
+      Tpm2AcpiTemplate.Header.Length = sizeof (EFI_TPM2_ACPI_TABLE);
+      break;
+
+    case EFI_TPM2_ACPI_TABLE_REVISION_4:
+      Tpm2AcpiTemplate.Header.Length = sizeof (EFI_TPM2_ACPI_TABLE_V4);
+      Tpm2AcpiTableV4                = (EFI_TPM2_ACPI_TABLE_V4 *)&Tpm2AcpiTemplate;
+      Tpm2AcpiTableV4->Laml          = PcdGet32 (PcdTpm2AcpiTableLaml);
+      Tpm2AcpiTableV4->Lasa          = PcdGet64 (PcdTpm2AcpiTableLasa);
+
+      if ((Tpm2AcpiTableV4->Laml == 0) || (Tpm2AcpiTableV4->Lasa == 0)) {
+        // Remove LAML/LASA from the length if either is 0.
+        Tpm2AcpiTemplate.Header.Length = OFFSET_OF (EFI_TPM2_ACPI_TABLE_V4, Laml);
+      }
+
+      break;
+
+    case EFI_TPM2_ACPI_TABLE_REVISION_5:
+      Tpm2AcpiTemplate.Header.Length = sizeof (EFI_TPM2_ACPI_TABLE_V5);
+      Tpm2AcpiTableV5                = (EFI_TPM2_ACPI_TABLE_V5 *)&Tpm2AcpiTemplate;
+      Tpm2AcpiTableV5->Laml          = PcdGet32 (PcdTpm2AcpiTableLaml);
+      Tpm2AcpiTableV5->Lasa          = PcdGet64 (PcdTpm2AcpiTableLasa);
+
+      if ((Tpm2AcpiTableV5->Laml == 0) || (Tpm2AcpiTableV5->Lasa == 0)) {
+        // Remove LAML/LASA from the length if either is 0.
+        Tpm2AcpiTemplate.Header.Length = OFFSET_OF (EFI_TPM2_ACPI_TABLE_V5, Laml);
+      }
+
+      break;
+
+    default:
+      Tpm2AcpiTemplate.Header.Length = sizeof (EFI_TPM2_ACPI_TABLE_TEMPLATE);
+      DEBUG ((DEBUG_ERROR, "TPM2 revision get error! %d\n", Tpm2AcpiTemplate.Header.Revision));
+      ASSERT (FALSE);
+      return EFI_INVALID_PARAMETER;
   }
+
+  DEBUG ((DEBUG_INFO, "Tpm2 ACPI table size %d\n", Tpm2AcpiTemplate.Header.Length));
 
   InterfaceType = PcdGet8 (PcdActiveTpmInterfaceType);
   switch (InterfaceType) {
     case Tpm2PtpInterfaceCrb:
-      mTpm2AcpiTemplate.StartMethod          = EFI_TPM2_ACPI_TABLE_START_METHOD_COMMAND_RESPONSE_BUFFER_INTERFACE;
-      mTpm2AcpiTemplate.AddressOfControlArea = PcdGet64 (PcdTpmBaseAddress) + 0x40;
-      ControlArea                            = (EFI_TPM2_ACPI_CONTROL_AREA *)(UINTN)mTpm2AcpiTemplate.AddressOfControlArea;
-      ControlArea->CommandSize               = 0xF80;
-      ControlArea->ResponseSize              = 0xF80;
-      ControlArea->Command                   = PcdGet64 (PcdTpmBaseAddress) + 0x80;
-      ControlArea->Response                  = PcdGet64 (PcdTpmBaseAddress) + 0x80;
+      Tpm2AcpiTemplate.StartMethod          = EFI_TPM2_ACPI_TABLE_START_METHOD_COMMAND_RESPONSE_BUFFER_INTERFACE;
+      Tpm2AcpiTemplate.AddressOfControlArea = PcdGet64 (PcdTpmBaseAddress) + 0x40;
+      ControlArea                           = (EFI_TPM2_ACPI_CONTROL_AREA *)(UINTN)Tpm2AcpiTemplate.AddressOfControlArea;
+      ControlArea->CommandSize              = 0xF80;
+      ControlArea->ResponseSize             = 0xF80;
+      ControlArea->Command                  = PcdGet64 (PcdTpmBaseAddress) + 0x80;
+      ControlArea->Response                 = PcdGet64 (PcdTpmBaseAddress) + 0x80;
       break;
     case Tpm2PtpInterfaceFifo:
     case Tpm2PtpInterfaceTis:
+      Tpm2AcpiTemplate.StartMethod = EFI_TPM2_ACPI_TABLE_START_METHOD_TIS;
       break;
     default:
       DEBUG ((DEBUG_ERROR, "TPM2 InterfaceType get error! %d\n", InterfaceType));
+      ASSERT (FALSE);
+      return EFI_INVALID_PARAMETER;
       break;
   }
 
-  CopyMem (mTpm2AcpiTemplate.Header.OemId, PcdGetPtr (PcdAcpiDefaultOemId), sizeof (mTpm2AcpiTemplate.Header.OemId));
+  CopyMem (Tpm2AcpiTemplate.Header.OemId, PcdGetPtr (PcdAcpiDefaultOemId), sizeof (Tpm2AcpiTemplate.Header.OemId));
   OemTableId = PcdGet64 (PcdAcpiDefaultOemTableId);
-  CopyMem (&mTpm2AcpiTemplate.Header.OemTableId, &OemTableId, sizeof (UINT64));
-  mTpm2AcpiTemplate.Header.OemRevision     = PcdGet32 (PcdAcpiDefaultOemRevision);
-  mTpm2AcpiTemplate.Header.CreatorId       = PcdGet32 (PcdAcpiDefaultCreatorId);
-  mTpm2AcpiTemplate.Header.CreatorRevision = PcdGet32 (PcdAcpiDefaultCreatorRevision);
+  CopyMem (&Tpm2AcpiTemplate.Header.OemTableId, &OemTableId, sizeof (UINT64));
+  Tpm2AcpiTemplate.Header.OemRevision     = PcdGet32 (PcdAcpiDefaultOemRevision);
+  Tpm2AcpiTemplate.Header.CreatorId       = PcdGet32 (PcdAcpiDefaultCreatorId);
+  Tpm2AcpiTemplate.Header.CreatorRevision = PcdGet32 (PcdAcpiDefaultCreatorRevision);
 
   //
   // Construct ACPI table
   //
   Status = gBS->LocateProtocol (&gEfiAcpiTableProtocolGuid, NULL, (VOID **)&AcpiTable);
-  ASSERT_EFI_ERROR (Status);
+  if (EFI_ERROR (Status)) {
+    ASSERT (FALSE);
+    return Status;
+  }
 
   Status = AcpiTable->InstallAcpiTable (
                         AcpiTable,
-                        &mTpm2AcpiTemplate,
-                        mTpm2AcpiTemplate.Header.Length,
+                        &Tpm2AcpiTemplate,
+                        Tpm2AcpiTemplate.Header.Length,
                         &TableKey
                         );
   ASSERT_EFI_ERROR (Status);

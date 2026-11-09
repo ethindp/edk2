@@ -2,13 +2,13 @@
 
   Copyright (c) 2008 - 2009, Apple Inc. All rights reserved.<BR>
   Copyright (c) 2011 - 2013, ARM Ltd. All rights reserved.<BR>
+  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef CPU_DXE_H_
-#define CPU_DXE_H_
+#pragma once
 
 #include <Uefi.h>
 
@@ -23,15 +23,18 @@
 #include <Library/PeCoffGetEntryPointLib.h>
 #include <Library/UefiLib.h>
 #include <Library/CpuLib.h>
-#include <Library/DefaultExceptionHandlerLib.h>
+#include <Library/CpuExceptionHandlerLib.h>
 #include <Library/DebugLib.h>
 
 #include <Guid/DebugImageInfoTable.h>
 #include <Protocol/Cpu.h>
 #include <Protocol/DebugSupport.h>
 #include <Protocol/LoadedImage.h>
+#include <Protocol/MemoryAttribute.h>
 
 extern BOOLEAN  mIsFlushingGCD;
+
+extern EFI_MEMORY_ATTRIBUTE_PROTOCOL  mMemoryAttribute;
 
 /**
   This function registers and enables the handler specified by InterruptHandler for a processor
@@ -96,27 +99,12 @@ CpuSetMemoryAttributes (
 
 EFI_STATUS
 InitializeExceptions (
-  IN EFI_CPU_ARCH_PROTOCOL  *Cpu
+  VOID
   );
 
 EFI_STATUS
 SyncCacheConfig (
   IN  EFI_CPU_ARCH_PROTOCOL  *CpuProtocol
-  );
-
-/**
- * Publish ARM Processor Data table in UEFI SYSTEM Table.
- * @param  HobStart               Pointer to the beginning of the HOB List from PEI.
- *
- * Description : This function iterates through HOB list and finds ARM processor Table Entry HOB.
- *               If  the ARM processor Table Entry HOB is found, the HOB data is copied to run-time memory
- *               and a pointer is assigned to it in ARM processor table. Then the ARM processor table is
- *               installed in EFI configuration table.
-**/
-VOID
-EFIAPI
-PublishArmProcessorTable (
-  VOID
   );
 
 // The ARM Attributes might be defined on 64-bit (case of the long format description table)
@@ -141,4 +129,16 @@ SetGcdMemorySpaceAttributes (
   IN UINT64                           Attributes
   );
 
-#endif // CPU_DXE_H_
+/**
+  Convert an arch specific set of page attributes into a mask
+  of EFI_MEMORY_xx constants.
+
+  @param  PageAttributes  The set of page attributes.
+
+  @retval The mask of EFI_MEMORY_xx constants.
+
+**/
+UINT64
+RegionAttributeToGcdAttribute (
+  IN UINTN  PageAttributes
+  );

@@ -6,8 +6,7 @@
 
 **/
 
-#ifndef __USB3_DEBUG_PORT_LIB_INTERNAL__
-#define __USB3_DEBUG_PORT_LIB_INTERNAL__
+#pragma once
 
 #include <Uefi.h>
 #include <Base.h>
@@ -586,7 +585,7 @@ XhcWriteDebugReg (
 /**
   Verifies if the bit positions specified by a mask are set in a register.
 
-  @param[in, out] Register    UNITN register
+  @param[in, out] Register    UINTN register
   @param[in]      BitMask     32-bit mask
 
   @return  BOOLEAN  - TRUE  if all bits specified by the mask are enabled.
@@ -733,5 +732,3 @@ USB3_DEBUG_PORT_HANDLE *
 GetUsb3DebugPortInstance (
   VOID
   );
-
-#endif //__SERIAL_PORT_LIB_USB__

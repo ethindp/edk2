@@ -138,7 +138,7 @@ NvmeBaseMemPageOffset (
   PageSizeList[4] = NVME_PRP_SIZE; /* PRPs */
 
   if (BaseMemIndex > MAX_BASEMEM_COUNT) {
-    DEBUG ((DEBUG_ERROR, "%a: The input BaseMem index is invalid.\n", __FUNCTION__));
+    DEBUG ((DEBUG_ERROR, "%a: The input BaseMem index is invalid.\n", __func__));
     ASSERT (FALSE);
     return 0;
   }
@@ -191,7 +191,7 @@ NvmeWaitController (
     //
     Status = NVME_GET_CSTS (Private, &Csts);
     if (EFI_ERROR (Status)) {
-      DEBUG ((DEBUG_ERROR, "%a: NVME_GET_CSTS fail, Status - %r\n", __FUNCTION__, Status));
+      DEBUG ((DEBUG_ERROR, "%a: NVME_GET_CSTS fail, Status - %r\n", __func__, Status));
       return Status;
     }
 
@@ -232,7 +232,7 @@ NvmeDisableController (
   //
   Status = NVME_GET_CC (Private, &Cc);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "%a: NVME_GET_CC fail, Status - %r\n", __FUNCTION__, Status));
+    DEBUG ((DEBUG_ERROR, "%a: NVME_GET_CC fail, Status - %r\n", __func__, Status));
     goto ErrorExit;
   }
 
@@ -243,21 +243,21 @@ NvmeDisableController (
     //
     Status = NVME_SET_CC (Private, &Cc);
     if (EFI_ERROR (Status)) {
-      DEBUG ((DEBUG_ERROR, "%a: NVME_SET_CC fail, Status - %r\n", __FUNCTION__, Status));
+      DEBUG ((DEBUG_ERROR, "%a: NVME_SET_CC fail, Status - %r\n", __func__, Status));
       goto ErrorExit;
     }
   }
 
   Status = NvmeWaitController (Private, FALSE);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "%a: NvmeWaitController fail, Status - %r\n", __FUNCTION__, Status));
+    DEBUG ((DEBUG_ERROR, "%a: NvmeWaitController fail, Status - %r\n", __func__, Status));
     goto ErrorExit;
   }
 
   return EFI_SUCCESS;
 
 ErrorExit:
-  DEBUG ((DEBUG_ERROR, "%a fail, Status - %r\n", __FUNCTION__, Status));
+  DEBUG ((DEBUG_ERROR, "%a fail, Status - %r\n", __func__, Status));
   return Status;
 }
 
@@ -289,20 +289,20 @@ NvmeEnableController (
   Cc.Iocqes = 4;
   Status    = NVME_SET_CC (Private, &Cc);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "%a: NVME_SET_CC fail, Status - %r\n", __FUNCTION__, Status));
+    DEBUG ((DEBUG_ERROR, "%a: NVME_SET_CC fail, Status - %r\n", __func__, Status));
     goto ErrorExit;
   }
 
   Status = NvmeWaitController (Private, TRUE);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "%a: NvmeWaitController fail, Status - %r\n", __FUNCTION__, Status));
+    DEBUG ((DEBUG_ERROR, "%a: NvmeWaitController fail, Status - %r\n", __func__, Status));
     goto ErrorExit;
   }
 
   return EFI_SUCCESS;
 
 ErrorExit:
-  DEBUG ((DEBUG_ERROR, "%a fail, Status: %r\n", __FUNCTION__, Status));
+  DEBUG ((DEBUG_ERROR, "%a fail, Status: %r\n", __func__, Status));
   return Status;
 }
 
@@ -564,15 +564,24 @@ NvmeControllerInit (
   //
   // Dump the NVME controller implementation version
   //
-  NVME_GET_VER (Private, &Ver);
-  DEBUG ((DEBUG_INFO, "NVME controller implementation version: %d.%d\n", Ver.Mjr, Ver.Mnr));
+  Status = NVME_GET_VER (Private, &Ver);
+  if (!EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_INFO, "NVME controller implementation version: %d.%d\n", Ver.Mjr, Ver.Mnr));
+  }
 
   //
-  // Read the controller Capabilities register and verify that the NVM command set is supported
+  // Read the controller Capabilities register
   //
-  NVME_GET_CAP (Private, &Private->Cap);
-  if (Private->Cap.Css != 0x01) {
-    DEBUG ((DEBUG_ERROR, "%a: The NVME controller doesn't support NVMe command set.\n", __FUNCTION__));
+  Status = NVME_GET_CAP (Private, &Private->Cap);
+  if (EFI_ERROR (Status)) {
+    return EFI_DEVICE_ERROR;
+  }
+
+  //
+  //  Verify that the NVM command set is supported
+  //
+  if ((Private->Cap.Css & BIT0) == 0) {
+    DEBUG ((DEBUG_ERROR, "%a: The NVME controller doesn't support NVMe command set.\n", __func__));
     return EFI_UNSUPPORTED;
   }
 
@@ -580,7 +589,7 @@ NvmeControllerInit (
   // Currently, the driver only supports 4k page size
   //
   if ((Private->Cap.Mpsmin + 12) > EFI_PAGE_SHIFT) {
-    DEBUG ((DEBUG_ERROR, "%a: The driver doesn't support page size other than 4K.\n", __FUNCTION__));
+    DEBUG ((DEBUG_ERROR, "%a: The driver doesn't support page size other than 4K.\n", __func__));
     ASSERT (FALSE);
     return EFI_UNSUPPORTED;
   }
@@ -599,7 +608,7 @@ NvmeControllerInit (
   //
   Status = NvmeDisableController (Private);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "%a: NvmeDisableController fail, Status - %r\n", __FUNCTION__, Status));
+    DEBUG ((DEBUG_ERROR, "%a: NvmeDisableController fail, Status - %r\n", __func__, Status));
     return Status;
   }
 
@@ -647,7 +656,7 @@ NvmeControllerInit (
   //
   Status = NvmeEnableController (Private);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "%a: NvmeEnableController fail, Status - %r\n", __FUNCTION__, Status));
+    DEBUG ((DEBUG_ERROR, "%a: NvmeEnableController fail, Status - %r\n", __func__, Status));
     return Status;
   }
 
@@ -663,7 +672,7 @@ NvmeControllerInit (
 
   Status = NvmeIdentifyController (Private, Private->ControllerData);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "%a: NvmeIdentifyController fail, Status - %r\n", __FUNCTION__, Status));
+    DEBUG ((DEBUG_ERROR, "%a: NvmeIdentifyController fail, Status - %r\n", __func__, Status));
     return Status;
   }
 
@@ -676,7 +685,7 @@ NvmeControllerInit (
     DEBUG ((
       DEBUG_ERROR,
       "%a: Number of Namespaces field in Identify Controller data not supported by the driver.\n",
-      __FUNCTION__
+      __func__
       ));
     return EFI_UNSUPPORTED;
   }
@@ -686,13 +695,13 @@ NvmeControllerInit (
   //
   Status = NvmeCreateIoCompletionQueue (Private);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "%a: Create IO completion queue fail, Status - %r\n", __FUNCTION__, Status));
+    DEBUG ((DEBUG_ERROR, "%a: Create IO completion queue fail, Status - %r\n", __func__, Status));
     return Status;
   }
 
   Status = NvmeCreateIoSubmissionQueue (Private);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "%a: Create IO submission queue fail, Status - %r\n", __FUNCTION__, Status));
+    DEBUG ((DEBUG_ERROR, "%a: Create IO submission queue fail, Status - %r\n", __func__, Status));
   }
 
   return Status;

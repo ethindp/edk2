@@ -273,7 +273,7 @@ RemoveStaleFvFileOptions (
     DEBUG ((
       EFI_ERROR (Status) ? DEBUG_WARN : DEBUG_VERBOSE,
       "%a: removing stale Boot#%04x %s: %r\n",
-      __FUNCTION__,
+      __func__,
       (UINT32)BootOptions[Index].OptionNumber,
       DevicePathString == NULL ? L"<unavailable>" : DevicePathString,
       Status
@@ -586,7 +586,7 @@ ConnectVirtioPciRng (
   return EFI_SUCCESS;
 
 Error:
-  DEBUG ((DEBUG_ERROR, "%a: %r\n", __FUNCTION__, Status));
+  DEBUG ((DEBUG_ERROR, "%a: %r\n", __func__, Status));
   return Status;
 }
 
@@ -913,14 +913,15 @@ VisitingAPciInstance (
   PciIo = (EFI_PCI_IO_PROTOCOL *)Instance;
 
   //
-  // Check for all PCI device
+  // Read the device-independent PCI header region
   //
+  ZeroMem (&Pci, sizeof (Pci));
   Status = PciIo->Pci.Read (
                         PciIo,
                         EfiPciIoWidthUint32,
                         0,
-                        sizeof (Pci) / sizeof (UINT32),
-                        &Pci
+                        sizeof (Pci.Hdr) / sizeof (UINT32),
+                        &Pci.Hdr
                         );
   if (EFI_ERROR (Status)) {
     return Status;
@@ -968,14 +969,6 @@ DetectAndPreparePlatformPciDevicePath (
 {
   EFI_STATUS  Status;
 
-  Status = PciIo->Attributes (
-                    PciIo,
-                    EfiPciIoAttributeOperationEnable,
-                    EFI_PCI_DEVICE_ENABLE,
-                    NULL
-                    );
-  ASSERT_EFI_ERROR (Status);
-
   //
   // Here we decide whether it is LPC Bridge
   //
@@ -991,6 +984,13 @@ DetectAndPreparePlatformPciDevicePath (
     // add IsaSerial to ConOut, ConIn, ErrOut
     //
     DEBUG ((DEBUG_INFO, "Found LPC Bridge device\n"));
+    Status = PciIo->Attributes (
+                      PciIo,
+                      EfiPciIoAttributeOperationEnable,
+                      EFI_PCI_DEVICE_ENABLE,
+                      NULL
+                      );
+    ASSERT_EFI_ERROR (Status);
     PrepareLpcBridgeDevicePath (Handle);
     return EFI_SUCCESS;
   }
@@ -1019,7 +1019,7 @@ DetectAndPreparePlatformPciDevicePath (
     return EFI_SUCCESS;
   }
 
-  return Status;
+  return EFI_SUCCESS;
 }
 
 /**
@@ -1082,8 +1082,8 @@ PlatformInitializeConsole (
   Ported from SeaBIOS, src/fw/pciinit.c, *_pci_slot_get_irq()
 
   @param[in]  Handle - Handle of PCI device instance
-  @param[in]  PciIo - PCI IO protocol instance
-  @param[in]  PciHdr - PCI Header register block
+  @param[in]  Instance - PCI IO protocol instance
+  @param[in]  Context - Context pointer (unused)
 
   @retval EFI_SUCCESS - PCI Interrupt Line register configured successfully.
 
@@ -1091,22 +1091,35 @@ PlatformInitializeConsole (
 EFI_STATUS
 EFIAPI
 SetPciIntLine (
-  IN EFI_HANDLE           Handle,
-  IN EFI_PCI_IO_PROTOCOL  *PciIo,
-  IN PCI_TYPE00           *PciHdr
+  IN EFI_HANDLE  Handle,
+  IN VOID        *Instance,
+  IN VOID        *Context
   )
 {
+  EFI_PCI_IO_PROTOCOL       *PciIo;
   EFI_DEVICE_PATH_PROTOCOL  *DevPathNode;
   EFI_DEVICE_PATH_PROTOCOL  *DevPath;
   UINTN                     RootSlot;
   UINTN                     Idx;
+  UINT8                     InterruptPin;
   UINT8                     IrqLine;
   EFI_STATUS                Status;
   UINT32                    RootBusNumber;
 
-  Status = EFI_SUCCESS;
+  PciIo = (EFI_PCI_IO_PROTOCOL *)Instance;
 
-  if (PciHdr->Device.InterruptPin != 0) {
+  Status = PciIo->Pci.Read (
+                        PciIo,
+                        EfiPciIoWidthUint8,
+                        PCI_INT_PIN_OFFSET,
+                        1,
+                        &InterruptPin
+                        );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  if (InterruptPin != 0) {
     DevPathNode = DevicePathFromHandle (Handle);
     ASSERT (DevPathNode != NULL);
     DevPath = DevPathNode;
@@ -1125,7 +1138,7 @@ SetPciIntLine (
     //
     Status   = EFI_NOT_FOUND;
     RootSlot = 0;
-    Idx      = PciHdr->Device.InterruptPin - 1;
+    Idx      = InterruptPin - 1;
     while (!IsDevicePathEnd (DevPathNode)) {
       if ((DevicePathType (DevPathNode) == HARDWARE_DEVICE_PATH) &&
           (DevicePathSubType (DevPathNode) == HW_PCI_DP))
@@ -1156,7 +1169,7 @@ SetPciIntLine (
       DEBUG ((
         DEBUG_ERROR,
         "%a: PCI host bridge (00:00.0) should have no interrupts!\n",
-        __FUNCTION__
+        __func__
         ));
       ASSERT (FALSE);
     }
@@ -1213,7 +1226,7 @@ SetPciIntLine (
       DEBUG ((
         DEBUG_VERBOSE,
         "%a: [%02x:%02x.%x] %s -> 0x%02x\n",
-        __FUNCTION__,
+        __func__,
         (UINT32)Bus,
         (UINT32)Device,
         (UINT32)Function,
@@ -1283,7 +1296,7 @@ PciAcpiInitialization (
       DEBUG ((
         DEBUG_ERROR,
         "%a: Unknown Host Bridge Device ID: 0x%04x\n",
-        __FUNCTION__,
+        __func__,
         mHostBridgeDevId
         ));
       ASSERT (FALSE);
@@ -1293,7 +1306,11 @@ PciAcpiInitialization (
   //
   // Initialize PCI_INTERRUPT_LINE for applicable present PCI devices
   //
-  VisitAllPciInstances (SetPciIntLine);
+  VisitAllInstancesOfProtocol (
+    &gEfiPciIoProtocolGuid,
+    SetPciIntLine,
+    NULL
+    );
 
   //
   // Set ACPI SCI_EN bit in PMCNTRL
@@ -1433,7 +1450,8 @@ PlatformBdsConnectSequence (
   VOID
   )
 {
-  UINTN  Index;
+  UINTN          Index;
+  RETURN_STATUS  Status;
 
   DEBUG ((DEBUG_INFO, "PlatformBdsConnectSequence\n"));
 
@@ -1452,11 +1470,14 @@ PlatformBdsConnectSequence (
     Index++;
   }
 
-  //
-  // Just use the simple policy to connect all devices
-  //
-  DEBUG ((DEBUG_INFO, "EfiBootManagerConnectAll\n"));
-  EfiBootManagerConnectAll ();
+  Status = ConnectDevicesFromQemu ();
+  if (RETURN_ERROR (Status)) {
+    //
+    // Just use the simple policy to connect all devices
+    //
+    DEBUG ((DEBUG_INFO, "EfiBootManagerConnectAll\n"));
+    EfiBootManagerConnectAll ();
+  }
 }
 
 /**
@@ -1581,6 +1602,7 @@ PlatformBootManagerAfterConsole (
     );
 
   RemoveStaleFvFileOptions ();
+  SetBootOrderFromQemu ();
 
   PlatformBmPrintScRegisterHandler ();
 }

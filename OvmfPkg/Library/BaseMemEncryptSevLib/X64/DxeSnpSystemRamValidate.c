@@ -2,7 +2,7 @@
 
   SEV-SNP Page Validation functions.
 
-  Copyright (c) 2021 AMD Incorporated. All rights reserved.<BR>
+  Copyright (c) 2021 - 2024, AMD Incorporated. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -14,6 +14,9 @@
 #include <Library/MemEncryptSevLib.h>
 
 #include "SnpPageStateChange.h"
+#include "VirtualMemory.h"
+
+STATIC VOID  *mPscBuffer = NULL;
 
 /**
   Pre-validate the system RAM when SEV-SNP is enabled in the guest VM.
@@ -29,12 +32,32 @@ MemEncryptSevSnpPreValidateSystemRam (
   IN UINTN             NumPages
   )
 {
+  EFI_STATUS  Status;
+
   if (!MemEncryptSevSnpIsEnabled ()) {
     return;
   }
 
-  //
-  // All the pre-validation must be completed in the PEI phase.
-  //
-  ASSERT (FALSE);
+  // DXE pre-validation may happen with the memory accept protocol.
+  // The protocol should only be called outside the prevalidated ranges
+  // that the PEI stage code explicitly skips. Specifically, only memory
+  // ranges that are classified as unaccepted.
+  if (BaseAddress >= SIZE_4GB) {
+    Status = InternalMemEncryptSevCreateIdentityMap1G (
+               0,
+               BaseAddress,
+               EFI_PAGES_TO_SIZE (NumPages)
+               );
+    if (EFI_ERROR (Status)) {
+      ASSERT (FALSE);
+      CpuDeadLoop ();
+    }
+  }
+
+  if (mPscBuffer == NULL) {
+    mPscBuffer = AllocateReservedPages (1);
+    ASSERT (mPscBuffer != NULL);
+  }
+
+  InternalSetPageState (BaseAddress, NumPages, SevSnpPagePrivate, TRUE, mPscBuffer, EFI_PAGE_SIZE);
 }

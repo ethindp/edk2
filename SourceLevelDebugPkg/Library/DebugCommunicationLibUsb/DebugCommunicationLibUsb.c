@@ -213,7 +213,7 @@ CalculateUsbDebugPortBar (
   //
   // Get Pointer To Capability List
   //
-  CapabilityPtr = PciRead8 (PcdGet32 (PcdUsbEhciPciAddress) + PCI_CAPBILITY_POINTER_OFFSET);
+  CapabilityPtr = PciRead8 (PcdGet32 (PcdUsbEhciPciAddress) + PCI_CAPABILITY_POINTER_OFFSET);
 
   //
   // Find Capability ID 0xA, Which Is For Debug Port
@@ -768,7 +768,7 @@ InitializeUsbDebugHardware (
 }
 
 /**
-  Read data from debug device and save the datas in buffer.
+  Read data from debug device and save the data in a buffer.
 
   Reads NumberOfBytes data bytes from a debug device into the buffer
   specified by Buffer. The number of bytes actually read is returned.

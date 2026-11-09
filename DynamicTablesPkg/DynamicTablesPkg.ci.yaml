@@ -1,10 +1,14 @@
 ## @file
 # CI configuration for DynamicTablesPkg
 #
-# Copyright (c) 2020, Arm Limited. All rights reserved.<BR>
+# Copyright (c) 2020 - 2026, Arm Limited. All rights reserved.<BR>
+# Copyright (C) 2024 - 2025 Advanced Micro Devices, Inc. All rights reserved.<BR>
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 ##
 {
+    "PrEval": {
+        "DscPath": "DynamicTablesPkg.dsc",
+    },
     "EccCheck": {
         ## Exception sample looks like below:
         ## "ExceptionList": [
@@ -34,7 +38,7 @@
 
     ## options defined .pytool/Plugin/HostUnitTestCompilerPlugin
     "HostUnitTestCompilerPlugin": {
-        "DscPath": "" # Don't support this test
+        "DscPath": "Test/DynamicTablesPkgHostTest.dsc"
     },
 
     ## options defined .pytool/Plugin/CharEncodingCheck
@@ -50,7 +54,8 @@
             "EmbeddedPkg/EmbeddedPkg.dec",
             "DynamicTablesPkg/DynamicTablesPkg.dec",
             "MdeModulePkg/MdeModulePkg.dec",
-            "MdePkg/MdePkg.dec"
+            "MdePkg/MdePkg.dec",
+            "SecurityPkg/SecurityPkg.dec"
         ],
         # For host based unit tests
         "AcceptableDependencies-HOST_APPLICATION":[
@@ -94,28 +99,51 @@
         "ExtendWords": [
            "ARMHB",                  # ARMHB000
            "ARMHC",                  # ARMHC600
+           "ARMHD",                  # ARMHD620
            "ARMLTD",
            "AMLDBG",
+           "ARMHE",                  # ARMHE001
            "EISAID",
+           "cacheablity",
+           "cavium",
            "CCIDX",
            "CCSIDR",
+           "cfmws",
            "countof",
+           "deviceid",
+           "EArch",
            "edynamic",
+           "eloongarch",
+           "eventq",
            "EOBJECT",
+           "gerror",
            "invoc",
            "ITARGETSR",
+           "iwbdevicetabletemplate",
            "GTBLOCK",
+           "KMICR",
+           "KMIDATA",
+           "KMISTAT",
            "lgreater",
            "lless",
            "MPIDR",
+           "NAMESPACEID",
+           "NUVIA",
+           "PASID",
            "PERIPHBASE",
+           "PMIIDR",
+           "PMPIDR",
            "phandle",
            "pytool",
            "Rdword",
            "Roadmap",
            "ROOTNODEBASE",
+           "sapic",
            "ssdtcmn",
+           "ssdtcmntemplate",
+           "ssdtdmc",
            "ssdtserialporttemplate",
+           "SMCCC",
            "SMMUV",
            "ssdtpcieosctemplate",
            "SSDTPC",
@@ -123,11 +151,38 @@
            "TABLEEX",
            "TNSID",
            "Vatos",
-           "WBINVD"
+           "WBINVD",
+           "xapic",
+           "aplic",
+           "aplics",
+           "eriscv",
+           "gmode",
+           "imsic",
+           "imsics",
+           "plics",
+           "rintc",
+           "smcbios",
+           "jedec",
+           "jep",
+           "sslbi"
            ],           # words to extend to the dictionary for this package
         "IgnoreStandardPaths": [],   # Standard Plugin defined paths that
                                      # should be ignore
         "AdditionalIncludePaths": [] # Additional paths to spell check
                                      # (wildcards supported)
+    },
+
+    "DebugMacroCheck": {
+      "StringSubstitutions": {
+          # DynamicTablesPkg/Library/Common/TableHelperLib/ConfigurationManagerObjectParser.c
+          # Reason: Debug format strings are dynamically set.
+          "Parser[Index].Format": "%d"
+      }
+    },
+
+    ## options defined .pytool/Plugin/MarkdownLintCheck
+    "MarkdownLintCheck": {
+        "AuditOnly": False,          # If True, log all errors and then mark as skipped
+        "IgnoreFiles": []            # package root relative file, folder, or glob pattern to ignore
     }
 }

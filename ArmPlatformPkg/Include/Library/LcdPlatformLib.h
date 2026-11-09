@@ -5,8 +5,7 @@
 
  **/
 
-#ifndef LCD_PLATFORM_LIB_H_
-#define LCD_PLATFORM_LIB_H_
+#pragma once
 
 #include <Protocol/GraphicsOutput.h>
 
@@ -220,7 +219,7 @@ typedef struct {
 
   @param[in] Handle              Handle to the LCD device instance.
 
-  @retval EFI_SUCCESS            Plaform library initialized successfully.
+  @retval EFI_SUCCESS            Platform library initialized successfully.
   @retval !(EFI_SUCCESS)         Other errors.
 **/
 EFI_STATUS
@@ -323,5 +322,3 @@ LcdPlatformGetBpp (
   IN  UINT32   ModeNumber,
   OUT LCD_BPP  *Bpp
   );
-
-#endif /* LCD_PLATFORM_LIB_H_ */

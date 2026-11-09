@@ -10,10 +10,12 @@ BinToPcd
 '''
 from __future__ import print_function
 
-import sys
 import argparse
+import io
+import math
 import re
-import xdrlib
+import struct
+import sys
 
 #
 # Globals for help information
@@ -35,16 +37,27 @@ if __name__ == '__main__':
         return Value
 
     def ValidatePcdName (Argument):
-        if re.split ('[a-zA-Z\_][a-zA-Z0-9\_]*\.[a-zA-Z\_][a-zA-Z0-9\_]*', Argument) != ['', '']:
+        if re.split (r'[a-zA-Z\_][a-zA-Z0-9\_]*\.[a-zA-Z\_][a-zA-Z0-9\_]*', Argument) != ['', '']:
             Message = '{Argument} is not in the form <PcdTokenSpaceGuidCName>.<PcdCName>'.format (Argument = Argument)
             raise argparse.ArgumentTypeError (Message)
         return Argument
 
     def ValidateGuidName (Argument):
-        if re.split ('[a-zA-Z\_][a-zA-Z0-9\_]*', Argument) != ['', '']:
+        if re.split (r'[a-zA-Z\_][a-zA-Z0-9\_]*', Argument) != ['', '']:
             Message = '{Argument} is not a valid GUID C name'.format (Argument = Argument)
             raise argparse.ArgumentTypeError (Message)
         return Argument
+
+    def XdrPackBuffer (buffer):
+        packed_bytes = io.BytesIO()
+        for unpacked_bytes in buffer:
+            n = len(unpacked_bytes)
+            packed_bytes.write(struct.pack('>L',n))
+            data = unpacked_bytes[:n]
+            n = math.ceil(n/4)*4
+            data = data + (n - len(data)) * b'\0'
+            packed_bytes.write(data)
+        return packed_bytes.getvalue()
 
     def ByteArray (Buffer, Xdr = False):
         if Xdr:
@@ -52,10 +65,7 @@ if __name__ == '__main__':
             # If Xdr flag is set then encode data using the Variable-Length Opaque
             # Data format of RFC 4506 External Data Representation Standard (XDR).
             #
-            XdrEncoder = xdrlib.Packer ()
-            for Item in Buffer:
-                XdrEncoder.pack_bytes (Item)
-            Buffer = bytearray (XdrEncoder.get_buffer ())
+            Buffer = bytearray (XdrPackBuffer (Buffer))
         else:
             #
             # If Xdr flag is not set, then concatenate all the data

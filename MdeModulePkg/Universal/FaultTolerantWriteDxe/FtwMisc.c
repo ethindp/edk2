@@ -810,12 +810,18 @@ FtwGetLastWriteHeader (
   FtwHeader       = (EFI_FAULT_TOLERANT_WRITE_HEADER *)(FtwWorkSpaceHeader + 1);
   Offset          = sizeof (EFI_FAULT_TOLERANT_WORKING_BLOCK_HEADER);
 
+  if (!CompareGuid (&FtwWorkSpaceHeader->Signature, &gEdkiiWorkingBlockSignatureGuid)) {
+    *FtwWriteHeader = FtwHeader;
+    return EFI_ABORTED;
+  }
+
   while (FtwHeader->Complete == FTW_VALID_STATE) {
     Offset += FTW_WRITE_TOTAL_SIZE (FtwHeader->NumberOfWrites, FtwHeader->PrivateDataSize);
     //
     // If Offset exceed the FTW work space boudary, return error.
     //
-    if (Offset >= FtwWorkSpaceSize) {
+
+    if ((Offset + sizeof (EFI_FAULT_TOLERANT_WRITE_HEADER)) >= FtwWorkSpaceSize) {
       *FtwWriteHeader = FtwHeader;
       return EFI_ABORTED;
     }
@@ -850,7 +856,7 @@ FtwGetLastWriteRecord (
   OUT EFI_FAULT_TOLERANT_WRITE_RECORD  **FtwWriteRecord
   )
 {
-  UINTN                            Index;
+  UINT64                           Index;
   EFI_FAULT_TOLERANT_WRITE_RECORD  *FtwRecord;
 
   *FtwWriteRecord = NULL;
@@ -987,22 +993,43 @@ InitFtwDevice (
   OUT EFI_FTW_DEVICE  **FtwData
   )
 {
-  EFI_FTW_DEVICE  *FtwDevice;
+  EFI_STATUS            Status;
+  EFI_PHYSICAL_ADDRESS  WorkSpaceAddress;
+  UINT64                Size;
+  UINTN                 FtwWorkingSize;
+  EFI_FTW_DEVICE        *FtwDevice;
+
+  FtwWorkingSize = 0;
+
+  Status = GetVariableFlashFtwWorkingInfo (&WorkSpaceAddress, &Size);
+  ASSERT_EFI_ERROR (Status);
+
+  Status = SafeUint64ToUintn (Size, &FtwWorkingSize);
+  // This driver currently assumes the size will be UINTN so assert the value is safe for now.
+  ASSERT_EFI_ERROR (Status);
 
   //
   // Allocate private data of this driver,
   // Including the FtwWorkSpace[FTW_WORK_SPACE_SIZE].
   //
-  FtwDevice = AllocateZeroPool (sizeof (EFI_FTW_DEVICE) + PcdGet32 (PcdFlashNvStorageFtwWorkingSize));
+  FtwDevice = AllocateZeroPool (sizeof (EFI_FTW_DEVICE) + FtwWorkingSize);
   if (FtwDevice == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
 
+  FtwDevice->WorkSpaceAddress = WorkSpaceAddress;
+  FtwDevice->WorkSpaceLength  = FtwWorkingSize;
+
+  Status = GetVariableFlashFtwSpareInfo (&FtwDevice->SpareAreaAddress, &Size);
+  ASSERT_EFI_ERROR (Status);
+
+  Status = SafeUint64ToUintn (Size, &FtwDevice->SpareAreaLength);
+  // This driver currently assumes the size will be UINTN so assert the value is safe for now.
+  ASSERT_EFI_ERROR (Status);
+
   //
   // Initialize other parameters, and set WorkSpace as FTW_ERASED_BYTE.
   //
-  FtwDevice->WorkSpaceLength = (UINTN)PcdGet32 (PcdFlashNvStorageFtwWorkingSize);
-  FtwDevice->SpareAreaLength = (UINTN)PcdGet32 (PcdFlashNvStorageFtwSpareSize);
   if ((FtwDevice->WorkSpaceLength == 0) || (FtwDevice->SpareAreaLength == 0)) {
     DEBUG ((DEBUG_ERROR, "Ftw: Workspace or Spare block does not exist!\n"));
     FreePool (FtwDevice);
@@ -1014,16 +1041,6 @@ InitFtwDevice (
   FtwDevice->FtwBackupFvb    = NULL;
   FtwDevice->FtwWorkSpaceLba = (EFI_LBA)(-1);
   FtwDevice->FtwSpareLba     = (EFI_LBA)(-1);
-
-  FtwDevice->WorkSpaceAddress = (EFI_PHYSICAL_ADDRESS)PcdGet64 (PcdFlashNvStorageFtwWorkingBase64);
-  if (FtwDevice->WorkSpaceAddress == 0) {
-    FtwDevice->WorkSpaceAddress = (EFI_PHYSICAL_ADDRESS)PcdGet32 (PcdFlashNvStorageFtwWorkingBase);
-  }
-
-  FtwDevice->SpareAreaAddress = (EFI_PHYSICAL_ADDRESS)PcdGet64 (PcdFlashNvStorageFtwSpareBase64);
-  if (FtwDevice->SpareAreaAddress == 0) {
-    FtwDevice->SpareAreaAddress = (EFI_PHYSICAL_ADDRESS)PcdGet32 (PcdFlashNvStorageFtwSpareBase);
-  }
 
   *FtwData = FtwDevice;
   return EFI_SUCCESS;
@@ -1277,13 +1294,16 @@ InitFtwProtocol (
   FtwDevice->FtwLastWriteHeader = NULL;
   FtwDevice->FtwLastWriteRecord = NULL;
 
-  InitializeLocalWorkSpaceHeader ();
+  InitializeLocalWorkSpaceHeader (FtwDevice->WorkSpaceLength);
 
   //
   // Refresh the working space data from working block
   //
   Status = WorkSpaceRefresh (FtwDevice);
-  ASSERT_EFI_ERROR (Status);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "Ftw: Init.. WorkSpaceRefresh failed: Status = %r\n", Status));
+  }
+
   //
   // If the working block workspace is not valid, try the spare block
   //
@@ -1309,7 +1329,7 @@ InitFtwProtocol (
       DEBUG ((
         DEBUG_INFO,
         "Ftw: Restart working block update in %a() - %r\n",
-        __FUNCTION__,
+        __func__,
         Status
         ));
       FtwAbort (&FtwDevice->FtwInstance);

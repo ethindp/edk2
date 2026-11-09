@@ -6,8 +6,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _OPAL_HII_FORM_VALUES_H_
-#define _OPAL_HII_FORM_VALUES_H_
+#pragma once
 
 // ID's for various forms that will be used by HII
 #define FORMID_VALUE_MAIN_MENU            0x01
@@ -96,6 +95,12 @@ typedef struct {
 
 #define HII_KEY(id)  HII_KEY_WITH_INDEX(id, 0)
 
+/* Label */
+#define OPAL_MAIN_MENU_LABEL_START  0x6100
+#define OPAL_MAIN_MENU_LABEL_END    0x6101
+#define OPAL_DISK_INFO_LABEL_START  0x6200
+#define OPAL_DISK_INFO_LABEL_END    0x6201
+
 #define PACKAGE_LIST_GUID  { 0xf0308176, 0x9058, 0x4153, { 0x93, 0x3d, 0xda, 0x2f, 0xdc, 0xc8, 0x3e, 0x44 } }
 
 /* {410483CF-F4F9-4ece-848A-1958FD31CEB7} */
@@ -103,5 +108,3 @@ typedef struct {
 
 // {BBF1ACD2-28D8-44ea-A291-58A237FEDF1A}
 #define SETUP_VARIABLE_GUID  { 0xbbf1acd2, 0x28d8, 0x44ea, { 0xa2, 0x91, 0x58, 0xa2, 0x37, 0xfe, 0xdf, 0x1a } }
-
-#endif //_HII_FORM_VALUES_H_

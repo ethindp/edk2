@@ -184,13 +184,40 @@ AllocateMemory (
   VOID
   )
 {
-  mText       = AllocateZeroPool (WNDSIZ * 2 + MAXMATCH);
-  mLevel      = AllocateZeroPool ((WNDSIZ + UINT8_MAX + 1) * sizeof (*mLevel));
+  mText = AllocateZeroPool (WNDSIZ * 2 + MAXMATCH);
+  if (mText == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  mLevel = AllocateZeroPool ((WNDSIZ + UINT8_MAX + 1) * sizeof (*mLevel));
+  if (mLevel == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
   mChildCount = AllocateZeroPool ((WNDSIZ + UINT8_MAX + 1) * sizeof (*mChildCount));
-  mPosition   = AllocateZeroPool ((WNDSIZ + UINT8_MAX + 1) * sizeof (*mPosition));
-  mParent     = AllocateZeroPool (WNDSIZ * 2 * sizeof (*mParent));
-  mPrev       = AllocateZeroPool (WNDSIZ * 2 * sizeof (*mPrev));
-  mNext       = AllocateZeroPool ((MAX_HASH_VAL + 1) * sizeof (*mNext));
+  if (mChildCount == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  mPosition = AllocateZeroPool ((WNDSIZ + UINT8_MAX + 1) * sizeof (*mPosition));
+  if (mPosition == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  mParent = AllocateZeroPool (WNDSIZ * 2 * sizeof (*mParent));
+  if (mParent == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  mPrev = AllocateZeroPool (WNDSIZ * 2 * sizeof (*mPrev));
+  if (mPrev == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  mNext = AllocateZeroPool ((MAX_HASH_VAL + 1) * sizeof (*mNext));
+  if (mNext == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
 
   mBufSiz = BLKSIZ;
   mBuf    = AllocateZeroPool (mBufSiz);
@@ -1317,7 +1344,7 @@ Encode (
   @param[in, out]  DstSize       On input the size (in bytes) of DstBuffer, on
                                  return the number of bytes placed in DstBuffer.
 
-  @retval EFI_SUCCESS           The compression was sucessful.
+  @retval EFI_SUCCESS           The compression was successful.
   @retval EFI_BUFFER_TOO_SMALL  The buffer was too small.  DstSize is required.
 **/
 EFI_STATUS

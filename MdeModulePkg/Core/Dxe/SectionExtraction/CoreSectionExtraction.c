@@ -626,7 +626,10 @@ CreateGuidedExtractionRpnEvent (
   // Allocate new event structure and context
   //
   Context = AllocatePool (sizeof (RPN_EVENT_CONTEXT));
-  ASSERT (Context != NULL);
+  if (Context == NULL) {
+    ASSERT (Context != NULL);
+    return;
+  }
 
   Context->ChildNode    = ChildNode;
   Context->ParentStream = ParentStream;
@@ -1304,7 +1307,7 @@ GetSection (
         DEBUG ((
           DEBUG_ERROR,
           "%a: recursion aborted due to nesting depth\n",
-          __FUNCTION__
+          __func__
           ));
         //
         // Map "aborted" to "not found".

@@ -48,6 +48,7 @@
   Mem/Page.c
   Mem/MemData.c
   Mem/Imem.h
+  Mem/MemoryBin.c
   Mem/MemoryProfileRecord.c
   Mem/HeapGuard.c
   Mem/HeapGuard.h
@@ -94,12 +95,15 @@
   DebugAgentLib
   CpuExceptionHandlerLib
   PcdLib
+  ImagePropertiesRecordLib
+  OrderedCollectionLib
 
 [Guids]
   gEfiEventMemoryMapChangeGuid                  ## PRODUCES             ## Event
   gEfiEventVirtualAddressChangeGuid             ## CONSUMES             ## Event
   ## CONSUMES   ## Event
   ## PRODUCES   ## Event
+  gEfiEventBeforeExitBootServicesGuid
   gEfiEventExitBootServicesGuid
   gEfiHobMemoryAllocModuleGuid                  ## SOMETIMES_CONSUMES   ## HOB
   gEfiFirmwareFileSystem2Guid                   ## CONSUMES             ## GUID # Used to compare with FV's file system guid and get the FV's file system format
@@ -153,6 +157,7 @@
   gEfiHiiPackageListProtocolGuid                ## SOMETIMES_PRODUCES
   gEfiSmmBase2ProtocolGuid                      ## SOMETIMES_CONSUMES
   gEdkiiPeCoffImageEmulatorProtocolGuid         ## SOMETIMES_CONSUMES
+  gEfiMemoryAttributeProtocolGuid               ## CONSUMES
 
   # Arch Protocols
   gEfiBdsArchProtocolGuid                       ## CONSUMES
@@ -186,6 +191,7 @@
   gEfiMdeModulePkgTokenSpaceGuid.PcdHeapGuardPropertyMask                   ## CONSUMES
   gEfiMdeModulePkgTokenSpaceGuid.PcdCpuStackGuard                           ## CONSUMES
   gEfiMdeModulePkgTokenSpaceGuid.PcdFwVolDxeMaxEncapsulationDepth           ## CONSUMES
+  gEfiMdeModulePkgTokenSpaceGuid.PcdImageLargeAddressLoad                   ## CONSUMES
 
 # [Hob]
 # RESOURCE_DESCRIPTOR   ## CONSUMES

@@ -1,13 +1,12 @@
 /** @file
 Common library assistance routines.
 
-Copyright (c) 2004 - 2018, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2004 - 2025, Intel Corporation. All rights reserved.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _EFI_COMMON_LIB_H
-#define _EFI_COMMON_LIB_H
+#pragma once
 
 #include <Common/UefiBaseTypes.h>
 #include <Common/BuildVersion.h>
@@ -95,13 +94,6 @@ GetFileImage (
   )
 ;
 
-EFI_STATUS
-PutFileImage (
-  IN CHAR8    *OutputFileName,
-  IN CHAR8    *OutputFileImage,
-  IN UINT32   BytesToWrite
-  )
-;
 /*++
 
 Routine Description:
@@ -122,6 +114,13 @@ Returns:
   EFI_OUT_OF_RESOURCES     No resource to complete operations.
 
 **/
+EFI_STATUS
+PutFileImage (
+  IN CHAR8    *OutputFileName,
+  IN CHAR8    *OutputFileImage,
+  IN UINT32   BytesToWrite
+  )
+;
 
 UINT8
 CalculateChecksum8 (
@@ -450,10 +449,12 @@ Returns:
 #define _stricmp strcasecmp
 #define strnicmp strncasecmp
 #define strcmpi strcasecmp
-size_t _filelength(int fd);
-#ifndef __CYGWIN__
-char *strlwr(char *s);
 #endif
+
+#ifdef _WIN32
+#include <io.h> // io.h provides the declaration of _filelength on Windows
+#else
+size_t _filelength(int fd); // Only declare this on non-Windows systems
 #endif
 
 //
@@ -464,6 +465,4 @@ char *strlwr(char *s);
 #define mkdir(dir, perm) mkdir(dir, perm)
 #else
 #define mkdir(dir, perm) mkdir(dir)
-#endif
-
 #endif

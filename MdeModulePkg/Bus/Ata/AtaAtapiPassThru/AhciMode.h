@@ -6,8 +6,7 @@
 
 **/
 
-#ifndef __ATA_HC_AHCI_MODE_H__
-#define __ATA_HC_AHCI_MODE_H__
+#pragma once
 
 #define EFI_AHCI_BAR_INDEX  0x05
 
@@ -146,7 +145,8 @@ typedef union {
 #define   EFI_AHCI_PORT_TFD_BSY           BIT7
 #define   EFI_AHCI_PORT_TFD_DRQ           BIT3
 #define   EFI_AHCI_PORT_TFD_ERR           BIT0
-#define   EFI_AHCI_PORT_TFD_ERR_MASK      0x00FF00
+#define   EFI_AHCI_PORT_TFD_ERR_MASK      0x00FF00 // ERROR field is specified by ATA/ATAPI Command Set specification
+#define   EFI_AHCI_PORT_TFD_ERR_INT_CRC   BIT15
 #define EFI_AHCI_PORT_SIG                 0x0024
 #define EFI_AHCI_PORT_SSTS                0x0028
 #define   EFI_AHCI_PORT_SSTS_DET_MASK     0x000F
@@ -193,7 +193,7 @@ typedef union {
 #define   AHCI_PORT_DEVSLP_DITO_MASK      0x01FF8000
 #define   AHCI_PORT_DEVSLP_DM_MASK        0x1E000000
 
-#define AHCI_COMMAND_RETRIES  5
+#define AHCI_COMMAND_RETRIES  (PcdGet32 (PcdAhciCommandRetryCount))
 
 #pragma pack(1)
 //
@@ -392,5 +392,3 @@ AhciStopCommand (
   IN  UINT8                Port,
   IN  UINT64               Timeout
   );
-
-#endif

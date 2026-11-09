@@ -2,18 +2,14 @@
   This file include all platform action which can be customized
   by IBV/OEM.
 
-Copyright (c) 2015 - 2021, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2015 - 2023, Intel Corporation. All rights reserved.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
 #include "PlatformBootManager.h"
 #include "PlatformConsole.h"
-#include <Protocol/PlatformBootManagerOverride.h>
-#include <Guid/BootManagerMenu.h>
-#include <Library/HobLib.h>
-
-UNIVERSAL_PAYLOAD_PLATFORM_BOOT_MANAGER_OVERRIDE_PROTOCOL  *mUniversalPayloadPlatformBootManagerOverrideInstance = NULL;
+#include <Protocol/FirmwareVolume2.h>
 
 /**
   Signal EndOfDxe event and install SMM Ready to lock protocol.
@@ -93,6 +89,77 @@ PlatformFindLoadOption (
 }
 
 /**
+  Get the FV device path for the shell file.
+
+  @return   A pointer to device path structure.
+**/
+EFI_DEVICE_PATH_PROTOCOL *
+BdsGetShellFvDevicePath (
+  VOID
+  )
+{
+  UINTN                          FvHandleCount;
+  EFI_HANDLE                     *FvHandleBuffer;
+  UINTN                          Index;
+  EFI_STATUS                     Status;
+  EFI_FIRMWARE_VOLUME2_PROTOCOL  *Fv;
+  UINTN                          Size;
+  UINT32                         AuthenticationStatus;
+  EFI_DEVICE_PATH_PROTOCOL       *DevicePath;
+  EFI_FV_FILETYPE                FoundType;
+  EFI_FV_FILE_ATTRIBUTES         FileAttributes;
+
+  Status = EFI_SUCCESS;
+  gBS->LocateHandleBuffer (
+         ByProtocol,
+         &gEfiFirmwareVolume2ProtocolGuid,
+         NULL,
+         &FvHandleCount,
+         &FvHandleBuffer
+         );
+
+  for (Index = 0; Index < FvHandleCount; Index++) {
+    Size = 0;
+    gBS->HandleProtocol (
+           FvHandleBuffer[Index],
+           &gEfiFirmwareVolume2ProtocolGuid,
+           (VOID **)&Fv
+           );
+    Status = Fv->ReadFile (
+                   Fv,
+                   &gUefiShellFileGuid,
+                   NULL,
+                   &Size,
+                   &FoundType,
+                   &FileAttributes,
+                   &AuthenticationStatus
+                   );
+    if (!EFI_ERROR (Status)) {
+      //
+      // Found the shell file
+      //
+      break;
+    }
+  }
+
+  if (EFI_ERROR (Status)) {
+    if (FvHandleCount) {
+      FreePool (FvHandleBuffer);
+    }
+
+    return NULL;
+  }
+
+  DevicePath = DevicePathFromHandle (FvHandleBuffer[Index]);
+
+  if (FvHandleCount) {
+    FreePool (FvHandleBuffer);
+  }
+
+  return DevicePath;
+}
+
+/**
   Register a boot option using a file GUID in the FV.
 
   @param FileGuid     The file GUID name in FV.
@@ -112,15 +179,11 @@ PlatformRegisterFvBootOption (
   EFI_BOOT_MANAGER_LOAD_OPTION       *BootOptions;
   UINTN                              BootOptionCount;
   MEDIA_FW_VOL_FILEPATH_DEVICE_PATH  FileNode;
-  EFI_LOADED_IMAGE_PROTOCOL          *LoadedImage;
   EFI_DEVICE_PATH_PROTOCOL           *DevicePath;
-
-  Status = gBS->HandleProtocol (gImageHandle, &gEfiLoadedImageProtocolGuid, (VOID **)&LoadedImage);
-  ASSERT_EFI_ERROR (Status);
 
   EfiInitializeFwVolDevicepathNode (&FileNode, FileGuid);
   DevicePath = AppendDevicePathNode (
-                 DevicePathFromHandle (LoadedImage->DeviceHandle),
+                 BdsGetShellFvDevicePath (),
                  (EFI_DEVICE_PATH_PROTOCOL *)&FileNode
                  );
 
@@ -163,21 +226,11 @@ PlatformBootManagerBeforeConsole (
   VOID
   )
 {
+  EFI_STATUS                    Status;
   EFI_INPUT_KEY                 Enter;
-  EFI_INPUT_KEY                 F2;
+  EFI_INPUT_KEY                 CustomKey;
   EFI_INPUT_KEY                 Down;
   EFI_BOOT_MANAGER_LOAD_OPTION  BootOption;
-  EFI_STATUS                    Status;
-
-  Status = gBS->LocateProtocol (&gUniversalPayloadPlatformBootManagerOverrideProtocolGuid, NULL, (VOID **)&mUniversalPayloadPlatformBootManagerOverrideInstance);
-  if (EFI_ERROR (Status)) {
-    mUniversalPayloadPlatformBootManagerOverrideInstance = NULL;
-  }
-
-  if (mUniversalPayloadPlatformBootManagerOverrideInstance != NULL) {
-    mUniversalPayloadPlatformBootManagerOverrideInstance->BeforeConsole ();
-    return;
-  }
 
   //
   // Register ENTER as CONTINUE key
@@ -186,13 +239,22 @@ PlatformBootManagerBeforeConsole (
   Enter.UnicodeChar = CHAR_CARRIAGE_RETURN;
   EfiBootManagerRegisterContinueKeyOption (0, &Enter, NULL);
 
-  //
-  // Map F2 to Boot Manager Menu
-  //
-  F2.ScanCode    = SCAN_F2;
-  F2.UnicodeChar = CHAR_NULL;
+  if (FixedPcdGetBool (PcdBootManagerEscape)) {
+    //
+    // Map Esc to Boot Manager Menu
+    //
+    CustomKey.ScanCode    = SCAN_ESC;
+    CustomKey.UnicodeChar = CHAR_NULL;
+  } else {
+    //
+    // Map Esc to Boot Manager Menu
+    //
+    CustomKey.ScanCode    = SCAN_F2;
+    CustomKey.UnicodeChar = CHAR_NULL;
+  }
+
   EfiBootManagerGetBootManagerMenu (&BootOption);
-  EfiBootManagerAddKeyOptionVariable (NULL, (UINT16)BootOption.OptionNumber, 0, &F2, NULL);
+  EfiBootManagerAddKeyOptionVariable (NULL, (UINT16)BootOption.OptionNumber, 0, &CustomKey, NULL);
 
   //
   // Also add Down key to Boot Manager Menu since some serial terminals don't support F2 key.
@@ -201,6 +263,17 @@ PlatformBootManagerBeforeConsole (
   Down.UnicodeChar = CHAR_NULL;
   EfiBootManagerGetBootManagerMenu (&BootOption);
   EfiBootManagerAddKeyOptionVariable (NULL, (UINT16)BootOption.OptionNumber, 0, &Down, NULL);
+
+  //
+  // Process update capsules that don't contain embedded drivers.
+  //
+  if (GetBootModeHob () == BOOT_ON_FLASH_UPDATE) {
+    // TODO: when enabling capsule support for laptops, add a battery check here
+    Status = ProcessCapsules ();
+    if (EFI_ERROR (Status)) {
+      DEBUG ((DEBUG_ERROR, "%a(): ProcessCapsule() failed with: %r\n", __func__, Status));
+    }
+  }
 
   //
   // Install ready to lock.
@@ -234,29 +307,69 @@ PlatformBootManagerAfterConsole (
 {
   EFI_GRAPHICS_OUTPUT_BLT_PIXEL  Black;
   EFI_GRAPHICS_OUTPUT_BLT_PIXEL  White;
-
-  if (mUniversalPayloadPlatformBootManagerOverrideInstance != NULL) {
-    mUniversalPayloadPlatformBootManagerOverrideInstance->AfterConsole ();
-    return;
-  }
+  EDKII_PLATFORM_LOGO_PROTOCOL   *PlatformLogo;
+  EFI_STATUS                     Status;
 
   Black.Blue = Black.Green = Black.Red = Black.Reserved = 0;
   White.Blue = White.Green = White.Red = White.Reserved = 0xFF;
+
+  Status = gBS->LocateProtocol (&gEdkiiPlatformLogoProtocolGuid, NULL, (VOID **)&PlatformLogo);
+
+  if (!EFI_ERROR (Status)) {
+    gST->ConOut->ClearScreen (gST->ConOut);
+    BootLogoEnableLogo ();
+  }
 
   EfiBootManagerConnectAll ();
   EfiBootManagerRefreshAllBootOption ();
 
   //
+  // Active BOOT_ON_FLASH_UPDATE mode means that at least one capsule has been
+  // discovered by a bootloader and passed for further processing into EDK which
+  // created EFI_HOB_TYPE_UEFI_CAPSULE HOB(s).
+  //
+  // Process update capsules that weren't processed on the first call to
+  // ProcessCapsules() in PlatformBootManagerBeforeConsole().
+  //
+  if (GetBootModeHob () == BOOT_ON_FLASH_UPDATE) {
+    // TODO: when enabling capsule support for laptops, add a battery check here
+    Status = ProcessCapsules ();
+    if (EFI_ERROR (Status)) {
+      DEBUG ((DEBUG_ERROR, "%a(): ProcessCapsule() failed with: %r\n", __func__, Status));
+    }
+
+    //
+    // Reset the system to disable SMI handler in order to exclude the
+    // possibility of it being used outside of the firmware.
+    //
+    // In practice, this will rarely execute because even the first
+    // ProcessCapsules() invocation might do a reset if all capsules were
+    // processed and at least one of them needed a reset.  This is just to catch
+    // a case when this doesn't happen which is possible on error.
+    //
+    gRT->ResetSystem (EfiResetCold, EFI_SUCCESS, 0, NULL);
+  }
+
+  //
   // Register UEFI Shell
   //
-  PlatformRegisterFvBootOption (PcdGetPtr (PcdShellFile), L"UEFI Shell", LOAD_OPTION_ACTIVE);
+  PlatformRegisterFvBootOption (&gUefiShellFileGuid, L"UEFI Shell", LOAD_OPTION_ACTIVE);
 
-  Print (
-    L"\n"
-    L"F2 or Down      to enter Boot Manager Menu.\n"
-    L"ENTER           to boot directly.\n"
-    L"\n"
-    );
+  if (FixedPcdGetBool (PcdBootManagerEscape)) {
+    Print (
+      L"\n"
+      L"    Esc or Down      to enter Boot Manager Menu.\n"
+      L"    ENTER            to boot directly.\n"
+      L"\n"
+      );
+  } else {
+    Print (
+      L"\n"
+      L"    F2 or Down      to enter Boot Manager Menu.\n"
+      L"    ENTER           to boot directly.\n"
+      L"\n"
+      );
+  }
 }
 
 /**
@@ -270,10 +383,6 @@ PlatformBootManagerWaitCallback (
   UINT16  TimeoutRemain
   )
 {
-  if (mUniversalPayloadPlatformBootManagerOverrideInstance != NULL) {
-    mUniversalPayloadPlatformBootManagerOverrideInstance->WaitCallback (TimeoutRemain);
-  }
-
   return;
 }
 
@@ -290,62 +399,5 @@ PlatformBootManagerUnableToBoot (
   VOID
   )
 {
-  if (mUniversalPayloadPlatformBootManagerOverrideInstance != NULL) {
-    mUniversalPayloadPlatformBootManagerOverrideInstance->UnableToBoot ();
-  }
-
   return;
-}
-
-/**
-  Get/update PcdBootManagerMenuFile from GUID HOB which will be assigned in bootloader.
-
-  @param  ImageHandle   The firmware allocated handle for the EFI image.
-  @param  SystemTable   A pointer to the EFI System Table.
-
-  @retval EFI_SUCCESS       The entry point is executed successfully.
-  @retval other             Some error occurs.
-
-**/
-EFI_STATUS
-EFIAPI
-PlatformBootManagerLibConstructor (
-  IN EFI_HANDLE        ImageHandle,
-  IN EFI_SYSTEM_TABLE  *SystemTable
-  )
-{
-  EFI_STATUS                           Status;
-  UINTN                                Size;
-  VOID                                 *GuidHob;
-  UNIVERSAL_PAYLOAD_GENERIC_HEADER     *GenericHeader;
-  UNIVERSAL_PAYLOAD_BOOT_MANAGER_MENU  *BootManagerMenuFile;
-
-  GuidHob = GetFirstGuidHob (&gEdkiiBootManagerMenuFileGuid);
-
-  if (GuidHob == NULL) {
-    //
-    // If the HOB is not create, the default value of PcdBootManagerMenuFile will be used.
-    //
-    return EFI_SUCCESS;
-  }
-
-  GenericHeader = (UNIVERSAL_PAYLOAD_GENERIC_HEADER *)GET_GUID_HOB_DATA (GuidHob);
-  if ((sizeof (UNIVERSAL_PAYLOAD_GENERIC_HEADER) > GET_GUID_HOB_DATA_SIZE (GuidHob)) || (GenericHeader->Length > GET_GUID_HOB_DATA_SIZE (GuidHob))) {
-    return EFI_NOT_FOUND;
-  }
-
-  if (GenericHeader->Revision == UNIVERSAL_PAYLOAD_BOOT_MANAGER_MENU_REVISION) {
-    BootManagerMenuFile = (UNIVERSAL_PAYLOAD_BOOT_MANAGER_MENU *)GET_GUID_HOB_DATA (GuidHob);
-    if (BootManagerMenuFile->Header.Length < UNIVERSAL_PAYLOAD_SIZEOF_THROUGH_FIELD (UNIVERSAL_PAYLOAD_BOOT_MANAGER_MENU, FileName)) {
-      return EFI_NOT_FOUND;
-    }
-
-    Size   = sizeof (BootManagerMenuFile->FileName);
-    Status = PcdSetPtrS (PcdBootManagerMenuFile, &Size, &BootManagerMenuFile->FileName);
-    ASSERT_EFI_ERROR (Status);
-  } else {
-    return EFI_NOT_FOUND;
-  }
-
-  return EFI_SUCCESS;
 }

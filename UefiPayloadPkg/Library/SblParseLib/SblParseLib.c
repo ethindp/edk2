@@ -14,6 +14,7 @@
 #include <Library/IoLib.h>
 #include <Library/HobLib.h>
 #include <Library/BlParseLib.h>
+#include <Library/SmmStoreParseLib.h>
 #include <IndustryStandard/Acpi.h>
 #include <UniversalPayload/PciRootBridges.h>
 
@@ -110,9 +111,28 @@ ParseMemoryInfo (
 }
 
 /**
+  Parse the boot mode from the coreboot table in memory.
+
+  @param  Mode                Pointer to the boot mode variable
+
+  @retval RETURN_SUCCESS      Successfully find out the boot mode
+  @retval RETURN_NOT_FOUND    Failed to find the boot information.
+  @retval RETURN_UNSUPPORTED  Feature is not supported by the bootloader.
+
+**/
+RETURN_STATUS
+EFIAPI
+ParseBootMode (
+  OUT EFI_BOOT_MODE  *Mode
+  )
+{
+  return RETURN_UNSUPPORTED;
+}
+
+/**
   Acquire SMBIOS table from slim bootloader.
 
-  @param  SmbiosTable           Pointer to the SMBIOS table info.
+  @param  SmBiosEntryPoint          Pointer to the SMBIOS structure.
 
   @retval RETURN_SUCCESS            Successfully find out the tables.
   @retval RETURN_NOT_FOUND          Failed to find the tables.
@@ -121,10 +141,14 @@ ParseMemoryInfo (
 RETURN_STATUS
 EFIAPI
 ParseSmbiosTable (
-  OUT UNIVERSAL_PAYLOAD_SMBIOS_TABLE  *SmbiosTable
+  OUT UINT64  *SmBiosEntryPoint
   )
 {
   UNIVERSAL_PAYLOAD_SMBIOS_TABLE  *TableInfo;
+
+  if (SmBiosEntryPoint == NULL) {
+    return RETURN_INVALID_PARAMETER;
+  }
 
   TableInfo = (UNIVERSAL_PAYLOAD_SMBIOS_TABLE *)GetGuidHobDataFromSbl (&gUniversalPayloadSmbiosTableGuid);
   if (TableInfo == NULL) {
@@ -132,7 +156,7 @@ ParseSmbiosTable (
     return RETURN_NOT_FOUND;
   }
 
-  SmbiosTable->SmBiosEntryPoint = TableInfo->SmBiosEntryPoint;
+  *SmBiosEntryPoint = TableInfo->SmBiosEntryPoint;
 
   return RETURN_SUCCESS;
 }
@@ -288,4 +312,59 @@ ParseMiscInfo (
   }
 
   return Status;
+}
+
+/**
+  Find the SmmStore HOB.
+
+  @param  SmmStoreInfo       Pointer to the SMMSTORE_INFO structure
+
+  @retval RETURN_SUCCESS     Successfully found the Smm store buffer information.
+  @retval RETURN_NOT_FOUND   Failed to find the Smm store buffer information.
+**/
+RETURN_STATUS
+EFIAPI
+ParseSmmStoreInfo (
+  OUT SMMSTORE_INFO  *SmmStoreInfo
+  )
+{
+  return RETURN_NOT_FOUND;
+}
+
+/**
+  Parse firmware information passed in by bootloader
+
+  @param  FwInfo   Information about current firmware.
+
+  @retval RETURN_INVALID_PARAMETER  The parameter is NULL.
+  @retval RETURN_SUCCESS            Successfully parsed information.
+  @retval RETURN_NOT_FOUND          The information is missing.
+**/
+RETURN_STATUS
+EFIAPI
+ParseFirmwareInfo (
+  OUT FIRMWARE_INFO  *FwInfo
+  )
+{
+  return RETURN_NOT_FOUND;
+}
+
+/**
+  Parse update capsules passed in by bootloader
+
+  @param  CapsuleCallback   The callback routine invoked for each capsule.
+
+  @retval RETURN_SUCCESS    Successfully parsed capsules.
+  @retval RETURN_NOT_FOUND  Failed to look up the information.
+**/
+RETURN_STATUS
+EFIAPI
+ParseCapsules (
+  IN BL_CAPSULE_CALLBACK  CapsuleCallback
+  )
+{
+  //
+  // Treat not supporting this function like reporting zero capsules.
+  //
+  return RETURN_SUCCESS;
 }

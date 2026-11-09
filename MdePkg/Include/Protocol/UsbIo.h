@@ -10,8 +10,7 @@
 
 **/
 
-#ifndef __USB_IO_H__
-#define __USB_IO_H__
+#pragma once
 
 #include <IndustryStandard/Usb.h>
 
@@ -30,11 +29,13 @@ typedef struct _EFI_USB_IO_PROTOCOL EFI_USB_IO_PROTOCOL;
 //
 
 //
-// USB standard descriptors and reqeust
+// USB standard descriptors and request
 //
 typedef USB_DEVICE_REQUEST       EFI_USB_DEVICE_REQUEST;
 typedef USB_DEVICE_DESCRIPTOR    EFI_USB_DEVICE_DESCRIPTOR;
 typedef USB_CONFIG_DESCRIPTOR    EFI_USB_CONFIG_DESCRIPTOR;
+typedef USB_BOS_DESCRIPTOR       EFI_USB_BOS_DESCRIPTOR;
+typedef USB_DEV_CAP_DESCRIPTOR   EFI_USB_DEV_CAP_DESCRIPTOR;
 typedef USB_INTERFACE_DESCRIPTOR EFI_USB_INTERFACE_DESCRIPTOR;
 typedef USB_ENDPOINT_DESCRIPTOR  EFI_USB_ENDPOINT_DESCRIPTOR;
 
@@ -105,7 +106,7 @@ EFI_STATUS
 
   @retval EFI_SUCCESS           The control transfer has been successfully executed.
   @retval EFI_DEVICE_ERROR      The transfer failed. The transfer status is returned in Status.
-  @retval EFI_INVALID_PARAMETE  One or more parameters are invalid.
+  @retval EFI_INVALID_PARAMETER One or more parameters are invalid.
   @retval EFI_OUT_OF_RESOURCES  The request could not be completed due to a lack of resources.
   @retval EFI_TIMEOUT           The control transfer fails due to timeout.
 
@@ -148,7 +149,7 @@ EFI_STATUS
 
   @retval EFI_SUCCESS           The bulk transfer has been successfully executed.
   @retval EFI_DEVICE_ERROR      The transfer failed. The transfer status is returned in Status.
-  @retval EFI_INVALID_PARAMETE  One or more parameters are invalid.
+  @retval EFI_INVALID_PARAMETER One or more parameters are invalid.
   @retval EFI_OUT_OF_RESOURCES  The request could not be submitted due to a lack of resources.
   @retval EFI_TIMEOUT           The control transfer fails due to timeout.
 
@@ -501,5 +502,3 @@ struct _EFI_USB_IO_PROTOCOL {
 };
 
 extern EFI_GUID  gEfiUsbIoProtocolGuid;
-
-#endif

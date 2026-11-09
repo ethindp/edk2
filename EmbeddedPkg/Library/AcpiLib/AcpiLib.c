@@ -52,6 +52,9 @@ LocateAndInstallAcpiFromFvConditional (
   UINTN                          AcpiTableSize;
   UINTN                          AcpiTableKey;
   BOOLEAN                        Valid;
+  BOOLEAN                        FoundAcpiFile;
+
+  FoundAcpiFile = FALSE;
 
   // Ensure the ACPI Table is present
   Status = gBS->LocateProtocol (
@@ -107,47 +110,48 @@ LocateAndInstallAcpiFromFvConditional (
                              &SectionSize,
                              &FvStatus
                              );
-      if (!EFI_ERROR (Status)) {
-        AcpiTableKey  = 0;
-        AcpiTableSize = ((EFI_ACPI_DESCRIPTION_HEADER *)AcpiTable)->Length;
-        ASSERT (SectionSize >= AcpiTableSize);
 
-        DEBUG ((
-          DEBUG_ERROR,
-          "- Found '%c%c%c%c' ACPI Table\n",
-          (((EFI_ACPI_DESCRIPTION_HEADER *)AcpiTable)->Signature & 0xFF),
-          ((((EFI_ACPI_DESCRIPTION_HEADER *)AcpiTable)->Signature >> 8) & 0xFF),
-          ((((EFI_ACPI_DESCRIPTION_HEADER *)AcpiTable)->Signature >> 16) & 0xFF),
-          ((((EFI_ACPI_DESCRIPTION_HEADER *)AcpiTable)->Signature >> 24) & 0xFF)
-          ));
-
-        // Is the ACPI table valid?
-        if (CheckAcpiTableFunction) {
-          Valid = CheckAcpiTableFunction ((EFI_ACPI_DESCRIPTION_HEADER *)AcpiTable);
-        } else {
-          Valid = TRUE;
-        }
-
-        // Install the ACPI Table
-        if (Valid) {
-          Status = AcpiProtocol->InstallAcpiTable (
-                                   AcpiProtocol,
-                                   AcpiTable,
-                                   AcpiTableSize,
-                                   &AcpiTableKey
-                                   );
-        }
-
-        // Free memory allocated by ReadSection
-        gBS->FreePool (AcpiTable);
-
-        if (EFI_ERROR (Status)) {
-          break;
-        }
-
-        // Increment the section instance
-        SectionInstance++;
+      if (EFI_ERROR (Status)) {
+        break;
       }
+
+      FoundAcpiFile = TRUE;
+
+      AcpiTableKey  = 0;
+      AcpiTableSize = ((EFI_ACPI_DESCRIPTION_HEADER *)AcpiTable)->Length;
+      ASSERT (SectionSize >= AcpiTableSize);
+
+      DEBUG ((
+        DEBUG_INFO,
+        "- Found '%c%c%c%c' ACPI Table\n",
+        (((EFI_ACPI_DESCRIPTION_HEADER *)AcpiTable)->Signature & 0xFF),
+        ((((EFI_ACPI_DESCRIPTION_HEADER *)AcpiTable)->Signature >> 8) & 0xFF),
+        ((((EFI_ACPI_DESCRIPTION_HEADER *)AcpiTable)->Signature >> 16) & 0xFF),
+        ((((EFI_ACPI_DESCRIPTION_HEADER *)AcpiTable)->Signature >> 24) & 0xFF)
+        ));
+
+      // Is the ACPI table valid?
+      if (CheckAcpiTableFunction != NULL) {
+        Valid = CheckAcpiTableFunction ((EFI_ACPI_DESCRIPTION_HEADER *)AcpiTable);
+      } else {
+        Valid = TRUE;
+      }
+
+      // Install the ACPI Table
+      if (Valid) {
+        Status = AcpiProtocol->InstallAcpiTable (
+                                 AcpiProtocol,
+                                 AcpiTable,
+                                 AcpiTableSize,
+                                 &AcpiTableKey
+                                 );
+      }
+
+      // Free memory allocated by ReadSection
+      gBS->FreePool (AcpiTable);
+
+      // Increment the section instance
+      SectionInstance++;
     }
   }
 
@@ -157,7 +161,7 @@ FREE_HANDLE_BUFFER:
   //
   gBS->FreePool (HandleBuffer);
 
-  return EFI_SUCCESS;
+  return (FoundAcpiFile ? EFI_SUCCESS : EFI_NOT_FOUND);
 }
 
 /**
@@ -192,13 +196,13 @@ LocateAndInstallAcpiFromFv (
 EFI_STATUS
 EFIAPI
 AcpiUpdateChecksum (
-  IN OUT  UINT8      *Buffer,
-  IN      UINTN      Size
+  IN OUT  UINT8  *Buffer,
+  IN      UINTN  Size
   )
 {
-  UINTN ChecksumOffset;
+  UINTN  ChecksumOffset;
 
-  if (Buffer == NULL || Size == 0) {
+  if ((Buffer == NULL) || (Size == 0)) {
     return EFI_INVALID_PARAMETER;
   }
 
@@ -237,11 +241,11 @@ AcpiUpdateChecksum (
 EFI_STATUS
 EFIAPI
 AcpiLocateTableBySignature (
-  IN      EFI_ACPI_SDT_PROTOCOL           *AcpiSdtProtocol,
-  IN      UINT32                          TableSignature,
-  IN OUT  UINTN                           *Index,
-  OUT     EFI_ACPI_DESCRIPTION_HEADER     **Table,
-  OUT     UINTN                           *TableKey
+  IN      EFI_ACPI_SDT_PROTOCOL        *AcpiSdtProtocol,
+  IN      UINT32                       TableSignature,
+  IN OUT  UINTN                        *Index,
+  OUT     EFI_ACPI_DESCRIPTION_HEADER  **Table,
+  OUT     UINTN                        *TableKey
   )
 {
   EFI_STATUS              Status;
@@ -249,9 +253,10 @@ AcpiLocateTableBySignature (
   EFI_ACPI_TABLE_VERSION  TableVersion;
   UINTN                   TableIndex;
 
-  if (AcpiSdtProtocol == NULL
-      || Table == NULL
-      || TableKey == NULL) {
+  if (  (AcpiSdtProtocol == NULL)
+     || (Table == NULL)
+     || (TableKey == NULL))
+  {
     return EFI_INVALID_PARAMETER;
   }
 
@@ -261,7 +266,7 @@ AcpiLocateTableBySignature (
   // Search for ACPI Table with matching signature
   //
   TableVersion = 0;
-  TableIndex = *Index;
+  TableIndex   = *Index;
   while (!EFI_ERROR (Status)) {
     Status = AcpiSdtProtocol->GetAcpiTable (
                                 TableIndex,
@@ -286,7 +291,7 @@ AcpiLocateTableBySignature (
 /**
   This function updates the integer value of an AML Object.
 
-  @param  AcpiTableSdtProtocol    Pointer to ACPI SDT protocol.
+  @param  AcpiSdtProtocol         Pointer to ACPI SDT protocol.
   @param  TableHandle             Points to the table representing the starting point
                                   for the object path search.
   @param  AsciiObjectPath         Pointer to the ACPI path of the object being updated.
@@ -296,31 +301,44 @@ AcpiLocateTableBySignature (
   @return EFI_INVALID_PARAMETER   At least one of parameters is invalid or the data type
                                   of the ACPI object is not an integer value.
   @retval EFI_NOT_FOUND           The object is not found with the given path.
+  @retval EFI_UNSUPPORTED         The object uses ZeroOp/OneOp encoding and cannot be
+                                  safely updated to a value other than 0 or 1.
+
+  @attention  IMPORTANT LIMITATION:
+      If the original ASL code uses Name (XXX, 0) or Name (XXX, 1),
+      the iASL compiler optimizes it to 1-byte ZeroOp/OneOp encoding.
+      This function CANNOT safely update such objects to values other than 0 or 1,
+      because there is no space to expand to BytePrefix encoding (2 bytes).
+
+      WORKAROUND: In ASL source, use an initial value >= 2, e.g.:
+          Name (_STA, 0xF)    // Forces BytePrefix encoding, reserves 2 bytes
+      instead of:
+          Name (_STA, 0x0)    // Optimized to ZeroOp, only 1 byte!
 
 **/
 EFI_STATUS
 EFIAPI
 AcpiAmlObjectUpdateInteger (
-  IN  EFI_ACPI_SDT_PROTOCOL           *AcpiSdtProtocol,
-  IN  EFI_ACPI_HANDLE                 TableHandle,
-  IN  CHAR8                           *AsciiObjectPath,
-  IN  UINTN                           Value
+  IN  EFI_ACPI_SDT_PROTOCOL  *AcpiSdtProtocol,
+  IN  EFI_ACPI_HANDLE        TableHandle,
+  IN  CHAR8                  *AsciiObjectPath,
+  IN  UINTN                  Value
   )
 {
-  EFI_STATUS            Status;
-  EFI_ACPI_HANDLE       ObjectHandle;
-  EFI_ACPI_HANDLE       DataHandle;
-  EFI_ACPI_DATA_TYPE    DataType;
-  UINT8                 *Buffer;
-  UINTN                 BufferSize;
-  UINTN                 DataSize;
+  EFI_STATUS          Status;
+  EFI_ACPI_HANDLE     ObjectHandle;
+  EFI_ACPI_HANDLE     DataHandle;
+  EFI_ACPI_DATA_TYPE  DataType;
+  UINT8               *Buffer;
+  UINTN               BufferSize;
+  UINTN               DataSize;
 
-  if (AcpiSdtProtocol == NULL || AsciiObjectPath == NULL) {
+  if ((AcpiSdtProtocol == NULL) || (AsciiObjectPath == NULL)) {
     return EFI_INVALID_PARAMETER;
   }
 
   ObjectHandle = NULL;
-  DataHandle = NULL;
+  DataHandle   = NULL;
 
   Status = AcpiSdtProtocol->FindPath (TableHandle, AsciiObjectPath, &ObjectHandle);
   if (EFI_ERROR (Status)) {
@@ -332,6 +350,7 @@ AcpiAmlObjectUpdateInteger (
     Status = EFI_NOT_FOUND;
     goto Exit;
   }
+
   ASSERT (DataType == EFI_ACPI_DATA_TYPE_OPCODE);
   ASSERT (Buffer != NULL);
 
@@ -350,34 +369,73 @@ AcpiAmlObjectUpdateInteger (
   ASSERT (DataType == EFI_ACPI_DATA_TYPE_OPCODE);
   ASSERT (Buffer != NULL);
 
-  if (Buffer[0] == AML_ZERO_OP || Buffer[0] == AML_ONE_OP) {
-    Status = AcpiSdtProtocol->SetOption (DataHandle, 0, (VOID *)&Value, sizeof (UINT8));
-    ASSERT_EFI_ERROR (Status);
+  if ((Buffer[0] == AML_ZERO_OP) || (Buffer[0] == AML_ONE_OP)) {
+    //
+    // ZeroOp (0x00) and OneOp (0x01) are optimized 1-byte encodings where
+    // the value is implicit in the opcode itself.
+    //
+    // Only values 0 and 1 can be updated safely because they can be represented
+    // using the same 1-byte encoding.
+    //
+    // Values >= 2 require BytePrefix encoding (opcode + data), which
+    // needs 2 bytes total. Since the ACPI table is byte-exact encoding with
+    // no reserved space, we CANNOT expand from 1 byte to 2 bytes.
+    //
+    // Attempting to do so (as the original code did) would silently
+    // corrupt the AML byte stream, causing subsequent ACPI name segments
+    // to be misinterpreted as data bytes, ultimately leading to kernel
+    // crashes when the OS parses the corrupted ACPI table.
+    //
+    if ((Value == 0) || (Value == 1)) {
+      UINT8  Opcode;
+
+      Opcode = (Value == 0) ? AML_ZERO_OP : AML_ONE_OP;
+      Status = AcpiSdtProtocol->SetOption (
+                                  DataHandle,
+                                  0,
+                                  &Opcode,
+                                  sizeof (UINT8)
+                                  );
+      ASSERT_EFI_ERROR (Status);
+    } else {
+      DEBUG ((
+        DEBUG_ERROR,
+        "ACPI: ERROR: Cannot update object '%a' from ZeroOp/OneOp to 0x%lx\n"
+        "ACPI:        No space to expand to BytePrefix encoding.\n"
+        "ACPI:        FIX: In ASL source, use an initial value >= 2 to\n"
+        "ACPI:             force BytePrefix, e.g. Name (_STA, 0xF)\n",
+        AsciiObjectPath,
+        Value
+        ));
+      ASSERT (FALSE);
+      Status = EFI_UNSUPPORTED;
+      goto Exit;
+    }
   } else {
     //
     // Check the size of data object
     //
     switch (Buffer[0]) {
-    case AML_BYTE_PREFIX:
-      DataSize = sizeof (UINT8);
-      break;
+      case AML_BYTE_PREFIX:
+        DataSize = sizeof (UINT8);
+        break;
 
-    case AML_WORD_PREFIX:
-      DataSize = sizeof (UINT16);
-      break;
+      case AML_WORD_PREFIX:
+        DataSize = sizeof (UINT16);
+        break;
 
-    case AML_DWORD_PREFIX:
-      DataSize = sizeof (UINT32);
-      break;
+      case AML_DWORD_PREFIX:
+        DataSize = sizeof (UINT32);
+        break;
 
-    case AML_QWORD_PREFIX:
-      DataSize = sizeof (UINT64);
-      break;
+      case AML_QWORD_PREFIX:
+        DataSize = sizeof (UINT64);
+        break;
 
-    default:
-      // The data type of the ACPI object is not an integer
-      Status = EFI_INVALID_PARAMETER;
-      goto Exit;
+      default:
+        // The data type of the ACPI object is not an integer
+        Status = EFI_INVALID_PARAMETER;
+        goto Exit;
     }
 
     Status = AcpiSdtProtocol->SetOption (DataHandle, 1, (VOID *)&Value, DataSize);

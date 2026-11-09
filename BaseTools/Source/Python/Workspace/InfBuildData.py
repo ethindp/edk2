@@ -14,6 +14,7 @@ from types import *
 from .MetaFileParser import *
 from collections import OrderedDict
 from Workspace.BuildClassObject import ModuleBuildClassObject, LibraryClassObject, PcdClassObject
+from Common.Expression import ValueExpressionEx, PcdPattern
 
 ## Get Protocol value from given packages
 #
@@ -113,7 +114,6 @@ class InfBuildData(ModuleBuildClassObject):
         self._Target = Target
         self._Toolchain = Toolchain
         self._Platform = TAB_COMMON
-        self._TailComments = None
         self._BaseName = None
         self._DxsFile = None
         self._ModuleType = None
@@ -122,7 +122,6 @@ class InfBuildData(ModuleBuildClassObject):
         self._Guid = None
         self._Version = None
         self._PcdIsDriver = None
-        self._BinaryModule = None
         self._Shadow = None
         self._MakefileName = None
         self._CustomMakefile = None
@@ -528,11 +527,17 @@ class InfBuildData(ModuleBuildClassObject):
         for Record in RecordList:
             LineNo = Record[-1]
             ToolChainFamily = Record[1]
-            TagName = Record[2]
-            ToolCode = Record[3]
-
+            # OptionsList := [TagName, ToolCode, FeatureFlag]
+            OptionsList = ['', '', '']
+            TokenList = GetSplitValueList(Record[2], TAB_VALUE_SPLIT)
+            for Index in range(len(TokenList)):
+                OptionsList[Index] = TokenList[Index]
+            if OptionsList[2]:
+                FeaturePcdExpression = self.CheckFeatureFlagPcd(OptionsList[2])
+                if not FeaturePcdExpression:
+                    continue
             File = PathClass(NormPath(Record[0], Macros), self._ModuleDir, '',
-                             '', False, self._Arch, ToolChainFamily, '', TagName, ToolCode)
+                             '', False, self._Arch, ToolChainFamily, '', OptionsList[0], OptionsList[1])
             # check the file validation
             ErrorCode, ErrorInfo = File.Validate()
             if ErrorCode != 0:
@@ -585,7 +590,7 @@ class InfBuildData(ModuleBuildClassObject):
         RecordList = self._RawData[MODEL_EFI_PROTOCOL, self._Arch, self._Platform]
         for Record in RecordList:
             CName = Record[0]
-            Value = _ProtocolValue(CName, self.Packages, self.MetaFile.Path)
+            Value = _ProtocolValue(CName, self.Packages, self.MetaFile.OriginalPath.Path)
             if Value is None:
                 PackageList = "\n\t".join(str(P) for P in self.Packages)
                 EdkLogger.error('build', RESOURCE_NOT_AVAILABLE,
@@ -609,7 +614,7 @@ class InfBuildData(ModuleBuildClassObject):
         RecordList = self._RawData[MODEL_EFI_PPI, self._Arch, self._Platform]
         for Record in RecordList:
             CName = Record[0]
-            Value = _PpiValue(CName, self.Packages, self.MetaFile.Path)
+            Value = _PpiValue(CName, self.Packages, self.MetaFile.OriginalPath.Path)
             if Value is None:
                 PackageList = "\n\t".join(str(P) for P in self.Packages)
                 EdkLogger.error('build', RESOURCE_NOT_AVAILABLE,
@@ -633,7 +638,7 @@ class InfBuildData(ModuleBuildClassObject):
         RecordList = self._RawData[MODEL_EFI_GUID, self._Arch, self._Platform]
         for Record in RecordList:
             CName = Record[0]
-            Value = GuidValue(CName, self.Packages, self.MetaFile.Path)
+            Value = GuidValue(CName, self.Packages, self.MetaFile.OriginalPath.Path)
             if Value is None:
                 PackageList = "\n\t".join(str(P) for P in self.Packages)
                 EdkLogger.error('build', RESOURCE_NOT_AVAILABLE,
@@ -648,7 +653,7 @@ class InfBuildData(ModuleBuildClassObject):
             for TokenSpaceGuid, _, _, _, _, _, LineNo in RecordList:
                 # get the guid value
                 if TokenSpaceGuid not in RetVal:
-                    Value = GuidValue(TokenSpaceGuid, self.Packages, self.MetaFile.Path)
+                    Value = GuidValue(TokenSpaceGuid, self.Packages, self.MetaFile.OriginalPath.Path)
                     if Value is None:
                         PackageList = "\n\t".join(str(P) for P in self.Packages)
                         EdkLogger.error('build', RESOURCE_NOT_AVAILABLE,
@@ -770,7 +775,7 @@ class InfBuildData(ModuleBuildClassObject):
         # PEIM and DXE drivers must have a valid [Depex] section
         if len(self.LibraryClass) == 0 and len(RecordList) == 0:
             if self.ModuleType == SUP_MODULE_DXE_DRIVER or self.ModuleType == SUP_MODULE_PEIM or self.ModuleType == SUP_MODULE_DXE_SMM_DRIVER or \
-                self.ModuleType == SUP_MODULE_DXE_SAL_DRIVER or self.ModuleType == SUP_MODULE_DXE_RUNTIME_DRIVER:
+                self.ModuleType == SUP_MODULE_DXE_RUNTIME_DRIVER:
                 EdkLogger.error('build', RESOURCE_NOT_AVAILABLE, "No [Depex] section or no valid expression in [Depex] section for [%s] module" \
                                 % self.ModuleType, File=self.MetaFile)
 
@@ -811,11 +816,11 @@ class InfBuildData(ModuleBuildClassObject):
                         Value = Token
                     else:
                         # get the GUID value now
-                        Value = _ProtocolValue(Token, self.Packages, self.MetaFile.Path)
+                        Value = _ProtocolValue(Token, self.Packages, self.MetaFile.OriginalPath.Path)
                         if Value is None:
-                            Value = _PpiValue(Token, self.Packages, self.MetaFile.Path)
+                            Value = _PpiValue(Token, self.Packages, self.MetaFile.OriginalPath.Path)
                             if Value is None:
-                                Value = GuidValue(Token, self.Packages, self.MetaFile.Path)
+                                Value = GuidValue(Token, self.Packages, self.MetaFile.OriginalPath.Path)
 
                     if Value is None:
                         PackageList = "\n\t".join(str(P) for P in self.Packages)
@@ -1046,6 +1051,48 @@ class InfBuildData(ModuleBuildClassObject):
         if (self.Binaries and not self.Sources) or GlobalData.gIgnoreSource:
             return True
         return False
+    def CheckFeatureFlagPcd(self,Instance):
+        Pcds = GlobalData.gPlatformFinalPcds.copy()
+        if PcdPattern.search(Instance):
+            PcdTuple = tuple(Instance.split('.')[::-1])
+            if PcdTuple in self.Pcds:
+                if not (self.Pcds[PcdTuple].Type == 'FeatureFlag' or self.Pcds[PcdTuple].Type == 'FixedAtBuild'):
+                    EdkLogger.error('build', FORMAT_INVALID,
+                                    "\nFeatureFlagPcd must be defined in a [PcdsFeatureFlag] or [PcdsFixedAtBuild] section of Dsc or Dec file",
+                                    File=str(self), ExtraData=Instance)
+                if not Instance in Pcds:
+                    Pcds[Instance] = self.Pcds[PcdTuple].DefaultValue
+            else: #if PcdTuple not in self.Pcds:
+                EdkLogger.error('build', FORMAT_INVALID,
+                                "\nFeatureFlagPcd must be defined in [FeaturePcd] or [FixedPcd] of Inf file",
+                                File=str(self), ExtraData=Instance)
+            if Instance in Pcds:
+                if Pcds[Instance] == '0':
+                    return False
+                elif Pcds[Instance] == '1':
+                    return True
+            try:
+                Value = ValueExpression(Instance, Pcds)()
+                if Value == True:
+                    return True
+                return False
+            except:
+                EdkLogger.warn('build', FORMAT_INVALID,"The FeatureFlagExpression cannot be evaluated", File=str(self), ExtraData=Instance)
+                return False
+        else:
+            for Name, Guid in self.Pcds:
+                if self.Pcds[(Name, Guid)].Type == 'FeatureFlag' or self.Pcds[(Name, Guid)].Type == 'FixedAtBuild':
+                    PcdFullName = '%s.%s' % (Guid, Name);
+                    if not PcdFullName in Pcds:
+                        Pcds[PcdFullName] = self.Pcds[(Name, Guid)].DefaultValue
+            try:
+                Value = ValueExpression(Instance, Pcds)()
+                if Value == True:
+                    return True
+                return False
+            except:
+                EdkLogger.warn('build', FORMAT_INVALID, "The FeatureFlagExpression cannot be evaluated", File=str(self), ExtraData=Instance)
+                return False
 def ExtendCopyDictionaryLists(CopyToDict, CopyFromDict):
     for Key in CopyFromDict:
         CopyToDict[Key].extend(CopyFromDict[Key])

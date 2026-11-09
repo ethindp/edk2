@@ -1,7 +1,7 @@
 /** @file
   The Hii functions for WiFi Connection Manager.
 
-  Copyright (c) 2019, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2019 - 2022, Intel Corporation. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -50,6 +50,8 @@ CHAR16  *mSecurityType[] = {
   L"WPA-Personal   ",
   L"WPA2-Personal  ",
   L"WEP            ",
+  L"WPA3-Personal  ",
+  L"WPA3-Enterprise",
   L"UnKnown        "
 };
 
@@ -266,9 +268,10 @@ WifiMgrGetStrAKMList (
   IN  WIFI_MGR_NETWORK_PROFILE  *Profile
   )
 {
-  UINT8   Index;
+  UINT16  Index;
   UINT16  AKMSuiteCount;
   CHAR16  *AKMListDisplay;
+  UINTN   Length;
 
   AKMListDisplay = NULL;
   if ((Profile == NULL) || (Profile->Network.AKMSuite == NULL)) {
@@ -278,19 +281,24 @@ WifiMgrGetStrAKMList (
   AKMSuiteCount = Profile->Network.AKMSuite->AKMSuiteCount;
   if (AKMSuiteCount != 0) {
     //
-    // Current AKM Suite is between 1-9
+    // Current AKM Suite is between 1-18
     //
-    AKMListDisplay = (CHAR16 *)AllocateZeroPool (sizeof (CHAR16) * AKMSuiteCount * 2);
+    AKMListDisplay = (CHAR16 *)AllocateZeroPool (sizeof (CHAR16) * (AKMSuiteCount * 3 + 1));
+    Length         = 0;
     if (AKMListDisplay != NULL) {
       for (Index = 0; Index < AKMSuiteCount; Index++) {
+        //
+        // The size of buffer should be 4 CHAR16 for Null-terminated Unicode string.
+        //
         UnicodeSPrint (
-          AKMListDisplay + (Index * 2),
-          sizeof (CHAR16) * 2,
+          AKMListDisplay + Length,
+          sizeof (CHAR16) * 4,
           L"%d ",
           Profile->Network.AKMSuite->AKMSuiteList[Index].SuiteType
           );
+        Length = StrLen (AKMListDisplay + Length) + Length;
         if (Index == AKMSuiteCount - 1) {
-          *(AKMListDisplay + (Index * 2 + 1)) = L'\0';
+          *(AKMListDisplay + (Length - 1)) = L'\0';
         }
       }
     }
@@ -319,7 +327,7 @@ WifiMgrGetStrCipherList (
   IN  WIFI_MGR_NETWORK_PROFILE  *Profile
   )
 {
-  UINT8   Index;
+  UINT16  Index;
   UINT16  CipherSuiteCount;
   CHAR16  *CipherListDisplay;
 
@@ -333,12 +341,16 @@ WifiMgrGetStrCipherList (
     //
     // Current Cipher Suite is between 1-9
     //
-    CipherListDisplay = (CHAR16 *)AllocateZeroPool (sizeof (CHAR16) * CipherSuiteCount * 2);
+    CipherListDisplay = (CHAR16 *)AllocateZeroPool (sizeof (CHAR16) * (CipherSuiteCount * 2 + 1));
     if (CipherListDisplay != NULL) {
       for (Index = 0; Index < CipherSuiteCount; Index++) {
+        //
+        // The size of buffer should be 3 CHAR16 for Null-terminated Unicode string.
+        // The first char is the Cipher Suite number, the second char is ' ', the third char is '\0'.
+        //
         UnicodeSPrint (
           CipherListDisplay + (Index * 2),
-          sizeof (CHAR16) * 2,
+          sizeof (CHAR16) * 3,
           L"%d ",
           Profile->Network.CipherSuite->CipherSuiteList[Index].SuiteType
           );
@@ -378,7 +390,6 @@ WifiMgrRefreshNetworkList (
 {
   EFI_STATUS                Status;
   EFI_TPL                   OldTpl;
-  UINT32                    AvailableCount;
   EFI_STRING_ID             PortPromptToken;
   EFI_STRING_ID             PortTextToken;
   EFI_STRING_ID             PortHelpToken;
@@ -406,7 +417,6 @@ WifiMgrRefreshNetworkList (
   }
 
   OldTpl            = gBS->RaiseTPL (TPL_CALLBACK);
-  AvailableCount    = 0;
   PortStringSize    = sizeof (PortString);
   ConnectedProfile  = NULL;
   AKMListDisplay    = NULL;
@@ -421,7 +431,6 @@ WifiMgrRefreshNetworkList (
         Private->CurrentNic->CurrentOperateNetwork->IsAvailable)
     {
       Profile = Private->CurrentNic->CurrentOperateNetwork;
-      AvailableCount++;
 
       AKMListDisplay = WifiMgrGetStrAKMList (Profile);
       if (AKMListDisplay == NULL) {
@@ -497,8 +506,6 @@ WifiMgrRefreshNetworkList (
     }
 
     if (Profile->IsAvailable && Profile->CipherSuiteSupported) {
-      AvailableCount++;
-
       AKMListDisplay = WifiMgrGetStrAKMList (Profile);
       if (AKMListDisplay == NULL) {
         Status = EFI_OUT_OF_RESOURCES;
@@ -586,8 +593,6 @@ WifiMgrRefreshNetworkList (
     }
 
     if (Profile->IsAvailable && !Profile->CipherSuiteSupported) {
-      AvailableCount++;
-
       AKMListDisplay = WifiMgrGetStrAKMList (Profile);
       if (AKMListDisplay == NULL) {
         Status = EFI_OUT_OF_RESOURCES;
@@ -1339,7 +1344,6 @@ WifiMgrDxeHiiConfigAccessRouteConfig (
   @retval EFI_SUCCESS            The callback successfully handled the action.
   @retval EFI_OUT_OF_RESOURCES   Not enough storage is available to hold the
                                  variable and its data.
-  @retval EFI_DEVICE_ERROR       The variable could not be saved.
   @retval EFI_UNSUPPORTED        The specified Action is not supported by the
                                  callback.
 
@@ -1388,7 +1392,7 @@ WifiMgrDxeHiiConfigAccessCallback (
   Status  = EFI_SUCCESS;
   Private = WIFI_MGR_PRIVATE_DATA_FROM_CONFIG_ACCESS (This);
   if (Private->CurrentNic == NULL) {
-    return EFI_DEVICE_ERROR;
+    return EFI_UNSUPPORTED;
   }
 
   //
@@ -1400,7 +1404,9 @@ WifiMgrDxeHiiConfigAccessCallback (
     return EFI_OUT_OF_RESOURCES;
   }
 
-  HiiGetBrowserData (&gWifiConfigFormSetGuid, mVendorStorageName, BufferSize, (UINT8 *)IfrNvData);
+  if (Action != EFI_BROWSER_ACTION_FORM_OPEN) {
+    HiiGetBrowserData (&gWifiConfigFormSetGuid, mVendorStorageName, BufferSize, (UINT8 *)IfrNvData);
+  }
 
   if (Action == EFI_BROWSER_ACTION_FORM_OPEN) {
     switch (QuestionId) {
@@ -1422,41 +1428,6 @@ WifiMgrDxeHiiConfigAccessCallback (
           WifiMgrCleanProfileSecrets (Profile);
 
           Private->CurrentNic->UserSelectedProfile = NULL;
-        }
-
-        break;
-
-      case KEY_CONNECT_ACTION:
-
-        if (Private->CurrentNic->UserSelectedProfile == NULL) {
-          break;
-        }
-
-        Profile = Private->CurrentNic->UserSelectedProfile;
-
-        //
-        // Enter the network connection configuration page
-        // Recovery from restored data
-        //
-        if (HiiSetString (Private->RegisteredHandle, STRING_TOKEN (STR_SSID), Profile->SSId, NULL) == 0) {
-          return EFI_OUT_OF_RESOURCES;
-        }
-
-        IfrNvData->SecurityType = Profile->SecurityType;
-        if (HiiSetString (
-              Private->RegisteredHandle,
-              STRING_TOKEN (STR_SECURITY_TYPE),
-              mSecurityType[IfrNvData->SecurityType],
-              NULL
-              ) == 0)
-        {
-          return EFI_OUT_OF_RESOURCES;
-        }
-
-        if (IfrNvData->SecurityType == SECURITY_TYPE_WPA2_ENTERPRISE) {
-          IfrNvData->EapAuthMethod       = Profile->EapAuthMethod;
-          IfrNvData->EapSecondAuthMethod = Profile->EapSecondAuthMethod;
-          StrCpyS (IfrNvData->EapIdentity, EAP_IDENTITY_SIZE, Profile->EapIdentity);
         }
 
         break;
@@ -1510,6 +1481,45 @@ WifiMgrDxeHiiConfigAccessCallback (
     }
   } else if (Action == EFI_BROWSER_ACTION_FORM_CLOSE) {
     switch (QuestionId) {
+      case KEY_EAP_ENROLL_CERT_FROM_FILE:
+      case KEY_EAP_ENROLL_PRIVATE_KEY_FROM_FILE:
+      case KEY_REFRESH_NETWORK_LIST:
+
+        if (Private->CurrentNic->UserSelectedProfile == NULL) {
+          break;
+        }
+
+        Profile = Private->CurrentNic->UserSelectedProfile;
+
+        //
+        // Enter the network connection configuration page
+        // Recovery from restored data
+        //
+        if (HiiSetString (Private->RegisteredHandle, STRING_TOKEN (STR_SSID), Profile->SSId, NULL) == 0) {
+          return EFI_OUT_OF_RESOURCES;
+        }
+
+        IfrNvData->SecurityType = Profile->SecurityType;
+        if (HiiSetString (
+              Private->RegisteredHandle,
+              STRING_TOKEN (STR_SECURITY_TYPE),
+              mSecurityType[IfrNvData->SecurityType],
+              NULL
+              ) == 0)
+        {
+          return EFI_OUT_OF_RESOURCES;
+        }
+
+        if (  (IfrNvData->SecurityType == SECURITY_TYPE_WPA2_ENTERPRISE)
+           || (IfrNvData->SecurityType == SECURITY_TYPE_WPA3_ENTERPRISE))
+        {
+          IfrNvData->EapAuthMethod       = Profile->EapAuthMethod;
+          IfrNvData->EapSecondAuthMethod = Profile->EapSecondAuthMethod;
+          StrCpyS (IfrNvData->EapIdentity, EAP_IDENTITY_SIZE, Profile->EapIdentity);
+        }
+
+        break;
+
       case KEY_CONNECT_ACTION:
 
         if (Private->CurrentNic->UserSelectedProfile == NULL) {
@@ -1521,7 +1531,9 @@ WifiMgrDxeHiiConfigAccessCallback (
         //
         // Restore User Config Data for Page recovery
         //
-        if (IfrNvData->SecurityType == SECURITY_TYPE_WPA2_ENTERPRISE) {
+        if ((IfrNvData->SecurityType == SECURITY_TYPE_WPA2_ENTERPRISE) ||
+            (IfrNvData->SecurityType == SECURITY_TYPE_WPA3_ENTERPRISE))
+        {
           Profile->EapAuthMethod       = IfrNvData->EapAuthMethod;
           Profile->EapSecondAuthMethod = IfrNvData->EapSecondAuthMethod;
           StrCpyS (Profile->EapIdentity, EAP_IDENTITY_SIZE, IfrNvData->EapIdentity);
@@ -1540,6 +1552,11 @@ WifiMgrDxeHiiConfigAccessCallback (
         // User triggered a scan process.
         //
         Private->CurrentNic->OneTimeScanRequest = TRUE;
+        Status                                  = WifiMgrStartScan (Private->CurrentNic);
+        if (EFI_ERROR (Status)) {
+          DEBUG ((DEBUG_WARN, "[WiFi Connection Manager] Error: Failed in start scan for network list with status %r", Status));
+        }
+
         break;
 
       case KEY_PASSWORD_CONNECT_NETWORK:
@@ -1590,12 +1607,17 @@ WifiMgrDxeHiiConfigAccessCallback (
           // When this network is not currently connected, pend it to connect.
           //
           if (Profile->AKMSuiteSupported && Profile->CipherSuiteSupported) {
-            if ((Profile->SecurityType == SECURITY_TYPE_NONE) || (Profile->SecurityType == SECURITY_TYPE_WPA2_PERSONAL)) {
+            if ((Profile->SecurityType == SECURITY_TYPE_NONE) ||
+                (Profile->SecurityType == SECURITY_TYPE_WPA2_PERSONAL) ||
+                (Profile->SecurityType == SECURITY_TYPE_WPA3_PERSONAL))
+            {
               //
               // For Open network, connect directly.
               //
               ProfileToConnect = Profile;
-            } else if (Profile->SecurityType == SECURITY_TYPE_WPA2_ENTERPRISE) {
+            } else if ((Profile->SecurityType == SECURITY_TYPE_WPA2_ENTERPRISE) ||
+                       (Profile->SecurityType == SECURITY_TYPE_WPA3_ENTERPRISE))
+            {
               //
               // For WPA/WPA2-Enterprise network, conduct eap configuration first.
               // Only EAP-TLS, TTLS and PEAP is supported now!
@@ -1637,6 +1659,12 @@ WifiMgrDxeHiiConfigAccessCallback (
           //
           Private->CurrentNic->OneTimeDisconnectRequest    = TRUE;
           Private->CurrentNic->HasDisconnectPendingNetwork = TRUE;
+        }
+
+        Status = gBS->SetTimer (Private->CurrentNic->TickTimer, TimerPeriodic, EFI_TIMER_PERIOD_MILLISECONDS (500));
+        if (EFI_ERROR (Status)) {
+          DEBUG ((DEBUG_WARN, "[WiFi Connection Manager] Error: Failed to set timer for connect action!"));
+          gBS->SetTimer (Private->CurrentNic->TickTimer, TimerCancel, 0);
         }
 
         break;
@@ -1890,6 +1918,12 @@ WifiMgrDxeHiiConfigAccessCallback (
           }
         }
 
+        Status = gBS->SetTimer (Private->CurrentNic->TickTimer, TimerPeriodic, EFI_TIMER_PERIOD_MILLISECONDS (500));
+        if (EFI_ERROR (Status)) {
+          DEBUG ((DEBUG_WARN, "[WiFi Connection Manager] Error: Failed to set timer for connect action!"));
+          gBS->SetTimer (Private->CurrentNic->TickTimer, TimerCancel, 0);
+        }
+
         break;
     }
   } else if (Action == EFI_BROWSER_ACTION_CHANGED) {
@@ -1923,7 +1957,7 @@ WifiMgrDxeHiiConfigAccessCallback (
     }
   }
 
-  if (!EFI_ERROR (Status)) {
+  if (!EFI_ERROR (Status) && (Action != EFI_BROWSER_ACTION_FORM_OPEN)) {
     //
     // Pass changed uncommitted data back to Form Browser.
     //

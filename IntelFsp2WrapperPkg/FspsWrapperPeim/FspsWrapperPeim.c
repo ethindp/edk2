@@ -21,10 +21,12 @@
 #include <Library/MemoryAllocationLib.h>
 #include <Library/FspWrapperPlatformLib.h>
 #include <Library/FspWrapperHobProcessLib.h>
+#include <Library/FspWrapperMultiPhaseProcessLib.h>
 #include <Library/TimerLib.h>
 #include <Library/PerformanceLib.h>
 #include <Library/FspWrapperApiLib.h>
 #include <Library/FspMeasurementLib.h>
+#include <Guid/FspImageBaseHob.h>
 
 #include <Ppi/FspSiliconInitDone.h>
 #include <Ppi/EndOfPeiPhase.h>
@@ -36,6 +38,9 @@
 #include <Library/FspWrapperApiTestLib.h>
 #include <FspEas.h>
 #include <FspStatusCode.h>
+#include <FspGlobalData.h>
+#include <Library/FvLib.h>
+#include <Library/PeCoffLib.h>
 
 extern EFI_PEI_NOTIFY_DESCRIPTOR  mS3EndOfPeiNotifyDesc;
 extern EFI_GUID                   gFspHobGuid;
@@ -96,7 +101,7 @@ S3EndOfPeiNotify (
   //
   if ((Status >= FSP_STATUS_RESET_REQUIRED_COLD) && (Status <= FSP_STATUS_RESET_REQUIRED_8)) {
     DEBUG ((DEBUG_INFO, "FSP S3NotifyPhase AfterPciEnumeration requested reset 0x%x\n", Status));
-    CallFspWrapperResetSystem ((UINT32)Status);
+    CallFspWrapperResetSystem (Status);
   }
 
   NotifyPhaseParams.Phase = EnumInitPhaseReadyToBoot;
@@ -108,7 +113,7 @@ S3EndOfPeiNotify (
   //
   if ((Status >= FSP_STATUS_RESET_REQUIRED_COLD) && (Status <= FSP_STATUS_RESET_REQUIRED_8)) {
     DEBUG ((DEBUG_INFO, "FSP S3NotifyPhase ReadyToBoot requested reset 0x%x\n", Status));
-    CallFspWrapperResetSystem ((UINT32)Status);
+    CallFspWrapperResetSystem (Status);
   }
 
   NotifyPhaseParams.Phase = EnumInitPhaseEndOfFirmware;
@@ -120,7 +125,7 @@ S3EndOfPeiNotify (
   //
   if ((Status >= FSP_STATUS_RESET_REQUIRED_COLD) && (Status <= FSP_STATUS_RESET_REQUIRED_8)) {
     DEBUG ((DEBUG_INFO, "FSP S3NotifyPhase EndOfFirmware requested reset 0x%x\n", Status));
-    CallFspWrapperResetSystem ((UINT32)Status);
+    CallFspWrapperResetSystem (Status);
   }
 
   return EFI_SUCCESS;
@@ -186,16 +191,15 @@ FspSiliconInitDoneGetFspHobList (
 
   @return FSP-S UPD Data Address
 **/
-
 UINTN
 GetFspsUpdDataAddress (
   VOID
   )
 {
   if (PcdGet64 (PcdFspsUpdDataAddress64) != 0) {
-    return (UINTN) PcdGet64 (PcdFspsUpdDataAddress64);
+    return (UINTN)PcdGet64 (PcdFspsUpdDataAddress64);
   } else {
-    return (UINTN) PcdGet32 (PcdFspsUpdDataAddress);
+    return (UINTN)PcdGet32 (PcdFspsUpdDataAddress);
   }
 }
 
@@ -267,6 +271,102 @@ EFI_PEI_NOTIFY_DESCRIPTOR  mPeiMemoryDiscoveredNotifyDesc = {
 };
 
 /**
+  Rebase a PE32/TE Image from an FFS file.
+
+  @param FileHeader   Pointer to the FFS file header.
+
+  @return Status of the rebase operation.
+**/
+EFI_STATUS
+RebasePeTeFromFfs (
+  EFI_FFS_FILE_HEADER  *FileHeader
+  )
+{
+  EFI_STATUS                    Status;
+  VOID                          *ImageBase;
+  PE_COFF_LOADER_IMAGE_CONTEXT  ImageContext;
+  UINTN                         ImageSize;
+
+  Status = FfsFindSectionData (EFI_SECTION_PE32, FileHeader, &ImageBase, &ImageSize);
+  if (EFI_ERROR (Status)) {
+    Status = FfsFindSectionData (EFI_SECTION_TE, FileHeader, &ImageBase, &ImageSize);
+  }
+
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    return Status;
+  }
+
+  ZeroMem (&ImageContext, sizeof (ImageContext));
+  ImageContext.Handle    = ImageBase;
+  ImageContext.ImageRead = PeCoffLoaderImageReadFromMemory;
+
+  Status = PeCoffLoaderGetImageInfo (&ImageContext);
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    return Status;
+  }
+
+  ImageContext.ImageAddress = (EFI_PHYSICAL_ADDRESS)(UINTN)ImageBase;
+  Status                    = PeCoffLoaderRelocateImage (&ImageContext);
+  ASSERT_EFI_ERROR (Status);
+
+  return Status;
+}
+
+/**
+  Rebase Fsp Fv.
+  Only SEC and PEI Core FFS files need to be rebased. Other PEIMs will
+  be rebased by PEI Core when dispatching.
+  FSP FV must contain SEC FFS and may contains PEI Core FFS files.
+
+  @param PcdFspFvBaseAddress   Fsp Fv base address.
+
+  @return Status of the rebase result.
+**/
+EFI_STATUS
+RebaseFspFv (
+  UINT64  PcdFspFvBaseAddress
+  )
+{
+  EFI_STATUS                  Status;
+  EFI_FIRMWARE_VOLUME_HEADER  *FwVolHeader;
+  EFI_FFS_FILE_HEADER         *FileHeader;
+
+  FwVolHeader = (EFI_FIRMWARE_VOLUME_HEADER *)(UINTN)PcdFspFvBaseAddress;
+
+  //
+  // Find and rebase SEC FFS file
+  //
+  FileHeader = NULL;
+  Status     = FfsFindNextFile (EFI_FV_FILETYPE_SECURITY_CORE, FwVolHeader, &FileHeader);
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    return Status;
+  }
+
+  Status = RebasePeTeFromFfs (FileHeader);
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    return Status;
+  }
+
+  //
+  // Find and rebase PEI Core FFS file
+  //
+  FileHeader = NULL;
+  Status     = FfsFindNextFile (EFI_FV_FILETYPE_PEI_CORE, FwVolHeader, &FileHeader);
+  if (!EFI_ERROR (Status)) {
+    Status = RebasePeTeFromFfs (FileHeader);
+    ASSERT_EFI_ERROR (Status);
+  } else {
+    return EFI_SUCCESS;
+  }
+
+  return Status;
+}
+
+/**
   This function is called after PEI core discover memory and finish migration.
 
   @param[in] PeiServices    Pointer to PEI Services Table.
@@ -284,13 +384,14 @@ PeiMemoryDiscoveredNotify (
   IN VOID                       *Ppi
   )
 {
-  FSP_INFO_HEADER    *FspsHeaderPtr;
-  UINT64             TimeStampCounterStart;
-  EFI_STATUS         Status;
-  VOID               *FspHobListPtr;
-  EFI_HOB_GUID_TYPE  *GuidHob;
-  FSPS_UPD_COMMON    *FspsUpdDataPtr;
-  UINTN              *SourceData;
+  FSP_INFO_HEADER     *FspsHeaderPtr;
+  UINT64              TimeStampCounterStart;
+  EFI_STATUS          Status;
+  VOID                *FspHobListPtr;
+  EFI_HOB_GUID_TYPE   *GuidHob;
+  FSPS_UPD_COMMON     *FspsUpdDataPtr;
+  UINTN               *SourceData;
+  FSP_IMAGE_BASE_HOB  *ImageBaseHob;
 
   DEBUG ((DEBUG_INFO, "PeiMemoryDiscoveredNotify enter\n"));
   FspsUpdDataPtr = NULL;
@@ -299,6 +400,25 @@ PeiMemoryDiscoveredNotify (
   DEBUG ((DEBUG_INFO, "FspsHeaderPtr - 0x%x\n", FspsHeaderPtr));
   if (FspsHeaderPtr == NULL) {
     return EFI_DEVICE_ERROR;
+  }
+
+  if (FspsHeaderPtr->ImageBase != PcdGet32 (PcdFspsBaseAddress)) {
+    if ((PcdGet32 (PcdFspMeasurementConfig) & (FSP_MEASURE_FSPUPD | FSP_MEASURE_ORIGINAL_IMAGEBASE)) ==
+        (FSP_MEASURE_FSPUPD | FSP_MEASURE_ORIGINAL_IMAGEBASE))
+    {
+      ImageBaseHob = BuildGuidHob (&gFspImageBaseHobGuid, sizeof (FSP_IMAGE_BASE_HOB));
+      if (ImageBaseHob != NULL) {
+        ImageBaseHob->FspBase           = PcdGet32 (PcdFspsBaseAddress);
+        ImageBaseHob->OriginalImageBase = FspsHeaderPtr->ImageBase;
+      } else {
+        DEBUG ((DEBUG_ERROR, "FSP-S ImageBase HOB not built\n"));
+      }
+    }
+
+    FspsHeaderPtr->ImageBase = PcdGet32 (PcdFspsBaseAddress);
+    Status                   = RebaseFspFv (PcdGet32 (PcdFspsBaseAddress));
+    ASSERT_EFI_ERROR (Status);
+    DEBUG ((DEBUG_INFO, "FSP-S Rebase completed.\n"));
   }
 
   if ((GetFspsUpdDataAddress () == 0) && (FspsHeaderPtr->CfgRegionSize != 0) && (FspsHeaderPtr->CfgRegionOffset != 0)) {
@@ -310,7 +430,7 @@ PeiMemoryDiscoveredNotify (
     SourceData = (UINTN *)((UINTN)FspsHeaderPtr->ImageBase + (UINTN)FspsHeaderPtr->CfgRegionOffset);
     CopyMem (FspsUpdDataPtr, SourceData, (UINTN)FspsHeaderPtr->CfgRegionSize);
   } else {
-    FspsUpdDataPtr = (FSPS_UPD_COMMON *) GetFspsUpdDataAddress();
+    FspsUpdDataPtr = (FSPS_UPD_COMMON *)GetFspsUpdDataAddress ();
     ASSERT (FspsUpdDataPtr != NULL);
   }
 
@@ -319,36 +439,50 @@ PeiMemoryDiscoveredNotify (
   TimeStampCounterStart = AsmReadTsc ();
   PERF_START_EX (&gFspApiPerformanceGuid, "EventRec", NULL, 0, FSP_STATUS_CODE_SILICON_INIT | FSP_STATUS_CODE_COMMON_CODE | FSP_STATUS_CODE_API_ENTRY);
   Status = CallFspSiliconInit ((VOID *)FspsUpdDataPtr);
-  PERF_END_EX (&gFspApiPerformanceGuid, "EventRec", NULL, 0, FSP_STATUS_CODE_SILICON_INIT | FSP_STATUS_CODE_COMMON_CODE | FSP_STATUS_CODE_API_EXIT);
-  DEBUG ((DEBUG_INFO, "Total time spent executing FspSiliconInitApi: %d millisecond\n", DivU64x32 (GetTimeInNanoSecond (AsmReadTsc () - TimeStampCounterStart), 1000000)));
 
   //
   // Reset the system if FSP API returned FSP_STATUS_RESET_REQUIRED status
   //
   if ((Status >= FSP_STATUS_RESET_REQUIRED_COLD) && (Status <= FSP_STATUS_RESET_REQUIRED_8)) {
-    DEBUG ((DEBUG_INFO, "FspSiliconInitApi requested reset 0x%x\n", Status));
-    CallFspWrapperResetSystem ((UINT32)Status);
+    DEBUG ((DEBUG_INFO, "FspSiliconInitApi requested reset %r\n", Status));
+    CallFspWrapperResetSystem (Status);
   }
 
-  if (EFI_ERROR (Status)) {
+  if ((Status != FSP_STATUS_VARIABLE_REQUEST) && EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "ERROR - Failed to execute FspSiliconInitApi(), Status = %r\n", Status));
+    ASSERT_EFI_ERROR (Status);
   }
 
-  DEBUG ((DEBUG_INFO, "FspSiliconInit status: 0x%x\n", Status));
-  ASSERT_EFI_ERROR (Status);
+  DEBUG ((DEBUG_INFO, "FspSiliconInit status: %r\n", Status));
+
+  //
+  // Get FspHobList
+  //
+  GuidHob = GetFirstGuidHob (&gFspHobGuid);
+  ASSERT (GuidHob != NULL);
+  FspHobListPtr = *(VOID **)GET_GUID_HOB_DATA (GuidHob);
+  DEBUG ((DEBUG_INFO, "FspHobListPtr - 0x%x\n", FspHobListPtr));
+
+  if (Status == FSP_STATUS_VARIABLE_REQUEST) {
+    //
+    // call to Variable request handler
+    //
+    FspWrapperVariableRequestHandler (&FspHobListPtr, FspMultiPhaseSiInitApiIndex);
+  }
+
+  //
+  // See if MultiPhase process is required or not
+  //
+  FspWrapperMultiPhaseHandler (&FspHobListPtr, FspMultiPhaseSiInitApiIndex);    // FspS MultiPhase
+
+  PERF_END_EX (&gFspApiPerformanceGuid, "EventRec", NULL, 0, FSP_STATUS_CODE_SILICON_INIT | FSP_STATUS_CODE_COMMON_CODE | FSP_STATUS_CODE_API_EXIT);
+  DEBUG ((DEBUG_INFO, "Total time spent executing FspSiliconInitApi: %d millisecond\n", DivU64x32 (GetTimeInNanoSecond (AsmReadTsc () - TimeStampCounterStart), 1000000)));
 
   Status = TestFspSiliconInitApiOutput ((VOID *)NULL);
   if (RETURN_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "ERROR - TestFspSiliconInitApiOutput () fail, Status = %r\n", Status));
   }
 
-  //
-  // Now FspHobList complete, process it
-  //
-  GuidHob = GetFirstGuidHob (&gFspHobGuid);
-  ASSERT (GuidHob != NULL);
-  FspHobListPtr = *(VOID **)GET_GUID_HOB_DATA (GuidHob);
-  DEBUG ((DEBUG_INFO, "FspHobListPtr - 0x%x\n", FspHobListPtr));
   PostFspsHobProcess (FspHobListPtr);
 
   //
@@ -406,13 +540,22 @@ FspsWrapperInitDispatchMode (
   EFI_PEI_PPI_DESCRIPTOR                                 *MeasurementExcludedPpiList;
 
   MeasurementExcludedFvPpi = AllocatePool (sizeof (*MeasurementExcludedFvPpi));
-  ASSERT (MeasurementExcludedFvPpi != NULL);
+  if (MeasurementExcludedFvPpi == NULL) {
+    ASSERT (MeasurementExcludedFvPpi != NULL);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
   MeasurementExcludedFvPpi->Count          = 1;
   MeasurementExcludedFvPpi->Fv[0].FvBase   = PcdGet32 (PcdFspsBaseAddress);
   MeasurementExcludedFvPpi->Fv[0].FvLength = ((EFI_FIRMWARE_VOLUME_HEADER *)(UINTN)PcdGet32 (PcdFspsBaseAddress))->FvLength;
 
   MeasurementExcludedPpiList = AllocatePool (sizeof (*MeasurementExcludedPpiList));
-  ASSERT (MeasurementExcludedPpiList != NULL);
+  if (MeasurementExcludedPpiList == NULL) {
+    ASSERT (MeasurementExcludedPpiList != NULL);
+    FreePool (MeasurementExcludedFvPpi);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
   MeasurementExcludedPpiList->Flags = EFI_PEI_PPI_DESCRIPTOR_PPI | EFI_PEI_PPI_DESCRIPTOR_TERMINATE_LIST;
   MeasurementExcludedPpiList->Guid  = &gEfiPeiFirmwareVolumeInfoMeasurementExcludedPpiGuid;
   MeasurementExcludedPpiList->Ppi   = MeasurementExcludedFvPpi;
@@ -424,7 +567,7 @@ FspsWrapperInitDispatchMode (
   // FSP-S Wrapper running in Dispatch mode and reports FSP-S FV to PEI dispatcher.
   //
   PeiServicesInstallFvInfoPpi (
-    NULL,
+    &((EFI_FIRMWARE_VOLUME_HEADER *)(UINTN)PcdGet32 (PcdFspsBaseAddress))->FileSystemGuid,
     (VOID *)(UINTN)PcdGet32 (PcdFspsBaseAddress),
     (UINT32)((EFI_FIRMWARE_VOLUME_HEADER *)(UINTN)PcdGet32 (PcdFspsBaseAddress))->FvLength,
     NULL,

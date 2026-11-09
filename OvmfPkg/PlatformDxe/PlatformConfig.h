@@ -9,8 +9,7 @@
 
 **/
 
-#ifndef _PLATFORM_CONFIG_H_
-#define _PLATFORM_CONFIG_H_
+#pragma once
 
 #include <Base.h>
 
@@ -50,4 +49,5 @@ PlatformConfigLoad (
 #define PLATFORM_CONFIG_F_GRAPHICS_RESOLUTION  BIT0
 #define PLATFORM_CONFIG_F_DOWNGRADE            BIT63
 
-#endif // _PLATFORM_CONFIG_H_
+extern CHAR16  mVariableName[];
+extern CHAR16  mHiiFormName[];

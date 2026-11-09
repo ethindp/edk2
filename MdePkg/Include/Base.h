@@ -12,8 +12,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef __BASE_H__
-#define __BASE_H__
+#pragma once
 
 //
 // Include processor specific binding
@@ -59,7 +58,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 /// up to the compiler to remove any code past that point.
 ///
 #define UNREACHABLE()  __builtin_unreachable ()
-  #elif defined (__has_feature)
+  #elif defined (__has_builtin) && defined (__has_feature)
     #if __has_builtin (__builtin_unreachable)
 ///
 /// Signal compilers and analyzers that this call is not reachable.  It is
@@ -204,15 +203,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #define ASM_FUNCTION_REMOVE_IF_UNREFERENCED
 #endif
 
-#ifdef __CC_ARM
-//
-// Older RVCT ARM compilers don't fully support #pragma pack and require __packed
-// as a prefix for the structure.
-//
-#define PACKED  __packed
-#else
 #define PACKED
-#endif
 
 ///
 /// 128 bit buffer containing a unique identifier value.
@@ -317,7 +308,15 @@ struct _LIST_ENTRY {
 ///
 /// NULL pointer (VOID *)
 ///
+#if defined (__cplusplus)
+  #if defined (_MSC_EXTENSIONS)
+#define NULL  nullptr
+  #else
+#define NULL  __null
+  #endif
+#else
 #define NULL  ((VOID *) 0)
+#endif
 
 //
 // Null character
@@ -578,48 +577,29 @@ struct _LIST_ENTRY {
 **/
 #define _INT_SIZE_OF(n)  ((sizeof (n) + sizeof (UINTN) - 1) &~(sizeof (UINTN) - 1))
 
-#if defined (__CC_ARM)
+#if defined (_M_ARM64)
 //
-// RVCT ARM variable argument list support.
-//
-
-///
-/// Variable used to traverse the list of arguments. This type can vary by
-/// implementation and could be an array or structure.
-///
-  #ifdef __APCS_ADSABI
-typedef int *va_list[1];
-#define VA_LIST  va_list
-  #else
-typedef struct __va_list {
-  void    *__ap;
-} va_list;
-#define VA_LIST  va_list
-  #endif
-
-#define VA_START(Marker, Parameter)  __va_start(Marker, Parameter)
-
-#define VA_ARG(Marker, TYPE)  __va_arg(Marker, TYPE)
-
-#define VA_END(Marker)  ((void)0)
-
-// For some ARM RVCT compilers, __va_copy is not defined
-  #ifndef __va_copy
-#define __va_copy(dest, src)  ((void)((dest) = (src)))
-  #endif
-
-#define VA_COPY(Dest, Start)  __va_copy (Dest, Start)
-
-#elif defined (_M_ARM) || defined (_M_ARM64)
-//
-// MSFT ARM variable argument list support.
+// MSVC AARCH64 and CLANGPDB AARCH64 hit this path. By default, they use the MS ABI for VA_LIST and
+// friends. However, this is against the AAPCS64 ABI and cause interop issues with GCC and CLANGDWARF.
+// These definitions coerce MSVC/CLANGPDB to use the AAPCS64 ABI.
 //
 
-typedef char *VA_LIST;
+typedef struct {
+  char    *Stack; // next stack param
+  char    *GrTop; // end of GP arg reg save area
+  char    *VrTop; // end of FP/SIMD arg reg save area
+  int     GrOffs; // offset from  GrTop to next GP register arg
+  int     VrOffs; // offset from  VrTop to next FP/SIMD register arg
+} VA_LIST;
 
-#define VA_START(Marker, Parameter)  __va_start (&Marker, &Parameter, _INT_SIZE_OF (Parameter), __alignof(Parameter), &Parameter)
-#define VA_ARG(Marker, TYPE)         (*(TYPE *) ((Marker += _INT_SIZE_OF (TYPE) + ((-(INTN)Marker) & (sizeof(TYPE) - 1))) - _INT_SIZE_OF (TYPE)))
-#define VA_END(Marker)               (Marker = (VA_LIST) 0)
+#define VA_START(Marker, Parameter)  (Marker).GrTop = (Marker).VrTop = NULL, \
+                                     (Marker).GrOffs = (Marker).VrOffs = 0,  \
+                                     __va_start (&(Marker).Stack, &Parameter, _INT_SIZE_OF (Parameter), __alignof (Parameter), &Parameter)
+#define VA_STACK_ARG(Marker, TYPE)   (((Marker).Stack += _INT_SIZE_OF (TYPE) + ((-(INTN)(Marker).Stack) & (sizeof(TYPE) - 1))) - _INT_SIZE_OF (TYPE))
+#define VA_ARG(Marker, TYPE)         (*(TYPE *) (((Marker).GrOffs += _INT_SIZE_OF (TYPE)) <= 0 \
+                                     ? &(Marker).GrTop[(Marker).GrOffs - _INT_SIZE_OF (TYPE)] \
+                                     : VA_STACK_ARG(Marker, TYPE)))
+#define VA_END(Marker)               ((Marker).Stack = NULL)
 #define VA_COPY(Dest, Start)         ((void)((Dest) = (Start)))
 
 #elif defined (__GNUC__) || defined (__clang__)
@@ -791,6 +771,40 @@ typedef UINTN *BASE_LIST;
 #endif
 
 /**
+  Returns the alignment requirement of a type.
+
+  @param   TYPE  The name of the type to retrieve the alignment requirement of.
+
+  @return  Alignment requirement, in Bytes, of TYPE.
+**/
+#if defined (__cplusplus)
+//
+// Standard C++ operator.
+//
+#define ALIGNOF(TYPE)  alignof (TYPE)
+#elif defined (__GNUC__) || defined (__clang__) || (defined (_MSC_VER) && _MSC_VER >= 1900)
+//
+// All supported versions of GCC and Clang, as well as MSVC 2015 and later,
+// support the standard operator _Alignof.
+//
+#define ALIGNOF(TYPE)  _Alignof (TYPE)
+#elif defined (_MSC_EXTENSIONS)
+//
+// Earlier versions of MSVC, at least MSVC 2008 and later, support the vendor
+// extension __alignof.
+//
+#define ALIGNOF(TYPE)  __alignof (TYPE)
+#else
+//
+// For compilers that do not support inbuilt alignof operators, use OFFSET_OF.
+// CHAR8 is known to have both a size and an alignment requirement of 1 Byte.
+// As such, A must be located exactly at the offset equal to its alignment
+// requirement.
+//
+#define ALIGNOF(TYPE)  OFFSET_OF (struct { CHAR8 C; TYPE A; }, A)
+#endif
+
+/**
   Portable definition for compile time assertions.
   Equivalent to C11 static_assert macro from assert.h.
 
@@ -798,12 +812,12 @@ typedef UINTN *BASE_LIST;
   @param  Message     Raised compiler diagnostic message when expression is false.
 
 **/
-#ifdef MDE_CPU_EBC
-#define STATIC_ASSERT(Expression, Message)
+#if defined (__cplusplus)
+#define STATIC_ASSERT  static_assert
+#elif defined (__GNUC__) || defined (__clang__)
+#define STATIC_ASSERT  _Static_assert
 #elif defined (_MSC_EXTENSIONS)
 #define STATIC_ASSERT  static_assert
-#else
-#define STATIC_ASSERT  _Static_assert
 #endif
 
 //
@@ -825,12 +839,27 @@ STATIC_ASSERT (sizeof (CHAR16)  == 2, "sizeof (CHAR16) does not meet UEFI Specif
 STATIC_ASSERT (sizeof (L'A')    == 2, "sizeof (L'A') does not meet UEFI Specification Data Type requirements");
 STATIC_ASSERT (sizeof (L"A")    == 4, "sizeof (L\"A\") does not meet UEFI Specification Data Type requirements");
 
+STATIC_ASSERT (ALIGNOF (BOOLEAN) == sizeof (BOOLEAN), "Alignment of BOOLEAN does not meet UEFI Specification Data Type requirements");
+STATIC_ASSERT (ALIGNOF (INT8)    == sizeof (INT8), "Alignment of INT8 does not meet UEFI Specification Data Type requirements");
+STATIC_ASSERT (ALIGNOF (UINT8)   == sizeof (UINT8), "Alignment of INT16 does not meet UEFI Specification Data Type requirements");
+STATIC_ASSERT (ALIGNOF (INT16)   == sizeof (INT16), "Alignment of INT16 does not meet UEFI Specification Data Type requirements");
+STATIC_ASSERT (ALIGNOF (UINT16)  == sizeof (UINT16), "Alignment of UINT16 does not meet UEFI Specification Data Type requirements");
+STATIC_ASSERT (ALIGNOF (INT32)   == sizeof (INT32), "Alignment of INT32 does not meet UEFI Specification Data Type requirements");
+STATIC_ASSERT (ALIGNOF (UINT32)  == sizeof (UINT32), "Alignment of UINT32 does not meet UEFI Specification Data Type requirements");
+STATIC_ASSERT (ALIGNOF (INT64)   == sizeof (INT64), "Alignment of INT64 does not meet UEFI Specification Data Type requirements");
+STATIC_ASSERT (ALIGNOF (UINT64)  == sizeof (UINT64), "Alignment of UINT64 does not meet UEFI Specification Data Type requirements");
+STATIC_ASSERT (ALIGNOF (CHAR8)   == sizeof (CHAR8), "Alignment of CHAR8 does not meet UEFI Specification Data Type requirements");
+STATIC_ASSERT (ALIGNOF (CHAR16)  == sizeof (CHAR16), "Alignment of CHAR16 does not meet UEFI Specification Data Type requirements");
+STATIC_ASSERT (ALIGNOF (INTN)    == sizeof (INTN), "Alignment of INTN does not meet UEFI Specification Data Type requirements");
+STATIC_ASSERT (ALIGNOF (UINTN)   == sizeof (UINTN), "Alignment of UINTN does not meet UEFI Specification Data Type requirements");
+STATIC_ASSERT (ALIGNOF (VOID *)  == sizeof (VOID *), "Alignment of VOID * does not meet UEFI Specification Data Type requirements");
+
 //
 // The following three enum types are used to verify that the compiler
 // configuration for enum types is compliant with Section 2.3.1 of the
-// UEFI 2.3 Specification. These enum types and enum values are not
-// intended to be used. A prefix of '__' is used avoid conflicts with
-// other types.
+// UEFI 2.3.1 Errata C Specification. These enum types and enum values
+// are not intended to be used. A prefix of '__' is used avoid
+// conflicts with other types.
 //
 typedef enum {
   __VerifyUint8EnumValue = 0xff
@@ -841,12 +870,16 @@ typedef enum {
 } __VERIFY_UINT16_ENUM_SIZE;
 
 typedef enum {
-  __VerifyUint32EnumValue = 0xffffffff
-} __VERIFY_UINT32_ENUM_SIZE;
+  __VerifyInt32EnumValue = 0x7fffffff
+} __VERIFY_INT32_ENUM_SIZE;
 
 STATIC_ASSERT (sizeof (__VERIFY_UINT8_ENUM_SIZE) == 4, "Size of enum does not meet UEFI Specification Data Type requirements");
 STATIC_ASSERT (sizeof (__VERIFY_UINT16_ENUM_SIZE) == 4, "Size of enum does not meet UEFI Specification Data Type requirements");
-STATIC_ASSERT (sizeof (__VERIFY_UINT32_ENUM_SIZE) == 4, "Size of enum does not meet UEFI Specification Data Type requirements");
+STATIC_ASSERT (sizeof (__VERIFY_INT32_ENUM_SIZE) == 4, "Size of enum does not meet UEFI Specification Data Type requirements");
+
+STATIC_ASSERT (ALIGNOF (__VERIFY_UINT8_ENUM_SIZE)  == sizeof (__VERIFY_UINT8_ENUM_SIZE), "Alignment of enum does not meet UEFI Specification Data Type requirements");
+STATIC_ASSERT (ALIGNOF (__VERIFY_UINT16_ENUM_SIZE) == sizeof (__VERIFY_UINT16_ENUM_SIZE), "Alignment of enum does not meet UEFI Specification Data Type requirements");
+STATIC_ASSERT (ALIGNOF (__VERIFY_INT32_ENUM_SIZE) == sizeof (__VERIFY_INT32_ENUM_SIZE), "Alignment of enum does not meet UEFI Specification Data Type requirements");
 
 /**
   Macro that returns a pointer to the data structure that contains a specified field of
@@ -867,7 +900,50 @@ STATIC_ASSERT (sizeof (__VERIFY_UINT32_ENUM_SIZE) == 4, "Size of enum does not m
   @return  A pointer to the structure from one of it's elements.
 
 **/
-#define BASE_CR(Record, TYPE, Field)  ((TYPE *) ((CHAR8 *) (Record) - OFFSET_OF (TYPE, Field)))
+#define BASE_CR(Record, TYPE, Field)  ((TYPE *) (VOID *) ((CHAR8 *) (Record) - OFFSET_OF (TYPE, Field)))
+
+/**
+  Checks whether a value is a power of two.
+
+  @param   Value  The value to check.
+
+  @retval TRUE   Value is a power of two.
+  @retval FALSE  Value is not a power of two.
+**/
+#define IS_POW2(Value)  ((Value) != 0U && ((Value) & ((Value) - 1U)) == 0U)
+
+/**
+  Checks whether a value is aligned by a specified alignment.
+
+  @param   Value      The value to check.
+  @param   Alignment  The alignment boundary used to check against.
+
+  @retval TRUE   Value is aligned by Alignment.
+  @retval FALSE  Value is not aligned by Alignment.
+**/
+#define IS_ALIGNED(Value, Alignment)  (((Value) & ((Alignment) - 1U)) == 0U)
+
+/**
+  Checks whether a pointer or address is aligned by a specified alignment.
+
+  @param   Address    The pointer or address to check.
+  @param   Alignment  The alignment boundary used to check against.
+
+  @retval TRUE   Address is aligned by Alignment.
+  @retval FALSE  Address is not aligned by Alignment.
+**/
+#define ADDRESS_IS_ALIGNED(Address, Alignment)  IS_ALIGNED ((UINTN) (Address), Alignment)
+
+/**
+  Determines the addend to add to a value to round it up to the next boundary of
+  a specified alignment.
+
+  @param   Value      The value to round up.
+  @param   Alignment  The alignment boundary used to return the addend.
+
+  @return  Addend to round Value up to alignment boundary Alignment.
+**/
+#define ALIGN_VALUE_ADDEND(Value, Alignment)  (((Alignment) - (Value)) & ((Alignment) - 1U))
 
 /**
   Rounds a value up to the next boundary using a specified alignment.
@@ -881,7 +957,7 @@ STATIC_ASSERT (sizeof (__VERIFY_UINT32_ENUM_SIZE) == 4, "Size of enum does not m
   @return  A value up to the next boundary.
 
 **/
-#define ALIGN_VALUE(Value, Alignment)  ((Value) + (((Alignment) - (Value)) & ((Alignment) - 1)))
+#define ALIGN_VALUE(Value, Alignment)  ((Value) + ALIGN_VALUE_ADDEND (Value, Alignment))
 
 /**
   Adjust a pointer by adding the minimum offset required for it to be aligned on
@@ -994,12 +1070,12 @@ typedef UINTN RETURN_STATUS;
   @retval FALSE         The high bit of StatusCode is clear.
 
 **/
-#define RETURN_ERROR(StatusCode)  (((INTN)(RETURN_STATUS)(StatusCode)) < 0)
+#define RETURN_ERROR(StatusCode)  (((RETURN_STATUS)(StatusCode)) >= MAX_BIT)
 
 ///
 /// The operation completed successfully.
 ///
-#define RETURN_SUCCESS  0
+#define RETURN_SUCCESS  (RETURN_STATUS)(0)
 
 ///
 /// The image failed to load.
@@ -1166,6 +1242,11 @@ typedef UINTN RETURN_STATUS;
 #define RETURN_COMPROMISED_DATA  ENCODE_ERROR (33)
 
 ///
+/// There is an address conflict address allocation.
+///
+#define RETURN_IP_ADDRESS_CONFLICT  ENCODE_ERROR (34)
+
+///
 /// A HTTP error occurred during the network operation.
 ///
 #define RETURN_HTTP_ERROR  ENCODE_ERROR (35)
@@ -1203,6 +1284,11 @@ typedef UINTN RETURN_STATUS;
 /// The resulting buffer contains UEFI-compliant file system.
 ///
 #define RETURN_WARN_FILE_SYSTEM  ENCODE_WARNING (6)
+
+///
+/// The operation will be processed across a system reset.
+///
+#define RETURN_WARN_RESET_REQUIRED  ENCODE_WARNING (7)
 
 /**
   Returns a 16-bit signature built from 2 ASCII characters.
@@ -1317,5 +1403,3 @@ _ReturnAddress (
 
 **/
 #define ARRAY_SIZE(Array)  (sizeof (Array) / sizeof ((Array)[0]))
-
-#endif

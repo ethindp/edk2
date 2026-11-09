@@ -2,12 +2,12 @@
   Miscellaneous definitions for iSCSI driver.
 
 Copyright (c) 2004 - 2018, Intel Corporation. All rights reserved.<BR>
+Copyright (c) Microsoft Corporation
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _ISCSI_MISC_H_
-#define _ISCSI_MISC_H_
+#pragma once
 
 typedef struct _ISCSI_DRIVER_DATA ISCSI_DRIVER_DATA;
 
@@ -202,8 +202,11 @@ IScsiNetNtoi (
   @param[in, out]  Rand       The buffer to contain random numbers.
   @param[in]       RandLength The length of the Rand buffer.
 
+  @retval EFI_SUCCESS on success
+  @retval others      on error
+
 **/
-VOID
+EFI_STATUS
 IScsiGenRandom (
   IN OUT UINT8  *Rand,
   IN     UINTN  RandLength
@@ -247,6 +250,7 @@ IScsiRemoveNic (
   @param[in]  AttemptNum          The number of Attempts will be created.
 
   @retval EFI_SUCCESS             The Attempts have been created successfully.
+  @retval EFI_INVALID_PARAMETER   AttemptNum exceeds the UINT8 storage limit.
   @retval Others                  Failed to create the Attempt.
 
 **/
@@ -465,5 +469,3 @@ IScsiTestManagedDevice (
   IN  EFI_HANDLE  DriverBindingHandle,
   IN  EFI_GUID    *ProtocolGuid
   );
-
-#endif

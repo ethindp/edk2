@@ -268,7 +268,10 @@ FindGuardedMemoryMap (
       Size = (mLevelMask[GUARDED_HEAP_MAP_TABLE_DEPTH - mMapLevel - 1] + 1)
              * GUARDED_HEAP_MAP_ENTRY_BYTES;
       MapMemory = (UINT64)(UINTN)PageAlloc (EFI_SIZE_TO_PAGES (Size));
-      ASSERT (MapMemory != 0);
+      if (MapMemory == 0) {
+        ASSERT (MapMemory != 0);
+        return 0;
+      }
 
       SetMem ((VOID *)(UINTN)MapMemory, Size, 0);
 
@@ -553,9 +556,23 @@ UnsetGuardPage (
                                          mSmmMemoryAttribute,
                                          BaseAddress,
                                          EFI_PAGE_SIZE,
-                                         EFI_MEMORY_RP
+                                         EFI_MEMORY_RP|EFI_MEMORY_RO|EFI_MEMORY_XP
                                          );
     ASSERT_EFI_ERROR (Status);
+
+    if (gST == NULL) {
+      //
+      // Make sure EfiConventionalMemory is NX after SmmReadyToLock
+      //
+      Status = mSmmMemoryAttribute->SetMemoryAttributes (
+                                      mSmmMemoryAttribute,
+                                      BaseAddress,
+                                      EFI_PAGE_SIZE,
+                                      EFI_MEMORY_XP
+                                      );
+      ASSERT_EFI_ERROR (Status);
+    }
+
     mOnGuarding = FALSE;
   }
 }

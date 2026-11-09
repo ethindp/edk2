@@ -58,7 +58,7 @@ GetPciIoTranslation (
   if (EFI_ERROR (Status) || (Len == 0) ||
       (Len % sizeof (DTB_PCI_HOST_RANGE_RECORD) != 0))
   {
-    DEBUG ((DEBUG_ERROR, "%a: 'ranges' not found or invalid\n", __FUNCTION__));
+    DEBUG ((DEBUG_ERROR, "%a: 'ranges' not found or invalid\n", __func__));
     return RETURN_PROTOCOL_ERROR;
   }
 
@@ -133,7 +133,7 @@ FdtPciPcdProducerLibConstructor (
                           );
 
     if (!EFI_ERROR (Status) && (RegSize == 2 * sizeof (UINT64))) {
-      PciExpressBaseAddress = SwapBytes64 (*Reg);
+      PciExpressBaseAddress = SwapBytes64 (ReadUnaligned64 (Reg));
 
       PcdStatus = PcdSetBoolS (PcdPciDisableBusEnumeration, FALSE);
       ASSERT_RETURN_ERROR (PcdStatus);
@@ -152,7 +152,7 @@ FdtPciPcdProducerLibConstructor (
         DEBUG ((
           DEBUG_WARN,
           "%a: 'pci-host-ecam-generic' device encountered with no I/O range\n",
-          __FUNCTION__
+          __func__
           ));
       }
     }

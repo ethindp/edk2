@@ -9,6 +9,7 @@
 **/
 
 #include "HddPasswordDxe.h"
+#include <Library/VariablePolicyHelperLib.h>
 
 EFI_GUID    mHddPasswordVendorGuid          = HDD_PASSWORD_CONFIG_GUID;
 CHAR16      mHddPasswordVendorStorageName[] = L"HDD_PASSWORD_CONFIG";
@@ -148,7 +149,10 @@ BuildHddPasswordDeviceInfo (
     S3InitDevicesExist = FALSE;
   } else if (Status == EFI_BUFFER_TOO_SMALL) {
     S3InitDevices = AllocatePool (S3InitDevicesLength);
-    ASSERT (S3InitDevices != NULL);
+    if (S3InitDevices == NULL) {
+      ASSERT (S3InitDevices != NULL);
+      return;
+    }
 
     Status = RestoreLockBox (
                &gS3StorageDeviceInitListGuid,
@@ -183,7 +187,12 @@ BuildHddPasswordDeviceInfo (
         FreePool (S3InitDevicesBak);
       }
 
-      ASSERT (S3InitDevices != NULL);
+      if (S3InitDevices == NULL) {
+        ASSERT (S3InitDevices != NULL);
+        ZeroMem (DevInfo, DevInfoLength);
+        FreePool (DevInfo);
+        return;
+      }
 
       TempDevInfo = (HDD_PASSWORD_DEVICE_INFO *)((UINTN)TempDevInfo +
                                                  sizeof (HDD_PASSWORD_DEVICE_INFO) +
@@ -314,7 +323,7 @@ FreezeLockDevice (
 
   FreeAlignedPages (Asb, EFI_SIZE_TO_PAGES (sizeof (EFI_ATA_STATUS_BLOCK)));
 
-  DEBUG ((DEBUG_INFO, "%a() - %r\n", __FUNCTION__, Status));
+  DEBUG ((DEBUG_INFO, "%a() - %r\n", __func__, Status));
   return Status;
 }
 
@@ -449,7 +458,7 @@ HddPasswordEndOfDxeEventNotify (
   EFI_STATUS                      Status;
   ATA_IDENTIFY_DATA               IdentifyData;
 
-  DEBUG ((DEBUG_INFO, "%a() - enter\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a() - enter\n", __func__));
 
   mHddPasswordEndOfDxe = TRUE;
 
@@ -503,7 +512,7 @@ HddPasswordEndOfDxeEventNotify (
     }
   }
 
-  DEBUG ((DEBUG_INFO, "%a() - exit\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a() - exit\n", __func__));
 
   gBS->CloseEvent (Event);
 }
@@ -620,7 +629,7 @@ SaveHddPasswordVariable (
   UINT8                  HashData[SHA256_DIGEST_SIZE];
   UINT8                  SaltData[PASSWORD_SALT_SIZE];
 
-  DEBUG ((DEBUG_INFO, "%a() - enter\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a() - enter\n", __func__));
 
   Delete = FALSE;
   if (!PasswordIsFullZero (Password)) {
@@ -765,7 +774,7 @@ SaveHddPasswordVariable (
     FreePool (Variable);
   }
 
-  DEBUG ((DEBUG_INFO, "%a() - exit\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a() - exit\n", __func__));
 }
 
 /**
@@ -791,7 +800,7 @@ GetSavedHddPasswordVariable (
   UINTN                  VariableSize;
   BOOLEAN                Found;
 
-  DEBUG ((DEBUG_INFO, "%a() - enter\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a() - enter\n", __func__));
 
   Variable     = NULL;
   VariableSize = 0;
@@ -835,7 +844,7 @@ GetSavedHddPasswordVariable (
     DEBUG ((DEBUG_INFO, "The variable node for the HDD password device is not found\n"));
   }
 
-  DEBUG ((DEBUG_INFO, "%a() - exit\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a() - exit\n", __func__));
 
   return Found;
 }
@@ -864,7 +873,7 @@ ValidateHddPassword (
   BOOLEAN                HashOk;
   UINT8                  HashData[SHA256_DIGEST_SIZE];
 
-  DEBUG ((DEBUG_INFO, "%a() - enter\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a() - enter\n", __func__));
 
   if (!GetSavedHddPasswordVariable (ConfigFormEntry, &HddPasswordVariable)) {
     DEBUG ((DEBUG_INFO, "GetSavedHddPasswordVariable failed\n"));
@@ -884,7 +893,7 @@ ValidateHddPassword (
     Status = EFI_SUCCESS;
   }
 
-  DEBUG ((DEBUG_INFO, "%a() - exit (%r)\n", __FUNCTION__, Status));
+  DEBUG ((DEBUG_INFO, "%a() - exit (%r)\n", __func__, Status));
   return Status;
 }
 
@@ -982,7 +991,7 @@ UnlockHddPassword (
 
   ZeroMem (Buffer, sizeof (Buffer));
 
-  DEBUG ((DEBUG_INFO, "%a() - %r\n", __FUNCTION__, Status));
+  DEBUG ((DEBUG_INFO, "%a() - %r\n", __func__, Status));
   return Status;
 }
 
@@ -1080,7 +1089,7 @@ DisableHddPassword (
 
   ZeroMem (Buffer, sizeof (Buffer));
 
-  DEBUG ((DEBUG_INFO, "%a() - %r\n", __FUNCTION__, Status));
+  DEBUG ((DEBUG_INFO, "%a() - %r\n", __func__, Status));
   return Status;
 }
 
@@ -1185,7 +1194,7 @@ SetHddPassword (
 
   ZeroMem (Buffer, sizeof (Buffer));
 
-  DEBUG ((DEBUG_INFO, "%a() - %r\n", __FUNCTION__, Status));
+  DEBUG ((DEBUG_INFO, "%a() - %r\n", __func__, Status));
   return Status;
 }
 
@@ -1357,7 +1366,7 @@ HddPasswordRequestPassword (
 
   RetryCount = 0;
 
-  DEBUG ((DEBUG_INFO, "%a()\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a()\n", __func__));
 
   UnicodeSPrint (PopUpString, sizeof (PopUpString), L"Unlock: %s", ConfigFormEntry->HddString);
 
@@ -1541,7 +1550,7 @@ ProcessHddPasswordRequestSetUserPwd (
 
   RetryCount = 0;
 
-  DEBUG ((DEBUG_INFO, "%a()\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a()\n", __func__));
 
   if (ConfigFormEntry->IfrData.SecurityStatus.Frozen) {
     DEBUG ((DEBUG_INFO, "%s is frozen, do nothing\n", ConfigFormEntry->HddString));
@@ -1685,7 +1694,7 @@ ProcessHddPasswordRequestSetMasterPwd (
 
   RetryCount = 0;
 
-  DEBUG ((DEBUG_INFO, "%a()\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a()\n", __func__));
 
   if (ConfigFormEntry->IfrData.SecurityStatus.Frozen) {
     DEBUG ((DEBUG_INFO, "%s is frozen, do nothing\n", ConfigFormEntry->HddString));
@@ -1812,7 +1821,7 @@ ProcessHddPasswordRequest (
   HDD_PASSWORD_REQUEST_VARIABLE  *Variable;
   UINTN                          VariableSize;
 
-  DEBUG ((DEBUG_INFO, "%a() - enter\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a() - enter\n", __func__));
 
   if (mHddPasswordRequestVariable == NULL) {
     Status = GetVariable2 (
@@ -1873,7 +1882,7 @@ ProcessHddPasswordRequest (
     TempVariable += 1;
   }
 
-  DEBUG ((DEBUG_INFO, "%a() - exit\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a() - exit\n", __func__));
 }
 
 /**
@@ -1892,7 +1901,7 @@ GetSavedHddPasswordRequest (
   HDD_PASSWORD_REQUEST_VARIABLE  *Variable;
   UINTN                          VariableSize;
 
-  DEBUG ((DEBUG_INFO, "%a() - enter\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a() - enter\n", __func__));
 
   Variable     = NULL;
   VariableSize = 0;
@@ -1934,7 +1943,7 @@ GetSavedHddPasswordRequest (
 
   FreePool (Variable);
 
-  DEBUG ((DEBUG_INFO, "%a() - exit\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a() - exit\n", __func__));
 }
 
 /**
@@ -1956,7 +1965,7 @@ SaveHddPasswordRequest (
   HDD_PASSWORD_REQUEST_VARIABLE  *NewVariable;
   UINTN                          NewVariableSize;
 
-  DEBUG ((DEBUG_INFO, "%a() - enter\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a() - enter\n", __func__));
 
   DEBUG ((
     DEBUG_INFO,
@@ -2047,7 +2056,7 @@ SaveHddPasswordRequest (
     FreePool (Variable);
   }
 
-  DEBUG ((DEBUG_INFO, "%a() - exit\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a() - exit\n", __func__));
 }
 
 /**
@@ -2177,7 +2186,11 @@ HddPasswordFormExtractConfig (
 
   Private = HDD_PASSWORD_DXE_PRIVATE_FROM_THIS (This);
   IfrData = AllocateZeroPool (sizeof (HDD_PASSWORD_CONFIG));
-  ASSERT (IfrData != NULL);
+  if (IfrData == NULL) {
+    ASSERT (IfrData != NULL);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
   if (Private->Current != NULL) {
     CopyMem (IfrData, &Private->Current->IfrData, sizeof (HDD_PASSWORD_CONFIG));
   }
@@ -2194,9 +2207,21 @@ HddPasswordFormExtractConfig (
     // followed by "&OFFSET=0&WIDTH=WWWWWWWWWWWWWWWW" followed by a Null-terminator
     //
     ConfigRequestHdr = HiiConstructConfigHdr (&mHddPasswordVendorGuid, mHddPasswordVendorStorageName, Private->DriverHandle);
-    Size             = (StrLen (ConfigRequestHdr) + 32 + 1) * sizeof (CHAR16);
-    ConfigRequest    = AllocateZeroPool (Size);
-    ASSERT (ConfigRequest != NULL);
+    if (ConfigRequestHdr == NULL) {
+      ASSERT (ConfigRequestHdr != NULL);
+      FreePool (IfrData);
+      return EFI_OUT_OF_RESOURCES;
+    }
+
+    Size          = (StrLen (ConfigRequestHdr) + 32 + 1) * sizeof (CHAR16);
+    ConfigRequest = AllocateZeroPool (Size);
+    if (ConfigRequest == NULL) {
+      ASSERT (ConfigRequest != NULL);
+      FreePool (IfrData);
+      FreePool (ConfigRequestHdr);
+      return EFI_OUT_OF_RESOURCES;
+    }
+
     AllocatedRequest = TRUE;
     UnicodeSPrint (ConfigRequest, Size, L"%s&OFFSET=0&WIDTH=%016LX", ConfigRequestHdr, (UINT64)BufferSize);
     FreePool (ConfigRequestHdr);
@@ -2347,10 +2372,14 @@ HddPasswordFormCallback (
   Private = HDD_PASSWORD_DXE_PRIVATE_FROM_THIS (This);
 
   //
-  // Retrive data from Browser
+  // Retrieve data from Browser
   //
   IfrData = AllocateZeroPool (sizeof (HDD_PASSWORD_CONFIG));
-  ASSERT (IfrData != NULL);
+  if (IfrData == NULL) {
+    ASSERT (IfrData != NULL);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
   if (!HiiGetBrowserData (&mHddPasswordVendorGuid, mHddPasswordVendorStorageName, sizeof (HDD_PASSWORD_CONFIG), (UINT8 *)IfrData)) {
     FreePool (IfrData);
     return EFI_NOT_FOUND;
@@ -2385,7 +2414,11 @@ HddPasswordFormCallback (
           // In case goto the device configuration form, update the device form title.
           //
           ConfigFormEntry = HddPasswordGetConfigFormEntryByIndex ((UINT32)(QuestionId - KEY_HDD_DEVICE_ENTRY_BASE));
-          ASSERT (ConfigFormEntry != NULL);
+          if (ConfigFormEntry == NULL) {
+            ASSERT (ConfigFormEntry != NULL);
+            FreePool (IfrData);
+            return EFI_NOT_FOUND;
+          }
 
           DeviceFormTitleToken = (EFI_STRING_ID)STR_HDD_SECURITY_HD;
           HiiSetString (Private->HiiHandle, DeviceFormTitleToken, ConfigFormEntry->HddString, NULL);
@@ -2818,11 +2851,11 @@ HddPasswordDxeInit (
   IN EFI_SYSTEM_TABLE  *SystemTable
   )
 {
-  EFI_STATUS                     Status;
-  HDD_PASSWORD_DXE_PRIVATE_DATA  *Private;
-  VOID                           *Registration;
-  EFI_EVENT                      EndOfDxeEvent;
-  EDKII_VARIABLE_LOCK_PROTOCOL   *VariableLock;
+  EFI_STATUS                      Status;
+  HDD_PASSWORD_DXE_PRIVATE_DATA   *Private;
+  VOID                            *Registration;
+  EFI_EVENT                       EndOfDxeEvent;
+  EDKII_VARIABLE_POLICY_PROTOCOL  *VariablePolicy;
 
   Private = NULL;
 
@@ -2858,14 +2891,19 @@ HddPasswordDxeInit (
   //
   // Make HDD_PASSWORD_VARIABLE_NAME variable read-only.
   //
-  Status = gBS->LocateProtocol (&gEdkiiVariableLockProtocolGuid, NULL, (VOID **)&VariableLock);
+  Status = gBS->LocateProtocol (&gEdkiiVariablePolicyProtocolGuid, NULL, (VOID **)&VariablePolicy);
   if (!EFI_ERROR (Status)) {
-    Status = VariableLock->RequestToLock (
-                             VariableLock,
-                             HDD_PASSWORD_VARIABLE_NAME,
-                             &mHddPasswordVendorGuid
-                             );
-    DEBUG ((DEBUG_INFO, "%a(): Lock %s variable (%r)\n", __FUNCTION__, HDD_PASSWORD_VARIABLE_NAME, Status));
+    Status = RegisterBasicVariablePolicy (
+               VariablePolicy,
+               &mHddPasswordVendorGuid,
+               HDD_PASSWORD_VARIABLE_NAME,
+               VARIABLE_POLICY_NO_MIN_SIZE,
+               VARIABLE_POLICY_NO_MAX_SIZE,
+               VARIABLE_POLICY_NO_MUST_ATTR,
+               VARIABLE_POLICY_NO_CANT_ATTR,
+               VARIABLE_POLICY_TYPE_LOCK_NOW
+               );
+    DEBUG ((DEBUG_INFO, "%a(): Lock %s variable (%r)\n", __func__, HDD_PASSWORD_VARIABLE_NAME, Status));
     ASSERT_EFI_ERROR (Status);
   }
 

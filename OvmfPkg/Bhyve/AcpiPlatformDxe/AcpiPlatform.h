@@ -7,8 +7,7 @@
 
 **/
 
-#ifndef _ACPI_PLATFORM_H_INCLUDED_
-#define _ACPI_PLATFORM_H_INCLUDED_
+#pragma once
 
 #include <PiDxe.h>
 #include <Protocol/AcpiTable.h>
@@ -20,11 +19,6 @@
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/XenPlatformLib.h>
 #include <IndustryStandard/Acpi.h>
-
-typedef struct {
-  EFI_PCI_IO_PROTOCOL    *PciIo;
-  UINT64                 PciAttributes;
-} ORIGINAL_ATTRIBUTES;
 
 typedef struct S3_CONTEXT S3_CONTEXT;
 
@@ -57,17 +51,3 @@ EFIAPI
 InstallAcpiTables (
   IN   EFI_ACPI_TABLE_PROTOCOL  *AcpiTable
   );
-
-VOID
-EnablePciDecoding (
-  OUT ORIGINAL_ATTRIBUTES  **OriginalAttributes,
-  OUT UINTN                *Count
-  );
-
-VOID
-RestorePciDecoding (
-  IN ORIGINAL_ATTRIBUTES  *OriginalAttributes,
-  IN UINTN                Count
-  );
-
-#endif /* _ACPI_PLATFORM_H_INCLUDED_ */

@@ -1,0 +1,286 @@
+/** @file
+  Arm generic timer parser.
+
+  Copyright (c) 2021 - 2026, ARM Limited. All rights reserved.<BR>
+  SPDX-License-Identifier: BSD-2-Clause-Patent
+
+  @par Reference(s):
+  - linux/Documentation/devicetree/bindings/timer/arm,arch_timer.yaml
+**/
+
+#include <Library/BaseMemoryLib.h>
+#include <Library/FdtLib.h>
+#include "FdtHwInfoParser.h"
+#include "CmObjectDescUtility.h"
+#include "Arm/GenericTimer/ArmGenericTimerParser.h"
+#include "Arm/Gic/ArmGicDispatcher.h"
+
+/** List of "compatible" property values for timer nodes.
+
+  Other "compatible" values are not supported by this module.
+*/
+STATIC CONST COMPATIBILITY_STR  TimerCompatibleStr[] = {
+  { "arm,armv7-timer" },
+  { "arm,armv8-timer" }
+};
+
+/** Timer compatiblity information.
+*/
+STATIC CONST COMPATIBILITY_INFO  TimerCompatibleInfo = {
+  ARRAY_SIZE (TimerCompatibleStr),
+  TimerCompatibleStr
+};
+
+/** Parse a timer node.
+
+  @param [in]  Fdt                Pointer to a Flattened Device Tree (Fdt).
+  @param [in]  TimerNode          Offset of a timer node.
+  @param [in]  GenericTimerInfo   The CM_ARM_BOOT_ARCH_INFO to populate.
+
+  @retval EFI_SUCCESS             The function completed successfully.
+  @retval EFI_ABORTED             An error occurred.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+TimerNodeParser (
+  IN  CONST VOID                       *Fdt,
+  IN        INT32                      TimerNode,
+  IN        CM_ARM_GENERIC_TIMER_INFO  *GenericTimerInfo
+  )
+{
+  EFI_STATUS    Status;
+  CONST UINT32  *Data;
+  CONST UINT32  *DecodedInterruptData;
+  INT32         DecodedInterruptCells;
+  INT32         DataSize;
+  UINT32        AlwaysOnTimerFlag;
+
+  if ((Fdt == NULL) ||
+      (GenericTimerInfo == NULL))
+  {
+    ASSERT (0);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Data = FdtGetProp (Fdt, TimerNode, "always-on", &DataSize);
+  if ((Data == NULL) || (DataSize < 0)) {
+    AlwaysOnTimerFlag = 0;
+  } else {
+    AlwaysOnTimerFlag = BIT2;
+  }
+
+  Status = FdtResolveInterrupt (
+             Fdt,
+             TimerNode,
+             FdtSecureTimerIrq,
+             &DecodedInterruptData,
+             &DecodedInterruptCells
+             );
+  if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
+    ASSERT (0);
+    return Status;
+  } else if (Status == EFI_NOT_FOUND) {
+    GenericTimerInfo->SecurePL1TimerGSIV  = 0;
+    GenericTimerInfo->SecurePL1TimerFlags = 0;
+  } else {
+    GenericTimerInfo->SecurePL1TimerGSIV  = FdtGetInterruptId (DecodedInterruptData, DecodedInterruptCells);
+    GenericTimerInfo->SecurePL1TimerFlags = FdtGetInterruptFlags (DecodedInterruptData, DecodedInterruptCells) | AlwaysOnTimerFlag;
+  }
+
+  Status = FdtResolveInterrupt (
+             Fdt,
+             TimerNode,
+             FdtNonSecureTimerIrq,
+             &DecodedInterruptData,
+             &DecodedInterruptCells
+             );
+  if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
+    ASSERT (0);
+    return Status;
+  } else if (Status == EFI_NOT_FOUND) {
+    GenericTimerInfo->NonSecurePL1TimerGSIV  = 0;
+    GenericTimerInfo->NonSecurePL1TimerFlags = 0;
+  } else {
+    GenericTimerInfo->NonSecurePL1TimerGSIV  = FdtGetInterruptId (DecodedInterruptData, DecodedInterruptCells);
+    GenericTimerInfo->NonSecurePL1TimerFlags = FdtGetInterruptFlags (DecodedInterruptData, DecodedInterruptCells) | AlwaysOnTimerFlag;
+  }
+
+  Status = FdtResolveInterrupt (
+             Fdt,
+             TimerNode,
+             FdtVirtualTimerIrq,
+             &DecodedInterruptData,
+             &DecodedInterruptCells
+             );
+  if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
+    ASSERT (FALSE);
+    return Status;
+  } else if (Status == EFI_NOT_FOUND) {
+    GenericTimerInfo->VirtualTimerGSIV  = 0;
+    GenericTimerInfo->VirtualTimerFlags = 0;
+  } else {
+    GenericTimerInfo->VirtualTimerGSIV  = FdtGetInterruptId (DecodedInterruptData, DecodedInterruptCells);
+    GenericTimerInfo->VirtualTimerFlags = FdtGetInterruptFlags (DecodedInterruptData, DecodedInterruptCells) | AlwaysOnTimerFlag;
+  }
+
+  Status = FdtResolveInterrupt (
+             Fdt,
+             TimerNode,
+             FdtHypervisorTimerIrq,
+             &DecodedInterruptData,
+             &DecodedInterruptCells
+             );
+  if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
+    ASSERT (0);
+    return Status;
+  } else if (Status == EFI_NOT_FOUND) {
+    GenericTimerInfo->NonSecurePL2TimerGSIV  = 0;
+    GenericTimerInfo->NonSecurePL2TimerFlags = 0;
+  } else {
+    GenericTimerInfo->NonSecurePL2TimerGSIV  = FdtGetInterruptId (DecodedInterruptData, DecodedInterruptCells);
+    GenericTimerInfo->NonSecurePL2TimerFlags = FdtGetInterruptFlags (DecodedInterruptData, DecodedInterruptCells) | AlwaysOnTimerFlag;
+  }
+
+  Status = FdtResolveInterrupt (
+             Fdt,
+             TimerNode,
+             FdtHypervisorVTimerIrq,
+             &DecodedInterruptData,
+             &DecodedInterruptCells
+             );
+  if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
+    ASSERT (0);
+    return Status;
+  } else if (Status == EFI_NOT_FOUND) {
+    GenericTimerInfo->VirtualPL2TimerGSIV  = 0;
+    GenericTimerInfo->VirtualPL2TimerFlags = 0;
+  } else {
+    GenericTimerInfo->VirtualPL2TimerGSIV  = FdtGetInterruptId (DecodedInterruptData, DecodedInterruptCells);
+    GenericTimerInfo->VirtualPL2TimerFlags = FdtGetInterruptFlags (DecodedInterruptData, DecodedInterruptCells) | AlwaysOnTimerFlag;
+  }
+
+  // Setup default values
+  // The CntControlBase & CntReadBase Physical Address are optional if
+  // the system implements EL3 (Security Extensions). So, initialise
+  // these to their default value.
+  GenericTimerInfo->CounterControlBaseAddress = 0xFFFFFFFFFFFFFFFF;
+  GenericTimerInfo->CounterReadBaseAddress    = 0xFFFFFFFFFFFFFFFF;
+
+  return EFI_SUCCESS;
+}
+
+/** CM_ARM_GENERIC_TIMER_INFO parser function.
+
+  The following structure is populated:
+  typedef struct CmArmGenericTimerInfo {
+    UINT64  CounterControlBaseAddress;        // {default}
+    UINT64  CounterReadBaseAddress;           // {default}
+    UINT32  SecurePL1TimerGSIV;               // {Populated}
+    UINT32  SecurePL1TimerFlags;              // {Populated}
+    UINT32  NonSecurePL1TimerGSIV;            // {Populated}
+    UINT32  NonSecurePL1TimerFlags;           // {Populated}
+    UINT32  VirtualTimerGSIV;                 // {Populated}
+    UINT32  VirtualTimerFlags;                // {Populated}
+    UINT32  NonSecurePL2TimerGSIV;            // {Populated}
+    UINT32  NonSecurePL2TimerFlags;           // {Populated}
+    UINT32  VirtualPL2TimerGSIV;              // {default}
+    UINT32  VirtualPL2TimerFlags;             // {default}
+  } CM_ARM_GENERIC_TIMER_INFO;
+
+  A parser parses a Device Tree to populate a specific CmObj type. None,
+  one or many CmObj can be created by the parser.
+  The created CmObj are then handed to the parser's caller through the
+  HW_INFO_ADD_OBJECT interface.
+  This can also be a dispatcher. I.e. a function that not parsing a
+  Device Tree but calling other parsers.
+
+  @param [in]  FdtParserHandle A handle to the parser instance.
+  @param [in]  FdtBranch       When searching for DT node name, restrict
+                               the search to this Device Tree branch.
+
+  @retval EFI_SUCCESS             The function completed successfully.
+  @retval EFI_ABORTED             An error occurred.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+  @retval EFI_NOT_FOUND           Not found.
+  @retval EFI_UNSUPPORTED         Unsupported.
+**/
+EFI_STATUS
+EFIAPI
+ArmGenericTimerInfoParser (
+  IN  CONST FDT_HW_INFO_PARSER_HANDLE  FdtParserHandle,
+  IN        INT32                      FdtBranch
+  )
+{
+  EFI_STATUS                 Status;
+  UINT32                     Index;
+  INT32                      TimerNode;
+  UINT32                     TimerNodeCount;
+  CM_ARM_GENERIC_TIMER_INFO  GenericTimerInfo;
+  VOID                       *Fdt;
+
+  if (FdtParserHandle == NULL) {
+    ASSERT (0);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Fdt    = FdtParserHandle->Fdt;
+  Status = FdtCountCompatNodeInBranch (
+             Fdt,
+             FdtBranch,
+             &TimerCompatibleInfo,
+             &TimerNodeCount
+             );
+  if (EFI_ERROR (Status)) {
+    ASSERT (0);
+    return Status;
+  }
+
+  if (TimerNodeCount == 0) {
+    return EFI_NOT_FOUND;
+  }
+
+  // Parse each timer node in the branch.
+  TimerNode = FdtBranch;
+  for (Index = 0; Index < TimerNodeCount; Index++) {
+    ZeroMem (&GenericTimerInfo, sizeof (CM_ARM_GENERIC_TIMER_INFO));
+
+    Status = FdtGetNextCompatNodeInBranch (
+               Fdt,
+               FdtBranch,
+               &TimerCompatibleInfo,
+               &TimerNode
+               );
+    if (EFI_ERROR (Status)) {
+      ASSERT (0);
+      if (Status == EFI_NOT_FOUND) {
+        // Should have found the node.
+        Status = EFI_ABORTED;
+      }
+
+      return Status;
+    }
+
+    Status = TimerNodeParser (Fdt, TimerNode, &GenericTimerInfo);
+    if (EFI_ERROR (Status)) {
+      ASSERT (0);
+      return Status;
+    }
+
+    // Add the CmObj to the Configuration Manager.
+    Status = AddSingleCmObj (
+               FdtParserHandle,
+               CREATE_CM_ARM_OBJECT_ID (EArmObjGenericTimerInfo),
+               &GenericTimerInfo,
+               sizeof (CM_ARM_GENERIC_TIMER_INFO),
+               NULL
+               );
+    if (EFI_ERROR (Status)) {
+      ASSERT (0);
+      return Status;
+    }
+  } // for
+
+  return Status;
+}

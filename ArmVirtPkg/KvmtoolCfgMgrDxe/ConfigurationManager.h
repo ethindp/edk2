@@ -1,6 +1,6 @@
 /** @file
 
-  Copyright (c) 2021 - 2022, Arm Limited. All rights reserved.<BR>
+  Copyright (c) 2021 - 2026, Arm Limited. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -9,8 +9,7 @@
     - Obj or OBJ - Object
 **/
 
-#ifndef CONFIGURATION_MANAGER_H_
-#define CONFIGURATION_MANAGER_H_
+#pragma once
 
 ///
 /// C array containing the compiled AML template.
@@ -63,7 +62,7 @@ typedef EFI_STATUS (*CM_OBJECT_HANDLER_PROC) (
 ///
 /// The number of ACPI tables to install
 ///
-#define PLAT_ACPI_TABLE_COUNT  10
+#define PLAT_ACPI_TABLE_COUNT  12
 
 ///
 /// A structure describing the platform configuration
@@ -73,53 +72,51 @@ typedef struct PlatformRepositoryInfo {
   ///
   /// Configuration Manager Information.
   ///
-  CM_STD_OBJ_CONFIGURATION_MANAGER_INFO    CmInfo;
+  CM_STD_OBJ_CONFIGURATION_MANAGER_INFO           CmInfo;
 
   ///
   /// List of ACPI tables
   ///
-  CM_STD_OBJ_ACPI_TABLE_INFO               CmAcpiTableList[PLAT_ACPI_TABLE_COUNT];
+  CM_STD_OBJ_ACPI_TABLE_INFO                      CmAcpiTableList[PLAT_ACPI_TABLE_COUNT];
 
   ///
   /// Power management profile information
   ///
-  CM_ARM_POWER_MANAGEMENT_PROFILE_INFO     PmProfileInfo;
+  CM_ARCH_COMMON_POWER_MANAGEMENT_PROFILE_INFO    PmProfileInfo;
 
   ///
   /// ITS Group node
   ///
-  CM_ARM_ITS_GROUP_NODE                    ItsGroupInfo;
+  CM_ARM_ITS_GROUP_NODE                           ItsGroupInfo;
 
   ///
   /// ITS Identifier array
   ///
-  CM_ARM_ITS_IDENTIFIER                    ItsIdentifierArray[1];
+  CM_ARM_ITS_IDENTIFIER                           ItsIdentifierArray[1];
 
   ///
   /// PCI Root complex node
   ///
-  CM_ARM_ROOT_COMPLEX_NODE                 RootComplexInfo;
+  CM_ARM_ROOT_COMPLEX_NODE                        RootComplexInfo;
 
   ///
   /// Array of DeviceID mapping
   ///
-  CM_ARM_ID_MAPPING                        DeviceIdMapping[1];
+  CM_ARM_ID_MAPPING                               DeviceIdMapping[1];
 
   ///
   /// Dynamic platform repository.
   /// CmObj created by parsing the Kvmtool device tree are stored here.
   ///
-  DYNAMIC_PLATFORM_REPOSITORY_INFO         *DynamicPlatformRepo;
+  DYNAMIC_PLATFORM_REPOSITORY_INFO                *DynamicPlatformRepo;
 
   ///
   /// Base address of the FDT.
   ///
-  VOID                                     *FdtBase;
+  VOID                                            *FdtBase;
 
   ///
   /// A handle to the FDT HwInfoParser.
   ///
-  HW_INFO_PARSER_HANDLE                    FdtParserHandle;
+  HW_INFO_PARSER_HANDLE                           FdtParserHandle;
 } EDKII_PLATFORM_REPOSITORY_INFO;
-
-#endif // CONFIGURATION_MANAGER_H_

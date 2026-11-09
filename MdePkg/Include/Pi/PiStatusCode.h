@@ -2,6 +2,7 @@
   StatusCode related definitions in PI.
 
 Copyright (c) 2009 - 2018, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
   @par Revision Reference:
@@ -10,11 +11,10 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef __PI_STATUS_CODE_H__
-#define __PI_STATUS_CODE_H__
+#pragma once
 
 //
-// Required for IA32, X64, IPF, ARM and EBC defines for CPU exception types
+// Required for IA32, X64, IPF, and EBC defines for CPU exception types
 //
 #include <Protocol/DebugSupport.h>
 
@@ -140,6 +140,7 @@ typedef struct {
 #define EFI_COMPUTING_UNIT_CACHE               (EFI_COMPUTING_UNIT | 0x00040000)
 #define EFI_COMPUTING_UNIT_MEMORY              (EFI_COMPUTING_UNIT | 0x00050000)
 #define EFI_COMPUTING_UNIT_CHIPSET             (EFI_COMPUTING_UNIT | 0x00060000)
+#define EFI_COMPUTING_UNIT_MANAGEABILITY       (EFI_COMPUTING_UNIT | 0x00070000)
 ///@}
 
 ///
@@ -344,6 +345,16 @@ typedef struct {
 ///@}
 
 ///
+/// Computing Unit Manageability Subclass Error Code definitions.
+/// The detail information is reported by REPORT_STATUS_CODE_WITH_EXTENDED_DATA
+//  with ASCII string in EFI_STATUS_CODE_STRING_DATA.
+///@{
+#define EFI_MANAGEABILITY_EC_REDFISH_COMMUNICATION_ERROR         (EFI_SUBCLASS_SPECIFIC | 0x00000000)
+#define EFI_MANAGEABILITY_EC_REDFISH_HOST_INTERFACE_ERROR        (EFI_SUBCLASS_SPECIFIC | 0x00000001)
+#define EFI_MANAGEABILITY_EC_REDFISH_BOOTSTRAP_CREDENTIAL_ERROR  (EFI_SUBCLASS_SPECIFIC | 0x00000002)
+///@}
+
+///
 /// Peripheral Subclass definitions.
 /// Values of 12-127 are reserved for future use by this specification.
 /// Values of 128-255 are reserved for OEM use.
@@ -363,6 +374,7 @@ typedef struct {
 #define EFI_PERIPHERAL_LCD_DEVICE       (EFI_PERIPHERAL | 0x000B0000)
 #define EFI_PERIPHERAL_NETWORK          (EFI_PERIPHERAL | 0x000C0000)
 #define EFI_PERIPHERAL_DOCKING          (EFI_PERIPHERAL | 0x000D0000)
+#define EFI_PERIPHERAL_TPM              (EFI_PERIPHERAL | 0x000E0000)
 ///@}
 
 ///
@@ -794,6 +806,7 @@ typedef struct {
 #define EFI_SW_DXE_BS_PC_ATTEMPT_BOOT_ORDER_EVENT      (EFI_SUBCLASS_SPECIFIC | 0x00000007)
 #define EFI_SW_DXE_BS_PC_CONFIG_RESET                  (EFI_SUBCLASS_SPECIFIC | 0x00000008)
 #define EFI_SW_DXE_BS_PC_CSM_INIT                      (EFI_SUBCLASS_SPECIFIC | 0x00000009)
+#define EFI_SW_DXE_BS_PC_BOOT_OPTION_COMPLETE          (EFI_SUBCLASS_SPECIFIC | 0x0000000A)
 ///@}
 
 //
@@ -965,26 +978,27 @@ typedef struct {
 /// These are shared by all subclasses.
 ///
 ///@{
-#define EFI_SW_EC_NON_SPECIFIC            0x00000000
-#define EFI_SW_EC_LOAD_ERROR              0x00000001
-#define EFI_SW_EC_INVALID_PARAMETER       0x00000002
-#define EFI_SW_EC_UNSUPPORTED             0x00000003
-#define EFI_SW_EC_INVALID_BUFFER          0x00000004
-#define EFI_SW_EC_OUT_OF_RESOURCES        0x00000005
-#define EFI_SW_EC_ABORTED                 0x00000006
-#define EFI_SW_EC_ILLEGAL_SOFTWARE_STATE  0x00000007
-#define EFI_SW_EC_ILLEGAL_HARDWARE_STATE  0x00000008
-#define EFI_SW_EC_START_ERROR             0x00000009
-#define EFI_SW_EC_BAD_DATE_TIME           0x0000000A
-#define EFI_SW_EC_CFG_INVALID             0x0000000B
-#define EFI_SW_EC_CFG_CLR_REQUEST         0x0000000C
-#define EFI_SW_EC_CFG_DEFAULT             0x0000000D
-#define EFI_SW_EC_PWD_INVALID             0x0000000E
-#define EFI_SW_EC_PWD_CLR_REQUEST         0x0000000F
-#define EFI_SW_EC_PWD_CLEARED             0x00000010
-#define EFI_SW_EC_EVENT_LOG_FULL          0x00000011
-#define EFI_SW_EC_WRITE_PROTECTED         0x00000012
-#define EFI_SW_EC_FV_CORRUPTED            0x00000013
+#define EFI_SW_EC_NON_SPECIFIC             0x00000000
+#define EFI_SW_EC_LOAD_ERROR               0x00000001
+#define EFI_SW_EC_INVALID_PARAMETER        0x00000002
+#define EFI_SW_EC_UNSUPPORTED              0x00000003
+#define EFI_SW_EC_INVALID_BUFFER           0x00000004
+#define EFI_SW_EC_OUT_OF_RESOURCES         0x00000005
+#define EFI_SW_EC_ABORTED                  0x00000006
+#define EFI_SW_EC_ILLEGAL_SOFTWARE_STATE   0x00000007
+#define EFI_SW_EC_ILLEGAL_HARDWARE_STATE   0x00000008
+#define EFI_SW_EC_START_ERROR              0x00000009
+#define EFI_SW_EC_BAD_DATE_TIME            0x0000000A
+#define EFI_SW_EC_CFG_INVALID              0x0000000B
+#define EFI_SW_EC_CFG_CLR_REQUEST          0x0000000C
+#define EFI_SW_EC_CFG_DEFAULT              0x0000000D
+#define EFI_SW_EC_PWD_INVALID              0x0000000E
+#define EFI_SW_EC_PWD_CLR_REQUEST          0x0000000F
+#define EFI_SW_EC_PWD_CLEARED              0x00000010
+#define EFI_SW_EC_EVENT_LOG_FULL           0x00000011
+#define EFI_SW_EC_WRITE_PROTECTED          0x00000012
+#define EFI_SW_EC_FV_CORRUPTED             0x00000013
+#define EFI_SW_EC_INCONSISTENT_MEMORY_MAP  0x00000014
 ///@}
 
 //
@@ -1202,5 +1216,3 @@ typedef struct {
 #define EFI_SW_EC_ARM_IRQ                    EXCEPT_ARM_IRQ
 #define EFI_SW_EC_ARM_FIQ                    EXCEPT_ARM_FIQ
 ///@}
-
-#endif

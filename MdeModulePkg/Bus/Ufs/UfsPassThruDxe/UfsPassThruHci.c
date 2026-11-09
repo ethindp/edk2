@@ -2,7 +2,7 @@
   UfsPassThruDxe driver is used to produce EFI_EXT_SCSI_PASS_THRU protocol interface
   for upper layer application to execute UFS-supported SCSI cmds.
 
-  Copyright (c) 2014 - 2019, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2014 - 2022, Intel Corporation. All rights reserved.<BR>
   Copyright (c) Microsoft Corporation.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -181,7 +181,7 @@ DumpUicCmdExecResult (
         DEBUG ((DEBUG_VERBOSE, "UIC configuration command fails - DME_FAILURE\n"));
         break;
       default:
-        ASSERT (FALSE);
+        DEBUG ((DEBUG_VERBOSE, "UIC configuration command fails - UNKNOWN_ERROR (0x%02x)\n", Result));
         break;
     }
   } else {
@@ -192,7 +192,7 @@ DumpUicCmdExecResult (
         DEBUG ((DEBUG_VERBOSE, "UIC control command fails - FAILURE\n"));
         break;
       default:
-        ASSERT (FALSE);
+        DEBUG ((DEBUG_VERBOSE, "UIC control command fails - UNKNOWN_ERROR (0x%02x)\n", Result));
         break;
     }
   }
@@ -241,7 +241,7 @@ DumpQueryResponseResult (
       DEBUG ((DEBUG_VERBOSE, "Query Response with General Failure\n"));
       break;
     default:
-      ASSERT (FALSE);
+      DEBUG ((DEBUG_VERBOSE, "Query Response with Unknown Error (0x%02x)\n", Result));
       break;
   }
 }
@@ -389,7 +389,7 @@ UfsInitUtpPrdt (
   IN  UINT32      BufferSize
   )
 {
-  UINT32  PrdtIndex;
+  UINTN   PrdtIndex;
   UINT32  RemainingLen;
   UINT8   *Remaining;
   UINTN   PrdtNumber;
@@ -646,6 +646,9 @@ UfsCreateDMCommandDesc (
     Trd->RuL = (UINT16)DivU64x32 ((UINT64)ROUNDUP8 (sizeof (UTP_QUERY_RESP_UPIU)) + ROUNDUP8 (DataSize), sizeof (UINT32));
     Trd->RuO = (UINT16)DivU64x32 ((UINT64)ROUNDUP8 (sizeof (UTP_QUERY_REQ_UPIU)), sizeof (UINT32));
   }
+
+  // UFS DM Command, PRDT Length must be Zero.
+  Trd->PrdtL = 0x00;
 
   return EFI_SUCCESS;
 }
@@ -1808,7 +1811,7 @@ UfsAllocateAlignCommonBuffer (
   if (EFI_ERROR (Status) || (Bytes != EFI_PAGES_TO_SIZE (EFI_SIZE_TO_PAGES (Size)))) {
     UfsHc->FreeBuffer (
              UfsHc,
-             EFI_PAGES_TO_SIZE (EFI_SIZE_TO_PAGES (Size)),
+             EFI_SIZE_TO_PAGES (Size),
              *CmdDescHost
              );
     *CmdDescHost = NULL;
@@ -1825,7 +1828,7 @@ UfsAllocateAlignCommonBuffer (
              );
     UfsHc->FreeBuffer (
              UfsHc,
-             EFI_PAGES_TO_SIZE (EFI_SIZE_TO_PAGES (Size)),
+             EFI_SIZE_TO_PAGES (Size),
              *CmdDescHost
              );
     *CmdDescMapping = NULL;
@@ -1862,40 +1865,45 @@ UfsEnableHostController (
     }
   }
 
-  //
-  // UFS 2.0 spec section 7.1.1 - Host Controller Initialization
-  //
-  // Reinitialize the UFS host controller if HCE bit of HC register is set.
-  //
-  Status = UfsMmioRead32 (Private, UFS_HC_ENABLE_OFFSET, &Data);
-  if (EFI_ERROR (Status)) {
-    return Status;
-  }
-
-  if ((Data & UFS_HC_HCE_EN) == UFS_HC_HCE_EN) {
+  if ((mUfsHcPlatform == NULL) ||
+      (mUfsHcPlatform->Version < 3) ||
+      ((mUfsHcPlatform->Version >= 3) && !mUfsHcPlatform->SkipHceReenable))
+  {
     //
-    // Write a 0 to the HCE register at first to disable the host controller.
+    // UFS 2.0 spec section 7.1.1 - Host Controller Initialization
     //
-    Status = UfsMmioWrite32 (Private, UFS_HC_ENABLE_OFFSET, 0);
+    // Reinitialize the UFS host controller if HCE bit of HC register is set.
+    //
+    Status = UfsMmioRead32 (Private, UFS_HC_ENABLE_OFFSET, &Data);
     if (EFI_ERROR (Status)) {
       return Status;
     }
 
-    //
-    // Wait until HCE is read as '0' before continuing.
-    //
-    Status = UfsWaitMemSet (Private, UFS_HC_ENABLE_OFFSET, UFS_HC_HCE_EN, 0, UFS_TIMEOUT);
-    if (EFI_ERROR (Status)) {
-      return EFI_DEVICE_ERROR;
-    }
-  }
+    if ((Data & UFS_HC_HCE_EN) == UFS_HC_HCE_EN) {
+      //
+      // Write a 0 to the HCE register at first to disable the host controller.
+      //
+      Status = UfsMmioWrite32 (Private, UFS_HC_ENABLE_OFFSET, 0);
+      if (EFI_ERROR (Status)) {
+        return Status;
+      }
 
-  //
-  // Write a 1 to the HCE register to enable the UFS host controller.
-  //
-  Status = UfsMmioWrite32 (Private, UFS_HC_ENABLE_OFFSET, UFS_HC_HCE_EN);
-  if (EFI_ERROR (Status)) {
-    return Status;
+      //
+      // Wait until HCE is read as '0' before continuing.
+      //
+      Status = UfsWaitMemSet (Private, UFS_HC_ENABLE_OFFSET, UFS_HC_HCE_EN, 0, UFS_TIMEOUT);
+      if (EFI_ERROR (Status)) {
+        return EFI_DEVICE_ERROR;
+      }
+    }
+
+    //
+    // Write a 1 to the HCE register to enable the UFS host controller.
+    //
+    Status = UfsMmioWrite32 (Private, UFS_HC_ENABLE_OFFSET, UFS_HC_HCE_EN);
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
   }
 
   //
@@ -1945,6 +1953,10 @@ UfsDeviceDetection (
     }
   }
 
+  if ((mUfsHcPlatform != NULL) && (mUfsHcPlatform->Version >= 3) && mUfsHcPlatform->SkipLinkStartup) {
+    return EFI_SUCCESS;
+  }
+
   //
   // Start UFS device detection.
   // Try up to 3 times for establishing data link with device.
@@ -1970,14 +1982,6 @@ UfsDeviceDetection (
         return EFI_DEVICE_ERROR;
       }
     } else {
-      if ((mUfsHcPlatform != NULL) && (mUfsHcPlatform->Callback != NULL)) {
-        Status = mUfsHcPlatform->Callback (Private->Handle, EdkiiUfsHcPostLinkStartup, &Private->UfsHcDriverInterface);
-        if (EFI_ERROR (Status)) {
-          DEBUG ((DEBUG_ERROR, "Failure from platform driver during EdkiiUfsHcPostLinkStartup, Status = %r\n", Status));
-          return Status;
-        }
-      }
-
       return EFI_SUCCESS;
     }
   }

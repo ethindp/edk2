@@ -1,0 +1,1122 @@
+/** @file
+  Arm Gic cpu parser.
+
+  Copyright (c) 2021 - 2026, Arm Limited. All rights reserved.<BR>
+  SPDX-License-Identifier: BSD-2-Clause-Patent
+
+  @par Reference(s):
+  - linux/Documentation/devicetree/bindings/arm/cpus.yaml
+  - linux/Documentation/devicetree/bindings/interrupt-controller/arm,gic.yaml
+  - linux/Documentation/devicetree/bindings/interrupt-controller/arm,gic-v3.yaml
+  - linux/Documentation/devicetree/bindings/arm/pmu.yaml
+**/
+
+#include <Library/ArmLib.h>
+#include <Library/FdtLib.h>
+#include "FdtHwInfoParser.h"
+#include "CmObjectDescUtility.h"
+#include "Arm/Gic/ArmGicCParser.h"
+#include "Arm/Gic/ArmGicDispatcher.h"
+#include "Arm/Gic/ArmTraceExtensionsParser.h"
+
+/** List of "compatible" property values for CPU nodes.
+
+  Any other "compatible" value is not supported by this module.
+*/
+STATIC CONST COMPATIBILITY_STR  CpuCompatibleStr[] = {
+  { "arm,arm-v7"     },
+  { "arm,arm-v8"     },
+  { "arm,armv8"      },
+  { "arm,cortex-a15" },
+  { "arm,cortex-a7"  },
+  { "arm,cortex-a57" }
+};
+
+/** COMPATIBILITY_INFO structure for CPU nodes.
+*/
+STATIC CONST COMPATIBILITY_INFO  CpuCompatibleInfo = {
+  ARRAY_SIZE (CpuCompatibleStr),
+  CpuCompatibleStr
+};
+
+/** Pmu compatible strings.
+
+  Any other "compatible" value is not supported by this module.
+*/
+STATIC CONST COMPATIBILITY_STR  PmuCompatibleStr[] = {
+  { "arm,armv8-pmuv3" }
+};
+
+/** COMPATIBILITY_INFO structure for the PmuCompatibleStr.
+*/
+CONST COMPATIBILITY_INFO  PmuCompatibleInfo = {
+  ARRAY_SIZE (PmuCompatibleStr),
+  PmuCompatibleStr
+};
+
+/** Parse TRBE nodes and attach the decoded interrupt to their CPUs.
+
+  This function modifies the input CM_ARM_GICC_INFO array to set:
+    - TrbeInterrupt
+
+  @param [in]      Fdt               Pointer to a Flattened Device Tree (Fdt).
+  @param [in, out] GicCCmObjDesc     The CM_ARM_GICC_INFO array to patch.
+
+  @retval EFI_SUCCESS             The function completed successfully.
+  @retval EFI_ABORTED             An error occurred.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+  @retval EFI_NOT_FOUND           No TRBE node was found.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+GicCTrbeNodeParser (
+  IN      CONST VOID               *Fdt,
+  IN  OUT       CM_OBJ_DESCRIPTOR  *GicCCmObjDesc
+  )
+{
+  EFI_STATUS        Status;
+  UINT32            Index;
+  UINT16            TrbeInterrupt;
+  CM_ARM_GICC_INFO  *GicCInfo;
+
+  if ((Fdt == NULL)             ||
+      (GicCCmObjDesc == NULL)   ||
+      (GicCCmObjDesc->Data == NULL))
+  {
+    ASSERT (FALSE);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Status = ArmGetTrbeInterrupt (Fdt, &TrbeInterrupt);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  GicCInfo = (CM_ARM_GICC_INFO *)GicCCmObjDesc->Data;
+  for (Index = 0; Index < GicCCmObjDesc->Count; Index++) {
+    GicCInfo[Index].TrbeInterrupt = TrbeInterrupt;
+  }
+
+  return EFI_SUCCESS;
+}
+
+/** Parse a "cpu" node.
+
+  @param [in]  Fdt              Pointer to a Flattened Device Tree (Fdt).
+  @param [in]  CpuNode          Offset of a cpu node.
+  @param [in]  GicVersion       Version of the GIC.
+  @param [in]  AddressCells     Number of address cells used for the reg
+                                property.
+  @param [out] GicCInfo         CM_ARM_GICC_INFO structure to populate.
+
+  @retval EFI_SUCCESS             The function completed successfully.
+  @retval EFI_ABORTED             An error occurred.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+  @retval EFI_UNSUPPORTED         Unsupported.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+CpuNodeParser (
+  IN  CONST VOID              *Fdt,
+  IN        INT32             CpuNode,
+  IN        UINT32            GicVersion,
+  IN        UINT32            AddressCells,
+  OUT       CM_ARM_GICC_INFO  *GicCInfo
+  )
+{
+  CONST UINT8  *Data;
+  INT32        DataSize;
+  UINT32       ProcUid;
+  UINT64       MpIdr;
+  UINT64       CheckAffMask;
+
+  MpIdr        = 0;
+  CheckAffMask = ARM_CORE_AFF0 | ARM_CORE_AFF1 | ARM_CORE_AFF2;
+
+  if (GicCInfo == NULL) {
+    ASSERT (0);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Data = FdtGetProp (Fdt, CpuNode, "reg", &DataSize);
+  if ((Data == NULL)                  ||
+      ((DataSize != sizeof (UINT32))  &&
+       (DataSize != sizeof (UINT64))))
+  {
+    ASSERT (0);
+    return EFI_ABORTED;
+  }
+
+  /* If cpus node's #address-cells property is set to 2
+     The first reg cell bits [7:0] must be set to
+     bits [39:32] of MPIDR_EL1.
+     The second reg cell bits [23:0] must be set to
+     bits [23:0] of MPIDR_EL1.
+   */
+  if (AddressCells == 2) {
+    MpIdr         = Fdt64ToCpu (*((UINT64 *)Data));
+    CheckAffMask |= ARM_CORE_AFF3;
+  } else {
+    MpIdr = Fdt32ToCpu (*((UINT32 *)Data));
+  }
+
+  if ((MpIdr & ~CheckAffMask) != 0) {
+    ASSERT (0);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  // To fit the Affinity [0-3] a 32bits value, place the Aff3 on bits
+  // [31:24] instead of their original place ([39:32]).
+  ProcUid = MpIdr | ((MpIdr & ARM_CORE_AFF3) >> 8);
+
+  /* ACPI 6.3, s5.2.12.14 GIC CPU Interface (GICC) Structure:
+     GIC 's CPU Interface Number. In GICv1/v2 implementations,
+     this value matches the bit index of the associated processor
+     in the GIC distributor's GICD_ITARGETSR register. For
+     GICv3/4 implementations this field must be provided by the
+     platform, if compatibility mode is supported. If it is not supported
+     by the implementation, then this field must be zero.
+
+     Note: We do not support compatibility mode for GicV3
+  */
+  if (GicVersion == 2) {
+    GicCInfo->CPUInterfaceNumber = ProcUid;
+  } else {
+    GicCInfo->CPUInterfaceNumber = 0;
+  }
+
+  GicCInfo->AcpiProcessorUid = ProcUid;
+  GicCInfo->Flags            = EFI_ACPI_6_3_GIC_ENABLED;
+  GicCInfo->MPIDR            = MpIdr;
+
+  return EFI_SUCCESS;
+}
+
+/** Parse a "cpus" node and its children "cpu" nodes.
+
+  Create as many CM_ARM_GICC_INFO structures as "cpu" nodes.
+  The caller owns the returned CpuNodeOffsetMap and must free it
+  using FreePool().
+
+  @param [in]  Fdt              Pointer to a Flattened Device Tree (Fdt).
+  @param [in]  CpusNode         Offset of a cpus node.
+  @param [in]  GicVersion       Version of the GIC.
+  @param [out] NewGicCmObjDesc  If success, CM_OBJ_DESCRIPTOR containing
+                                all the created CM_ARM_GICC_INFO.
+  @param [out] CpuNodeOffsetMap If success, an array mapping each GICC index
+                                to the corresponding CPU DT node offset.
+                                The caller owns the returned array and must
+                                free it using FreePool().
+  @param [out] CpuCount         If success, number of CPU device nodes
+                                parsed below CpusNode.
+
+  @retval EFI_SUCCESS             The function completed successfully.
+  @retval EFI_ABORTED             An error occurred.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+  @retval EFI_NOT_FOUND           No CPU device node was found.
+  @retval EFI_OUT_OF_RESOURCES    Memory allocation failed.
+  @retval EFI_UNSUPPORTED         Unsupported.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+CpusNodeParser (
+  IN  CONST VOID               *Fdt,
+  IN        INT32              CpusNode,
+  IN        UINT32             GicVersion,
+  OUT       CM_OBJ_DESCRIPTOR  **NewGicCmObjDesc,
+  OUT       INT32              **CpuNodeOffsetMap,
+  OUT       UINTN              *CpuCount
+  )
+{
+  EFI_STATUS  Status;
+  INT32       CpuNode;
+  UINT32      CpuNodeCount;
+  INT32       AddressCells;
+
+  UINT32            Index;
+  CM_ARM_GICC_INFO  *GicCInfoBuffer;
+  INT32             *LocalCpuNodeOffsetMap;
+  UINT32            GicCInfoBufferSize;
+
+  if ((NewGicCmObjDesc == NULL) ||
+      (CpuNodeOffsetMap == NULL) ||
+      (CpuCount == NULL))
+  {
+    ASSERT (0);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  *CpuNodeOffsetMap = NULL;
+
+  AddressCells = FdtAddressCells (Fdt, CpusNode);
+  if (AddressCells < 0) {
+    ASSERT (0);
+    return EFI_ABORTED;
+  }
+
+  // Count the number of CPU device nodes under the "cpus" node.
+  Status = FdtCountCondNodeInBranch (Fdt, CpusNode, IsCpuDeviceNode, NULL, &CpuNodeCount);
+  if (EFI_ERROR (Status)) {
+    ASSERT (0);
+    return Status;
+  }
+
+  if (CpuNodeCount == 0) {
+    ASSERT (0);
+    return EFI_NOT_FOUND;
+  }
+
+  *CpuCount = CpuNodeCount;
+
+  // Allocate memory for CpuNodeCount CM_ARM_GICC_INFO structures.
+  GicCInfoBufferSize = CpuNodeCount * sizeof (CM_ARM_GICC_INFO);
+  GicCInfoBuffer     = AllocateZeroPool (GicCInfoBufferSize);
+  if (GicCInfoBuffer == NULL) {
+    ASSERT (0);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  LocalCpuNodeOffsetMap = AllocateZeroPool (CpuNodeCount * sizeof (*LocalCpuNodeOffsetMap));
+  if (LocalCpuNodeOffsetMap == NULL) {
+    FreePool (GicCInfoBuffer);
+    ASSERT (FALSE);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  Index = 0;
+  FdtForEachSubnode (CpuNode, Fdt, CpusNode) {
+    if (!IsCpuDeviceNode (Fdt, CpuNode, NULL)) {
+      continue;
+    }
+
+    // Parse the "cpu" node.
+    if (!FdtNodeIsCompatible (Fdt, CpuNode, &CpuCompatibleInfo)) {
+      ASSERT (0);
+      Status = EFI_UNSUPPORTED;
+      goto exit_handler;
+    }
+
+    Status = CpuNodeParser (
+               Fdt,
+               CpuNode,
+               GicVersion,
+               AddressCells,
+               &GicCInfoBuffer[Index]
+               );
+    if (EFI_ERROR (Status)) {
+      ASSERT (0);
+      goto exit_handler;
+    }
+
+    LocalCpuNodeOffsetMap[Index] = CpuNode;
+    Index++;
+  }
+
+  if (Index != CpuNodeCount) {
+    ASSERT (FALSE);
+    Status = EFI_ABORTED;
+    goto exit_handler;
+  }
+
+  Status = CreateCmObjDesc (
+             CREATE_CM_ARM_OBJECT_ID (EArmObjGicCInfo),
+             CpuNodeCount,
+             GicCInfoBuffer,
+             GicCInfoBufferSize,
+             NewGicCmObjDesc
+             );
+  ASSERT_EFI_ERROR (Status);
+  if (!EFI_ERROR (Status)) {
+    *CpuNodeOffsetMap     = LocalCpuNodeOffsetMap;
+    LocalCpuNodeOffsetMap = NULL;
+  }
+
+exit_handler:
+  if (LocalCpuNodeOffsetMap != NULL) {
+    FreePool (LocalCpuNodeOffsetMap);
+  }
+
+  FreePool (GicCInfoBuffer);
+  return Status;
+}
+
+/** Parse a Gic compatible interrupt-controller node,
+    extracting GicC information generic to Gic v2 and v3.
+
+  This function modifies a CM_OBJ_DESCRIPTOR object.
+  The following CM_ARM_GICC_INFO fields are patched:
+    - VGICMaintenanceInterrupt;
+    - Flags;
+
+  @param [in]       Fdt              Pointer to a Flattened Device Tree (Fdt).
+  @param [in]       GicIntcNode      Offset of a Gic compatible
+                                     interrupt-controller node.
+  @param [in, out]  GicCCmObjDesc    The CM_ARM_GICC_INFO to patch.
+
+  @retval EFI_SUCCESS             The function completed successfully.
+  @retval EFI_ABORTED             An error occurred.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+GicCIntcNodeParser (
+  IN      CONST VOID               *Fdt,
+  IN            INT32              GicIntcNode,
+  IN            UINTN              CpuCount,
+  IN  OUT       CM_OBJ_DESCRIPTOR  *GicCCmObjDesc
+  )
+{
+  EFI_STATUS        Status;
+  CM_ARM_GICC_INFO  *GicCInfo;
+
+  CONST UINT32  *DecodedInterruptData;
+  INT32         DecodedInterruptCells;
+  UINT32        MaintenanceInterrupt;
+  UINT32        Flags;
+
+  if (GicCCmObjDesc == NULL) {
+    ASSERT (0);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  // Get the GSIV maintenance interrupt.
+  // According to the DT bindings, this could be the:
+  // "Interrupt source of the parent interrupt controller on secondary GICs"
+  // but it is assumed that only one Gic is available.
+  Status = FdtResolveInterrupt (
+             Fdt,
+             GicIntcNode,
+             0,
+             &DecodedInterruptData,
+             &DecodedInterruptCells
+             );
+  if (Status == EFI_NOT_FOUND) {
+    // This property is optional and was not found. Just return.
+    return EFI_SUCCESS;
+  } else if (EFI_ERROR (Status)) {
+    ASSERT (FALSE);
+    return Status;
+  }
+
+  MaintenanceInterrupt = FdtGetInterruptId (DecodedInterruptData, DecodedInterruptCells);
+  Flags                = DT_IRQ_IS_EDGE_TRIGGERED (
+                           Fdt32ToCpu (DecodedInterruptData[IRQ_FLAGS_OFFSET])
+                           ) ?
+                         EFI_ACPI_6_3_VGIC_MAINTENANCE_INTERRUPT_MODE_FLAGS :
+                         0;
+  for (GicCInfo = (CM_ARM_GICC_INFO *)GicCCmObjDesc->Data; CpuCount--; GicCInfo++) {
+    GicCInfo->VGICMaintenanceInterrupt = MaintenanceInterrupt;
+    GicCInfo->Flags                   |= Flags;
+  }
+
+  return EFI_SUCCESS;
+}
+
+/** Parse a Gic compatible interrupt-controller node,
+    extracting GicCv2 information.
+
+  This function modifies a CM_OBJ_DESCRIPTOR object.
+  The following CM_ARM_GICC_INFO fields are patched:
+    - PhysicalAddress;
+    - GICH;
+    - GICV;
+
+  @param [in]       Fdt              Pointer to a Flattened Device Tree (Fdt).
+  @param [in]       Gicv2IntcNode    Offset of a Gicv2 compatible
+                                     interrupt-controller node.
+  @param [in, out]  GicCCmObjDesc    The CM_ARM_GICC_INFO to patch.
+
+  @retval EFI_SUCCESS             The function completed successfully.
+  @retval EFI_ABORTED             An error occurred.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+GicCv2IntcNodeParser (
+  IN      CONST VOID               *Fdt,
+  IN            INT32              Gicv2IntcNode,
+  IN  OUT       CM_OBJ_DESCRIPTOR  *GicCCmObjDesc
+  )
+{
+  EFI_STATUS        Status;
+  UINT32            Index;
+  CM_ARM_GICC_INFO  *GicCInfo;
+  INT32             AddressCells;
+  INT32             SizeCells;
+  UINT64            GicCValue;
+  UINT64            GicVValue;
+  UINT64            GicHValue;
+  UINT64            RegionSize;
+
+  CONST UINT8  *Data;
+  INT32        DataSize;
+  UINT32       RegSize;
+  UINT32       RegCount;
+
+  if (GicCCmObjDesc == NULL) {
+    ASSERT (0);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  GicCInfo  = (CM_ARM_GICC_INFO *)GicCCmObjDesc->Data;
+  GicCValue = 0;
+  GicVValue = 0;
+  GicHValue = 0;
+
+  // Get the #address-cells and #size-cells property values.
+  Status = FdtGetParentAddressInfo (
+             Fdt,
+             Gicv2IntcNode,
+             &AddressCells,
+             &SizeCells
+             );
+  if (EFI_ERROR (Status)) {
+    ASSERT (0);
+    return Status;
+  }
+
+  // Don't support more than 64 bits and less than 32 bits addresses.
+  if ((AddressCells < 1)  ||
+      (AddressCells > 2)  ||
+      (SizeCells < 1)     ||
+      (SizeCells > 2))
+  {
+    ASSERT (0);
+    return EFI_ABORTED;
+  }
+
+  RegSize = (AddressCells + SizeCells) * sizeof (UINT32);
+
+  Data = FdtGetProp (Fdt, Gicv2IntcNode, "reg", &DataSize);
+  if ((Data == NULL)  ||
+      (DataSize < 0)  ||
+      ((DataSize % RegSize) != 0))
+  {
+    // If error or wrong size.
+    ASSERT (0);
+    return EFI_ABORTED;
+  }
+
+  RegCount = DataSize/RegSize;
+
+  switch (RegCount) {
+    case 4:
+    {
+      // GicV is at index 3 in the reg property. GicV is optional.
+      Status = FdtGetTranslatedReg (Fdt, Gicv2IntcNode, 3, &GicVValue, &RegionSize);
+      if (EFI_ERROR (Status)) {
+        ASSERT (0);
+        return Status;
+      }
+
+      // fall-through.
+    }
+    case 3:
+    {
+      // GicH is at index 2 in the reg property. GicH is optional.
+      Status = FdtGetTranslatedReg (Fdt, Gicv2IntcNode, 2, &GicHValue, &RegionSize);
+      if (EFI_ERROR (Status)) {
+        ASSERT (0);
+        return Status;
+      }
+
+      // fall-through.
+    }
+    case 2:
+    {
+      // GicC is at index 1 in the reg property. GicC is mandatory.
+      Status = FdtGetTranslatedReg (Fdt, Gicv2IntcNode, 1, &GicCValue, &RegionSize);
+      if (EFI_ERROR (Status)) {
+        ASSERT (0);
+        return Status;
+      }
+
+      break;
+    }
+    default:
+    {
+      // Not enough or too much information.
+      ASSERT (0);
+      return EFI_ABORTED;
+    }
+  }
+
+  // Patch the relevant fields of the CM_ARM_GICC_INFO objects.
+  for (Index = 0; Index < GicCCmObjDesc->Count; Index++) {
+    GicCInfo[Index].PhysicalBaseAddress = GicCValue;
+    GicCInfo[Index].GICH                = GicHValue;
+    GicCInfo[Index].GICV                = GicVValue;
+  } // for
+
+  return EFI_SUCCESS;
+}
+
+/** Parse a Gic compatible interrupt-controller node,
+    extracting GicCv3 information.
+
+  This function modifies a CM_OBJ_DESCRIPTOR object.
+  The following CM_ARM_GICC_INFO fields are patched:
+    - PhysicalAddress;
+    - GICH;
+    - GICV;
+
+  @param [in]       Fdt              Pointer to a Flattened Device Tree (Fdt).
+  @param [in]       Gicv3IntcNode    Offset of a Gicv3 compatible
+                                     interrupt-controller node.
+  @param [in, out]  GicCCmObjDesc    The CM_ARM_GICC_INFO to patch.
+
+  @retval EFI_SUCCESS             The function completed successfully.
+  @retval EFI_ABORTED             An error occurred.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+GicCv3IntcNodeParser (
+  IN      CONST VOID               *Fdt,
+  IN            INT32              Gicv3IntcNode,
+  IN  OUT       CM_OBJ_DESCRIPTOR  *GicCCmObjDesc
+  )
+{
+  EFI_STATUS        Status;
+  UINT32            Index;
+  CM_ARM_GICC_INFO  *GicCInfo;
+  INT32             AddressCells;
+  INT32             SizeCells;
+  UINT32            AdditionalRedistReg;
+  UINT64            GicCValue;
+  UINT64            GicVValue;
+  UINT64            GicHValue;
+  UINT64            RegionSize;
+
+  CONST UINT8  *Data;
+  INT32        DataSize;
+  UINT32       RegSize;
+  UINT32       RegCount;
+
+  if (GicCCmObjDesc == NULL) {
+    ASSERT (0);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  GicCInfo  = (CM_ARM_GICC_INFO *)GicCCmObjDesc->Data;
+  GicCValue = 0;
+  GicVValue = 0;
+  GicHValue = 0;
+
+  // Get the #address-cells and #size-cells property values.
+  Status = FdtGetParentAddressInfo (
+             Fdt,
+             Gicv3IntcNode,
+             &AddressCells,
+             &SizeCells
+             );
+  if (EFI_ERROR (Status)) {
+    ASSERT (0);
+    return Status;
+  }
+
+  // Don't support more than 64 bits and less than 32 bits addresses.
+  if ((AddressCells < 1)  ||
+      (AddressCells > 2)  ||
+      (SizeCells < 1)     ||
+      (SizeCells > 2))
+  {
+    ASSERT (0);
+    return EFI_ABORTED;
+  }
+
+  // The "#redistributor-regions" property is optional.
+  Data = FdtGetProp (Fdt, Gicv3IntcNode, "#redistributor-regions", &DataSize);
+  if (Data == NULL) {
+    AdditionalRedistReg = 0;
+  } else if (DataSize != sizeof (UINT32)) {
+    ASSERT (FALSE);
+    return EFI_ABORTED;
+  } else {
+    AdditionalRedistReg = Fdt32ToCpu (*(UINT32 *)Data);
+    if ((AdditionalRedistReg < 1) || (AdditionalRedistReg > 4096)) {
+      ASSERT (FALSE);
+      return EFI_ABORTED;
+    }
+
+    AdditionalRedistReg--;
+  }
+
+  RegSize = (AddressCells + SizeCells) * sizeof (UINT32);
+
+  /*
+    Ref: linux/blob/master/Documentation/devicetree/bindings/
+         interrupt-controller/arm%2Cgic-v3.yaml
+
+    reg:
+    description: |
+      Specifies base physical address(s) and size of the GIC
+      registers, in the following order:
+      - GIC Distributor interface (GICD)
+      - GIC Redistributors (GICR), one range per redistributor region
+      - GIC CPU interface (GICC)
+      - GIC Hypervisor interface (GICH)
+      - GIC Virtual CPU interface (GICV)
+      GICC, GICH and GICV are optional.
+    minItems: 2
+    maxItems: 4096
+  */
+  Data = FdtGetProp (Fdt, Gicv3IntcNode, "reg", &DataSize);
+  if ((Data == NULL)  ||
+      (DataSize < 0)  ||
+      ((DataSize % RegSize) != 0))
+  {
+    // If error or wrong size.
+    ASSERT (0);
+    return EFI_ABORTED;
+  }
+
+  RegCount = DataSize / RegSize;
+  if (RegCount < (AdditionalRedistReg + 2)) {
+    ASSERT (FALSE);
+    return EFI_ABORTED;
+  }
+
+  RegCount -= AdditionalRedistReg;
+
+  // The GicD and GicR info is mandatory.
+  switch (RegCount) {
+    case 5:
+    {
+      // GicV is at index 4 in the reg property. GicV is optional.
+      Status = FdtGetTranslatedReg (
+                 Fdt,
+                 Gicv3IntcNode,
+                 4 + AdditionalRedistReg,
+                 &GicVValue,
+                 &RegionSize
+                 );
+      if (EFI_ERROR (Status)) {
+        ASSERT (0);
+        return Status;
+      }
+
+      // fall-through.
+    }
+    case 4:
+    {
+      // GicH is at index 3 in the reg property. GicH is optional.
+      Status = FdtGetTranslatedReg (
+                 Fdt,
+                 Gicv3IntcNode,
+                 3 + AdditionalRedistReg,
+                 &GicHValue,
+                 &RegionSize
+                 );
+      if (EFI_ERROR (Status)) {
+        ASSERT (0);
+        return Status;
+      }
+
+      // fall-through.
+    }
+    case 3:
+    {
+      // GicC is at index 2 in the reg property. GicC is optional.
+      // Even though GicC is optional, it is made mandatory in this parser.
+      Status = FdtGetTranslatedReg (
+                 Fdt,
+                 Gicv3IntcNode,
+                 2 + AdditionalRedistReg,
+                 &GicCValue,
+                 &RegionSize
+                 );
+      if (EFI_ERROR (Status)) {
+        ASSERT (0);
+        return Status;
+      }
+
+      // fall-through
+    }
+    case 2:
+    {
+      // GicR is discribed by the CM_ARM_GIC_REDIST_INFO object.
+      // GicD is described by the CM_ARM_GICD_INFO object.
+      break;
+    }
+    default:
+    {
+      // Not enough or too much information.
+      ASSERT (0);
+      return EFI_ABORTED;
+    }
+  }
+
+  // Patch the relevant fields of the CM_ARM_GICC_INFO objects.
+  for (Index = 0; Index < GicCCmObjDesc->Count; Index++) {
+    // GicR is discribed by the CM_ARM_GIC_REDIST_INFO object.
+    GicCInfo[Index].GICRBaseAddress     = 0;
+    GicCInfo[Index].PhysicalBaseAddress = GicCValue;
+    GicCInfo[Index].GICH                = GicHValue;
+    GicCInfo[Index].GICV                = GicVValue;
+  }
+
+  return EFI_SUCCESS;
+}
+
+/** Parse a Pmu compatible node, extracting Pmu information.
+
+  This function modifies a CM_OBJ_DESCRIPTOR object.
+  The following CM_ARM_GICC_INFO fields are patched:
+    - PerformanceInterruptGsiv;
+
+  @param [in]       Fdt              Pointer to a Flattened Device Tree (Fdt).
+  @param [in]       GicIntcNode      Offset of a Gic compatible
+                                     interrupt-controller node.
+  @param [in, out]  GicCCmObjDesc    The CM_ARM_GICC_INFO to patch.
+
+  @retval EFI_SUCCESS             The function completed successfully.
+  @retval EFI_ABORTED             An error occurred.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+GicCPmuNodeParser (
+  IN      CONST VOID               *Fdt,
+  IN            INT32              GicIntcNode,
+  IN  OUT       CM_OBJ_DESCRIPTOR  *GicCCmObjDesc
+  )
+{
+  EFI_STATUS        Status;
+  INT32             PmuNode;
+  UINT32            PmuNodeCount;
+  UINT32            PmuIrq;
+  UINT32            Index;
+  CM_ARM_GICC_INFO  *GicCInfo;
+  CONST UINT32      *DecodedInterruptData;
+  INT32             DecodedInterruptCells;
+
+  if (GicCCmObjDesc == NULL) {
+    ASSERT (GicCCmObjDesc != NULL);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  GicCInfo = (CM_ARM_GICC_INFO *)GicCCmObjDesc->Data;
+  PmuNode  = 0;
+
+  // Count the number of pmu nodes.
+  Status = FdtCountCompatNodeInBranch (
+             Fdt,
+             0,
+             &PmuCompatibleInfo,
+             &PmuNodeCount
+             );
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    return Status;
+  }
+
+  if (PmuNodeCount == 0) {
+    return EFI_NOT_FOUND;
+  }
+
+  Status = FdtGetNextCompatNodeInBranch (
+             Fdt,
+             0,
+             &PmuCompatibleInfo,
+             &PmuNode
+             );
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    if (Status == EFI_NOT_FOUND) {
+      // Should have found the node.
+      Status = EFI_ABORTED;
+    }
+  }
+
+  //
+  // There must be either:
+  // - 1 interrupt per core
+  // - 1 common interrupt
+  //
+
+  Status = FdtResolveInterrupt (
+             Fdt,
+             PmuNode,
+             0,
+             &DecodedInterruptData,
+             &DecodedInterruptCells
+             );
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    return Status;
+  }
+
+  PmuIrq = FdtGetInterruptId ((CONST UINT32 *)DecodedInterruptData, DecodedInterruptCells);
+
+  Status = FdtResolveInterrupt (
+             Fdt,
+             PmuNode,
+             1,
+             &DecodedInterruptData,
+             &DecodedInterruptCells
+             );
+  if (Status == EFI_NOT_FOUND) {
+    // One shared PMU IRQ
+    Status = FdtResolveInterrupt (
+               Fdt,
+               PmuNode,
+               0,
+               &DecodedInterruptData,
+               &DecodedInterruptCells
+               );
+    if (EFI_ERROR (Status)) {
+      ASSERT_EFI_ERROR (Status);
+      return Status;
+    }
+
+    //
+    // Only supports PPI 23 for now.
+    // According to BSA 1.0 s3.6 PPI assignments, PMU IRQ ID is 23. A non BSA
+    // compliant system may assign a different IRQ for the PMU, however this
+    // is not implemented for now.
+    //
+    if (PmuIrq != BSA_PMU_IRQ) {
+      ASSERT (PmuIrq == BSA_PMU_IRQ);
+      return EFI_ABORTED;
+    }
+
+    //
+    // One common interrupt.
+    //
+    for (Index = 0; Index < GicCCmObjDesc->Count; Index++) {
+      GicCInfo[Index].PerformanceInterruptGsiv = PmuIrq;
+    }
+
+    return EFI_SUCCESS;
+  } else if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    return Status;
+  }
+
+  //
+  // One PMU IRQ per core.
+  //
+  for (Index = 0; Index < GicCCmObjDesc->Count; Index++) {
+    Status = FdtResolveInterrupt (
+               Fdt,
+               PmuNode,
+               Index,
+               &DecodedInterruptData,
+               &DecodedInterruptCells
+               );
+    if (EFI_ERROR (Status)) {
+      ASSERT_EFI_ERROR (Status);
+      return EFI_ABORTED;
+    }
+
+    GicCInfo[Index].PerformanceInterruptGsiv = FdtGetInterruptId ((CONST UINT32 *)DecodedInterruptData, DecodedInterruptCells);
+  }
+
+  return EFI_SUCCESS;
+}
+
+/** CM_ARM_GICC_INFO parser function.
+
+  This parser expects FdtBranch to be the "\cpus" node node.
+  At most one CmObj is created.
+  The following structure is populated:
+  typedef struct CmArmGicCInfo {
+    UINT32  CPUInterfaceNumber;               // {Populated}
+    UINT32  AcpiProcessorUid;                 // {Populated}
+    UINT32  Flags;                            // {Populated}
+    UINT32  ParkingProtocolVersion;           // {default = 0}
+    UINT32  PerformanceInterruptGsiv;         // {Populated}
+    UINT64  ParkedAddress;                    // {default = 0}
+    UINT64  PhysicalBaseAddress;              // {Populated}
+    UINT64  GICV;                             // {Populated}
+    UINT64  GICH;                             // {Populated}
+    UINT32  VGICMaintenanceInterrupt;         // {Populated}
+    UINT64  GICRBaseAddress;                  // {default = 0}
+    UINT64  MPIDR;                            // {Populated}
+    UINT8   ProcessorPowerEfficiencyClass;    // {default = 0}
+    UINT16  SpeOverflowInterrupt;             // {default = 0}
+    UINT32  ProximityDomain;                  // {default = 0}
+    UINT32  ClockDomain;                      // {default = 0}
+    UINT32  AffinityFlags;                    // {default = 0}
+    UINT16  TrbeInterrupt;                    // {default = 0}
+    CM_OBJECT_TOKEN EtToken;                  // {default = CM_NULL_TOKEN}
+  } CM_ARM_GICC_INFO;
+
+  A parser parses a Device Tree to populate a specific CmObj type. None,
+  one or many CmObj can be created by the parser.
+  The created CmObj are then handed to the parser's caller through the
+  HW_INFO_ADD_OBJECT interface.
+  This can also be a dispatcher. I.e. a function that not parsing a
+  Device Tree but calling other parsers.
+
+  @param [in]  FdtParserHandle A handle to the parser instance.
+  @param [in]  FdtBranch       When searching for DT node name, restrict
+                               the search to this Device Tree branch.
+
+  @retval EFI_SUCCESS             The function completed successfully.
+  @retval EFI_ABORTED             An error occurred.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+  @retval EFI_NOT_FOUND           Not found.
+  @retval EFI_UNSUPPORTED         Unsupported.
+**/
+EFI_STATUS
+EFIAPI
+ArmGicCInfoParser (
+  IN  CONST FDT_HW_INFO_PARSER_HANDLE  FdtParserHandle,
+  IN        INT32                      FdtBranch
+  )
+{
+  EFI_STATUS         Status;
+  INT32              IntcNode;
+  UINT32             GicVersion;
+  CM_OBJ_DESCRIPTOR  *NewCmObjDesc;
+  CM_OBJECT_TOKEN    *CpuTokenTable;
+  INT32              *CpuNodeOffsetMap;
+  VOID               *Fdt;
+  UINTN              CpuCount;
+  UINT32             Index;
+
+  if (FdtParserHandle == NULL) {
+    ASSERT (0);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Fdt              = FdtParserHandle->Fdt;
+  NewCmObjDesc     = NULL;
+  CpuTokenTable    = NULL;
+  CpuNodeOffsetMap = NULL;
+
+  // The FdtBranch points to the Cpus Node.
+  // Get the interrupt-controller node associated to the "cpus" node.
+  Status = FdtGetIntControllerNode (Fdt, FdtBranch, &IntcNode);
+  if (EFI_ERROR (Status)) {
+    ASSERT (0);
+    if (Status == EFI_NOT_FOUND) {
+      // Should have found the node.
+      Status = EFI_ABORTED;
+    }
+
+    return Status;
+  }
+
+  Status = GetGicVersion (Fdt, IntcNode, &GicVersion);
+  if (EFI_ERROR (Status)) {
+    ASSERT (0);
+    return Status;
+  }
+
+  // Parse the "cpus" nodes and its children "cpu" nodes,
+  // and create a CM_OBJ_DESCRIPTOR.
+  Status = CpusNodeParser (
+             Fdt,
+             FdtBranch,
+             GicVersion,
+             &NewCmObjDesc,
+             &CpuNodeOffsetMap,
+             &CpuCount
+             );
+  if (EFI_ERROR (Status)) {
+    ASSERT (0);
+    return Status;
+  }
+
+  // Parse the interrupt-controller node according to the Gic version.
+  switch (GicVersion) {
+    case 2:
+    {
+      Status = GicCv2IntcNodeParser (Fdt, IntcNode, NewCmObjDesc);
+      break;
+    }
+    case 3:
+    {
+      Status = GicCv3IntcNodeParser (Fdt, IntcNode, NewCmObjDesc);
+      break;
+    }
+    default:
+    {
+      // Unsupported Gic version.
+      ASSERT (0);
+      Status = EFI_UNSUPPORTED;
+    }
+  }
+
+  if (EFI_ERROR (Status)) {
+    ASSERT (0);
+    goto exit_handler;
+  }
+
+  // Parse the Gic information common to Gic v2 and v3.
+  Status = GicCIntcNodeParser (Fdt, IntcNode, CpuCount, NewCmObjDesc);
+  if (EFI_ERROR (Status)) {
+    ASSERT (0);
+    goto exit_handler;
+  }
+
+  // Parse the Pmu Interrupt.
+  Status = GicCPmuNodeParser (Fdt, IntcNode, NewCmObjDesc);
+  if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
+    ASSERT_EFI_ERROR (Status);
+    goto exit_handler;
+  }
+
+  // Parse the per-CPU trace buffer extension interrupt.
+  Status = GicCTrbeNodeParser (
+             Fdt,
+             NewCmObjDesc
+             );
+  if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
+    ASSERT_EFI_ERROR (Status);
+    goto exit_handler;
+  }
+
+  // Parse the per-CPU embedded trace extension information.
+  Status = ArmTraceAddEtInfo (
+             Fdt,
+             FdtParserHandle,
+             CpuNodeOffsetMap,
+             NewCmObjDesc
+             );
+  if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
+    ASSERT_EFI_ERROR (Status);
+    goto exit_handler;
+  }
+
+  CpuTokenTable = AllocateZeroPool (sizeof (*CpuTokenTable) * CpuCount);
+  if (CpuTokenTable == NULL) {
+    Status = EFI_OUT_OF_RESOURCES;
+    ASSERT (FALSE);
+    goto exit_handler;
+  }
+
+  for (Index = 0; Index < CpuCount; Index++) {
+    ASSERT (((CpuNodeOffsetMap[Index]) & ~CM_ABSTRACT_TOKEN_ID_MASK) == 0);
+    CpuTokenTable[Index] = (CM_OBJECT_TOKEN)CM_ABSTRACT_TOKEN_MAKE (ETokenNameSpaceFdtHwInfo, EFdtHwInfoGicCObject, (UINT32)CpuNodeOffsetMap[Index]);
+  }
+
+  // Add all the CmObjs to the Configuration Manager.
+  Status = AddMultipleCmObjWithToken (FdtParserHandle, NewCmObjDesc, CpuTokenTable);
+  if (EFI_ERROR (Status)) {
+    ASSERT (0);
+    goto exit_handler;
+  }
+
+exit_handler:
+  if (CpuTokenTable != NULL) {
+    FreePool (CpuTokenTable);
+  }
+
+  if (CpuNodeOffsetMap != NULL) {
+    FreePool (CpuNodeOffsetMap);
+  }
+
+  FreeCmObjDesc (NewCmObjDesc);
+  return Status;
+}

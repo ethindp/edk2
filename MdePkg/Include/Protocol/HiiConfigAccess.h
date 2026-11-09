@@ -13,8 +13,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef __EFI_HII_CONFIG_ACCESS_H__
-#define __EFI_HII_CONFIG_ACCESS_H__
+#pragma once
 
 #include <Protocol/FormBrowser2.h>
 
@@ -102,8 +101,15 @@ typedef UINTN EFI_BROWSER_ACTION;
                                   string.
 
   @retval EFI_INVALID_PARAMETER   Unknown name. Progress points
-                                  to the & before the name in
+                                  to the "&" before the name in
                                   question.
+
+  @retval EFI_INVALID_PARAMETER   If Results or Progress is NULL.
+
+  @retval EFI_ACCESS_DENIED       The action violated a system policy.
+
+  @retval EFI_DEVICE_ERROR        Failed to extract the current configuration
+                                  for one or more named elements.
 
 **/
 typedef
@@ -212,5 +218,3 @@ struct _EFI_HII_CONFIG_ACCESS_PROTOCOL {
 };
 
 extern EFI_GUID  gEfiHiiConfigAccessProtocolGuid;
-
-#endif

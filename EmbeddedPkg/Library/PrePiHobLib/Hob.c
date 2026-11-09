@@ -21,6 +21,7 @@
 #include <Guid/ExtractSection.h>
 #include <Guid/MemoryTypeInformation.h>
 #include <Guid/MemoryAllocationHob.h>
+#include <Guid/ZeroGuid.h>
 
 VOID
 BuildMemoryTypeInformationHob (
@@ -110,6 +111,13 @@ CreateHob (
 
   HandOffHob = GetHobList ();
 
+  //
+  // Check Length to avoid data overflow.
+  //
+  if (HobLength > MAX_UINT16 - 0x7) {
+    return NULL;
+  }
+
   HobLength = (UINT16)((HobLength + 0x7) & (~0x7));
 
   FreeMemory = HandOffHob->EfiFreeMemoryTop - HandOffHob->EfiFreeMemoryBottom;
@@ -160,11 +168,60 @@ BuildResourceDescriptorHob (
 
   Hob = CreateHob (EFI_HOB_TYPE_RESOURCE_DESCRIPTOR, sizeof (EFI_HOB_RESOURCE_DESCRIPTOR));
   ASSERT (Hob != NULL);
+  if (Hob == NULL) {
+    return;
+  }
 
   Hob->ResourceType      = ResourceType;
   Hob->ResourceAttribute = ResourceAttribute;
   Hob->PhysicalStart     = PhysicalStart;
   Hob->ResourceLength    = NumberOfBytes;
+}
+
+/**
+  Builds a HOB that describes a chunk of system memory with memory attributes.
+
+  This function builds a HOB that describes a chunk of system memory.
+  If there is no additional space for HOB creation, then ASSERT().
+
+  @param  ResourceType               The type of resource described by this HOB.
+  @param  ResourceCapabilities       The resource capabilities of the memory described by this HOB.
+  @param  PhysicalStart              The 64 bit physical address of memory described by this HOB.
+  @param  ResourceLength             The length of the memory described by this HOB in bytes.
+  @param  ResourceMemoryAttributes   The memory attribute for the memory described by this HOB.
+  @param  OwnerGuid                  GUID for the owner of this resource.
+
+**/
+VOID
+EFIAPI
+BuildResourceDescriptor2Hob (
+  IN EFI_RESOURCE_TYPE            ResourceType,
+  IN EFI_RESOURCE_ATTRIBUTE_TYPE  ResourceCapabilities,
+  IN EFI_PHYSICAL_ADDRESS         PhysicalStart,
+  IN UINT64                       ResourceLength,
+  IN UINT64                       ResourceMemoryAttributes,
+  IN EFI_GUID                     *OwnerGuid OPTIONAL
+  )
+{
+  EFI_HOB_RESOURCE_DESCRIPTOR2  *Hob;
+
+  Hob = CreateHob (EFI_HOB_TYPE_RESOURCE_DESCRIPTOR2, sizeof (EFI_HOB_RESOURCE_DESCRIPTOR2));
+  if (Hob == NULL) {
+    ASSERT (Hob != NULL);
+    return;
+  }
+
+  Hob->ResourceType             = ResourceType;
+  Hob->ResourceCapabilities     = ResourceCapabilities;
+  Hob->PhysicalStart            = PhysicalStart;
+  Hob->ResourceLength           = ResourceLength;
+  Hob->ResourceMemoryAttributes = ResourceMemoryAttributes;
+
+  if (OwnerGuid == NULL) {
+    OwnerGuid = &gZeroGuid;
+  }
+
+  CopyGuid (&Hob->Owner, OwnerGuid);
 }
 
 VOID
@@ -224,6 +281,36 @@ GetNextHob (
   //
   while (!END_OF_HOB_LIST (Hob)) {
     if (Hob.Header->HobType == Type) {
+      return Hob.Raw;
+    }
+
+    Hob.Raw = GET_NEXT_HOB (Hob);
+  }
+
+  return NULL;
+}
+
+/**
+  Returns the next Resource Descriptor HOB from the starting HOB.
+
+  @param  HobStart      The starting HOB pointer to search from.
+
+  @return The next Resource Descriptor HOB from the starting HOB.
+
+**/
+VOID *
+EFIAPI
+GetNextResourceHob (
+  IN CONST VOID  *HobStart
+  )
+{
+  EFI_PEI_HOB_POINTERS  Hob;
+
+  ASSERT (HobStart != NULL);
+
+  Hob.Raw = (UINT8 *)HobStart;
+  while (!END_OF_HOB_LIST (Hob)) {
+    if (IS_RESOURCE_DESCRIPTOR_HOB (Hob)) {
       return Hob.Raw;
     }
 
@@ -323,14 +410,10 @@ GetFirstGuidHob (
 }
 
 /**
-  Get the Boot Mode from the HOB list.
+  This service enables PEIMs to ascertain the present value of the boot mode.
 
-  This function returns the system boot mode information from the
-  PHIT HOB in HOB list.
 
-  @param  VOID
-
-  @return The Boot Mode.
+  @retval BootMode
 
 **/
 EFI_BOOT_MODE
@@ -346,14 +429,11 @@ GetBootMode (
 }
 
 /**
-  Get the Boot Mode from the HOB list.
+  This service enables PEIMs to update the boot mode variable.
 
-  This function returns the system boot mode information from the
-  PHIT HOB in HOB list.
+  @param  BootMode              The value of the boot mode to set.
 
-  @param  VOID
-
-  @return The Boot Mode.
+  @retval EFI_SUCCESS           The value was successfully updated
 
 **/
 EFI_STATUS
@@ -366,7 +446,7 @@ SetBootMode (
 
   Hob.Raw                               = GetHobList ();
   Hob.HandoffInformationTable->BootMode = BootMode;
-  return BootMode;
+  return EFI_SUCCESS;
 }
 
 /**
@@ -396,11 +476,15 @@ BuildModuleHob (
   EFI_HOB_MEMORY_ALLOCATION_MODULE  *Hob;
 
   ASSERT (
-    ((MemoryAllocationModule & (EFI_PAGE_SIZE - 1)) == 0) &&
-    ((ModuleLength & (EFI_PAGE_SIZE - 1)) == 0)
+    IS_ALIGNED (MemoryAllocationModule, EFI_PAGE_SIZE) &&
+    IS_ALIGNED (ModuleLength, EFI_PAGE_SIZE)
     );
 
   Hob = CreateHob (EFI_HOB_TYPE_MEMORY_ALLOCATION, sizeof (EFI_HOB_MEMORY_ALLOCATION_MODULE));
+  ASSERT (Hob != NULL);
+  if (Hob == NULL) {
+    return;
+  }
 
   CopyGuid (&(Hob->MemoryAllocationHeader.Name), &gEfiHobMemoryAllocModuleGuid);
   Hob->MemoryAllocationHeader.MemoryBaseAddress = MemoryAllocationModule;
@@ -426,12 +510,14 @@ BuildModuleHob (
   for DXE phase, it will ASSERT() since PEI HOB is read-only for DXE phase.
   If Guid is NULL, then ASSERT().
   If there is no additional space for HOB creation, then ASSERT().
-  If DataLength >= (0x10000 - sizeof (EFI_HOB_GUID_TYPE)), then ASSERT().
+  If DataLength > (0xFFF8 - sizeof (EFI_HOB_GUID_TYPE)), then ASSERT().
+  HobLength is UINT16 and multiples of 8 bytes, so the max HobLength is 0xFFF8.
 
   @param  Guid          The GUID to tag the customized HOB.
   @param  DataLength    The size of the data payload for the GUID HOB.
 
-  @return The start address of GUID HOB data.
+  @retval  NULL         DataLength is too large or the GUID HOB could not be allocated.
+  @retval  others       The start address of GUID HOB data.
 
 **/
 VOID *
@@ -446,9 +532,17 @@ BuildGuidHob (
   //
   // Make sure that data length is not too long.
   //
-  ASSERT (DataLength <= (0xffff - sizeof (EFI_HOB_GUID_TYPE)));
+  ASSERT (DataLength <= (0xFFF8 - sizeof (EFI_HOB_GUID_TYPE)));
+  if (DataLength > (0xFFF8 - sizeof (EFI_HOB_GUID_TYPE))) {
+    return NULL;
+  }
 
   Hob = CreateHob (EFI_HOB_TYPE_GUID_EXTENSION, (UINT16)(sizeof (EFI_HOB_GUID_TYPE) + DataLength));
+  ASSERT (Hob != NULL);
+  if (Hob == NULL) {
+    return NULL;
+  }
+
   CopyGuid (&Hob->Name, Guid);
   return Hob + 1;
 }
@@ -464,13 +558,15 @@ BuildGuidHob (
   If Guid is NULL, then ASSERT().
   If Data is NULL and DataLength > 0, then ASSERT().
   If there is no additional space for HOB creation, then ASSERT().
-  If DataLength >= (0x10000 - sizeof (EFI_HOB_GUID_TYPE)), then ASSERT().
+  If DataLength > (0xFFF8 - sizeof (EFI_HOB_GUID_TYPE)), then ASSERT().
+  HobLength is UINT16 and multiples of 8 bytes, so the max HobLength is 0xFFF8.
 
   @param  Guid          The GUID to tag the customized HOB.
   @param  Data          The data to be copied into the data field of the GUID HOB.
   @param  DataLength    The size of the data payload for the GUID HOB.
 
-  @return The start address of GUID HOB data.
+  @retval  NULL         DataLength is too large or the GUID HOB could not be allocated.
+  @retval  others       The start address of GUID HOB data.
 
 **/
 VOID *
@@ -486,6 +582,9 @@ BuildGuidDataHob (
   ASSERT (Data != NULL || DataLength == 0);
 
   HobData = BuildGuidHob (Guid, DataLength);
+  if (HobData == NULL) {
+    return NULL;
+  }
 
   return CopyMem (HobData, Data, DataLength);
 }
@@ -512,6 +611,10 @@ BuildFvHob (
   EFI_HOB_FIRMWARE_VOLUME  *Hob;
 
   Hob = CreateHob (EFI_HOB_TYPE_FV, sizeof (EFI_HOB_FIRMWARE_VOLUME));
+  ASSERT (Hob != NULL);
+  if (Hob == NULL) {
+    return;
+  }
 
   Hob->BaseAddress = BaseAddress;
   Hob->Length      = Length;
@@ -543,6 +646,10 @@ BuildFv2Hob (
   EFI_HOB_FIRMWARE_VOLUME2  *Hob;
 
   Hob = CreateHob (EFI_HOB_TYPE_FV2, sizeof (EFI_HOB_FIRMWARE_VOLUME2));
+  ASSERT (Hob != NULL);
+  if (Hob == NULL) {
+    return;
+  }
 
   Hob->BaseAddress = BaseAddress;
   Hob->Length      = Length;
@@ -584,6 +691,10 @@ BuildFv3Hob (
   EFI_HOB_FIRMWARE_VOLUME3  *Hob;
 
   Hob = CreateHob (EFI_HOB_TYPE_FV3, sizeof (EFI_HOB_FIRMWARE_VOLUME3));
+  ASSERT (Hob != NULL);
+  if (Hob == NULL) {
+    return;
+  }
 
   Hob->BaseAddress          = BaseAddress;
   Hob->Length               = Length;
@@ -639,6 +750,10 @@ BuildCpuHob (
   EFI_HOB_CPU  *Hob;
 
   Hob = CreateHob (EFI_HOB_TYPE_CPU, sizeof (EFI_HOB_CPU));
+  ASSERT (Hob != NULL);
+  if (Hob == NULL) {
+    return;
+  }
 
   Hob->SizeOfMemorySpace = SizeOfMemorySpace;
   Hob->SizeOfIoSpace     = SizeOfIoSpace;
@@ -671,11 +786,15 @@ BuildStackHob (
   EFI_HOB_MEMORY_ALLOCATION_STACK  *Hob;
 
   ASSERT (
-    ((BaseAddress & (EFI_PAGE_SIZE - 1)) == 0) &&
-    ((Length & (EFI_PAGE_SIZE - 1)) == 0)
+    IS_ALIGNED (BaseAddress, EFI_PAGE_SIZE) &&
+    IS_ALIGNED (Length, EFI_PAGE_SIZE)
     );
 
   Hob = CreateHob (EFI_HOB_TYPE_MEMORY_ALLOCATION, sizeof (EFI_HOB_MEMORY_ALLOCATION_STACK));
+  ASSERT (Hob != NULL);
+  if (Hob == NULL) {
+    return;
+  }
 
   CopyGuid (&(Hob->AllocDescriptor.Name), &gEfiHobMemoryAllocStackGuid);
   Hob->AllocDescriptor.MemoryBaseAddress = BaseAddress;
@@ -705,22 +824,18 @@ UpdateStackHob (
 
   Hob.Raw = GetHobList ();
   while ((Hob.Raw = GetNextHob (EFI_HOB_TYPE_MEMORY_ALLOCATION, Hob.Raw)) != NULL) {
-    if (CompareGuid (&gEfiHobMemoryAllocStackGuid, &(Hob.MemoryAllocationStack->AllocDescriptor.Name))) {
+    if (CompareGuid (&gEfiHobMemoryAllocStackGuid, &(Hob.MemoryAllocationStack->AllocDescriptor.Name)) &&
+        (Hob.MemoryAllocationStack->AllocDescriptor.MemoryBaseAddress != BaseAddress))
+    {
       //
-      // Build a new memory allocation HOB with old stack info with EfiConventionalMemory type
+      // Convert this memory allocation HOB with the old stack info to EfiConventionalMemory type
       // to be reclaimed by DXE core.
       //
-      BuildMemoryAllocationHob (
-        Hob.MemoryAllocationStack->AllocDescriptor.MemoryBaseAddress,
-        Hob.MemoryAllocationStack->AllocDescriptor.MemoryLength,
-        EfiConventionalMemory
-        );
-      //
-      // Update the BSP Stack Hob to reflect the new stack info.
-      //
-      Hob.MemoryAllocationStack->AllocDescriptor.MemoryBaseAddress = BaseAddress;
-      Hob.MemoryAllocationStack->AllocDescriptor.MemoryLength      = Length;
-      break;
+      ZeroMem (&(Hob.MemoryAllocationStack->AllocDescriptor.Name), sizeof (EFI_GUID));
+      Hob.MemoryAllocationStack->AllocDescriptor.MemoryType = EfiConventionalMemory;
+    } else if ((Hob.MemoryAllocation->AllocDescriptor.MemoryBaseAddress == BaseAddress) && (Hob.MemoryAllocation->AllocDescriptor.MemoryLength == Length)) {
+      // Find the memory allocation HOB for the new stack and mark it as the stack HOB.
+      CopyGuid (&(Hob.MemoryAllocation->AllocDescriptor.Name), &gEfiHobMemoryAllocStackGuid);
     }
 
     Hob.Raw = GET_NEXT_HOB (Hob);
@@ -751,11 +866,15 @@ BuildMemoryAllocationHob (
   EFI_HOB_MEMORY_ALLOCATION  *Hob;
 
   ASSERT (
-    ((BaseAddress & (EFI_PAGE_SIZE - 1)) == 0) &&
-    ((Length & (EFI_PAGE_SIZE - 1)) == 0)
+    IS_ALIGNED (BaseAddress, EFI_PAGE_SIZE) &&
+    IS_ALIGNED (Length, EFI_PAGE_SIZE)
     );
 
   Hob = CreateHob (EFI_HOB_TYPE_MEMORY_ALLOCATION, sizeof (EFI_HOB_MEMORY_ALLOCATION));
+  ASSERT (Hob != NULL);
+  if (Hob == NULL) {
+    return;
+  }
 
   ZeroMem (&(Hob->AllocDescriptor.Name), sizeof (EFI_GUID));
   Hob->AllocDescriptor.MemoryBaseAddress = BaseAddress;
@@ -809,7 +928,7 @@ BuildMemoryTypeInformationHob (
   VOID
   )
 {
-  EFI_MEMORY_TYPE_INFORMATION  Info[10];
+  EFI_MEMORY_TYPE_INFORMATION  Info[6];
 
   Info[0].Type          = EfiACPIReclaimMemory;
   Info[0].NumberOfPages = PcdGet32 (PcdMemoryTypeEfiACPIReclaimMemory);
@@ -821,18 +940,64 @@ BuildMemoryTypeInformationHob (
   Info[3].NumberOfPages = PcdGet32 (PcdMemoryTypeEfiRuntimeServicesData);
   Info[4].Type          = EfiRuntimeServicesCode;
   Info[4].NumberOfPages = PcdGet32 (PcdMemoryTypeEfiRuntimeServicesCode);
-  Info[5].Type          = EfiBootServicesCode;
-  Info[5].NumberOfPages = PcdGet32 (PcdMemoryTypeEfiBootServicesCode);
-  Info[6].Type          = EfiBootServicesData;
-  Info[6].NumberOfPages = PcdGet32 (PcdMemoryTypeEfiBootServicesData);
-  Info[7].Type          = EfiLoaderCode;
-  Info[7].NumberOfPages = PcdGet32 (PcdMemoryTypeEfiLoaderCode);
-  Info[8].Type          = EfiLoaderData;
-  Info[8].NumberOfPages = PcdGet32 (PcdMemoryTypeEfiLoaderData);
-
   // Terminator for the list
-  Info[9].Type          = EfiMaxMemoryType;
-  Info[9].NumberOfPages = 0;
+  Info[5].Type          = EfiMaxMemoryType;
+  Info[5].NumberOfPages = 0;
 
   BuildGuidDataHob (&gEfiMemoryTypeInformationGuid, &Info, sizeof (Info));
+}
+
+/**
+  Returns the next instance of the memory allocation HOB with the matched GUID from
+  the starting HOB.
+
+  This function searches the first instance of a HOB from the starting HOB pointer.
+  Such HOB should satisfy two conditions:
+  Its HOB type is EFI_HOB_TYPE_MEMORY_ALLOCATION and its GUID Name equals to input Guid.
+  If there does not exist such HOB from the starting HOB pointer, it will return NULL.
+
+  If Guid is NULL, then ASSERT().
+  If HobStart is NULL, then ASSERT().
+
+  @param  Guid          The GUID to match with in the HOB list.
+  @param  HobStart      The starting HOB pointer to search from.
+
+  @retval !NULL  The next instance of the Memory Allocation HOB with matched GUID from the starting HOB.
+  @retval NULL   NULL is returned if the matching Memory Allocation HOB is not found.
+
+**/
+VOID *
+EFIAPI
+GetNextMemoryAllocationGuidHob (
+  IN CONST EFI_GUID  *Guid,
+  IN CONST VOID      *HobStart
+  )
+{
+  ASSERT (FALSE);
+  return NULL;
+}
+
+/**
+  Search the HOB list for the Memory Allocation HOB with a matching base address
+  and set the Name GUID. If there does not exist such Memory Allocation HOB in the
+  HOB list, it will return NULL.
+
+  If Guid is NULL, then ASSERT().
+
+  @param BaseAddress  BaseAddress of Memory Allocation HOB to set Name to Guid.
+  @param Guid         Pointer to the GUID to set in the matching Memory Allocation GUID.
+
+  @retval !NULL  The instance of the tagged Memory Allocation HOB with matched base address.
+  @retval NULL   NULL is returned if the matching Memory Allocation HOB is not found.
+
+**/
+VOID *
+EFIAPI
+TagMemoryAllocationHobWithGuid (
+  IN EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN CONST EFI_GUID        *Guid
+  )
+{
+  ASSERT (FALSE);
+  return NULL;
 }

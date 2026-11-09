@@ -8,7 +8,7 @@
   This code produces 128 K of temporary memory for the SEC stack by directly
   allocate memory space with ReadWrite and Execute attribute.
 
-Copyright (c) 2006 - 2018, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2006 - 2023, Intel Corporation. All rights reserved.<BR>
 (C) Copyright 2016-2020 Hewlett Packard Enterprise Development LP<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
@@ -56,6 +56,14 @@ NT_FD_INFO  *gFdInfo;
 UINTN             gSystemMemoryCount = 0;
 NT_SYSTEM_MEMORY  *gSystemMemory;
 
+BASE_LIBRARY_JUMP_BUFFER  mResetJumpBuffer;
+CHAR8                     *mResetTypeStr[] = {
+  "EfiResetCold",
+  "EfiResetWarm",
+  "EfiResetShutdown",
+  "EfiResetPlatformSpecific"
+};
+
 /*++
 
 Routine Description:
@@ -85,14 +93,6 @@ WinPeiAutoScan (
 {
   if (Index >= gSystemMemoryCount) {
     return EFI_UNSUPPORTED;
-  }
-
-  //
-  // Allocate enough memory space for emulator
-  //
-  gSystemMemory[Index].Memory = (EFI_PHYSICAL_ADDRESS)(UINTN)VirtualAlloc (NULL, (SIZE_T)(gSystemMemory[Index].Size), MEM_COMMIT, PAGE_EXECUTE_READWRITE);
-  if (gSystemMemory[Index].Memory == 0) {
-    return EFI_OUT_OF_RESOURCES;
   }
 
   *MemoryBase = gSystemMemory[Index].Memory;
@@ -190,7 +190,7 @@ SecPrint (
 
   va_start (Marker, Format);
 
-  _vsnprintf (Buffer, sizeof (Buffer), Format, Marker);
+  _vsnprintf_s (Buffer, sizeof (Buffer), sizeof (Buffer) - 1, Format, Marker);
 
   va_end (Marker);
 
@@ -203,6 +203,59 @@ SecPrint (
     NULL
     );
 }
+
+/**
+  Resets the entire platform.
+
+  @param[in] ResetType      The type of reset to perform.
+  @param[in] ResetStatus    The status code for the reset.
+  @param[in] DataSize       The size, in bytes, of ResetData.
+  @param[in] ResetData      For a ResetType of EfiResetCold, EfiResetWarm, or EfiResetShutdown
+                            the data buffer starts with a Null-terminated string, optionally
+                            followed by additional binary data. The string is a description
+                            that the caller may use to further indicate the reason for the
+                            system reset.
+
+**/
+VOID
+EFIAPI
+WinReset (
+  IN EFI_RESET_TYPE  ResetType,
+  IN EFI_STATUS      ResetStatus,
+  IN UINTN           DataSize,
+  IN VOID            *ResetData OPTIONAL
+  )
+{
+  UINTN  Index;
+
+  ASSERT (ResetType <= EfiResetPlatformSpecific);
+  SecPrint ("  Emu ResetSystem is called: ResetType = %s\n", mResetTypeStr[ResetType]);
+
+  if (ResetType == EfiResetShutdown) {
+    exit (0);
+  } else {
+    //
+    // Unload all DLLs
+    //
+    for (Index = 0; Index < mPdbNameModHandleArraySize; Index++) {
+      if (mPdbNameModHandleArray[Index].PdbPointer != NULL) {
+        SecPrint ("  Emu Unload DLL: %s\n", mPdbNameModHandleArray[Index].PdbPointer);
+        FreeLibrary (mPdbNameModHandleArray[Index].ModHandle);
+        HeapFree (GetProcessHeap (), 0, mPdbNameModHandleArray[Index].PdbPointer);
+        mPdbNameModHandleArray[Index].PdbPointer = NULL;
+      }
+    }
+
+    //
+    // Jump back to SetJump with jump code = ResetType + 1
+    //
+    LongJump (&mResetJumpBuffer, ResetType + 1);
+  }
+}
+
+EFI_PEI_RESET2_PPI  mEmuReset2Ppi = {
+  WinReset
+};
 
 /*++
 
@@ -354,7 +407,7 @@ Returns:
   return EFI_SUCCESS;
 }
 
-INTN
+int
 EFIAPI
 main (
   IN  INT    Argc,
@@ -396,6 +449,30 @@ Returns:
   UINTN                ProcessAffinityMask;
   UINTN                SystemAffinityMask;
   INT32                LowBit;
+  UINTN                ResetJumpCode;
+  EMU_THUNK_PPI        *SecEmuThunkPpi;
+
+  //
+  // If enabled use the magic page to communicate between modules
+  // This replaces the PI PeiServicesTable pointer mechanism that
+  // deos not work in the emulator. It also allows the removal of
+  // writable globals from SEC, PEI_CORE (libraries), PEIMs
+  //
+  EmuMagicPage = (VOID *)(UINTN)(FixedPcdGet64 (PcdPeiServicesTablePage) & MAX_UINTN);
+  if (EmuMagicPage != NULL) {
+    UINTN  Size;
+    Status = WinNtOpenFile (
+               NULL,
+               SIZE_4KB,
+               0,
+               &EmuMagicPage,
+               &Size
+               );
+    if (EFI_ERROR (Status)) {
+      SecPrint ("ERROR : Could not allocate PeiServicesTablePage @ %p\n\r", EmuMagicPage);
+      exit (1);
+    }
+  }
 
   //
   // Enable the privilege so that RTC driver can successfully run SetTime()
@@ -415,7 +492,7 @@ Returns:
   //
   // Determine the first thread available to this process.
   //
-  if (GetProcessAffinityMask (GetCurrentProcess (), &ProcessAffinityMask, &SystemAffinityMask)) {
+  if (GetProcessAffinityMask (GetCurrentProcess (), (PDWORD_PTR)&ProcessAffinityMask, (PDWORD_PTR)&SystemAffinityMask)) {
     LowBit = (INT32)LowBitSet32 ((UINT32)ProcessAffinityMask);
     if (LowBit != -1) {
       //
@@ -435,9 +512,21 @@ Returns:
 
   SecInitializeThunk ();
   //
-  // PPIs pased into PEI_CORE
+  // PPIs passed into PEI_CORE
   //
-  AddThunkPpi (EFI_PEI_PPI_DESCRIPTOR_PPI, &gEmuThunkPpiGuid, &mSecEmuThunkPpi);
+  SecEmuThunkPpi = AllocateZeroPool (sizeof (EMU_THUNK_PPI) + FixedPcdGet32 (PcdPersistentMemorySize));
+  if (SecEmuThunkPpi == NULL) {
+    SecPrint ("ERROR : Can not allocate memory for SecEmuThunkPpi.  Exiting.\n");
+    exit (1);
+  }
+
+  CopyMem (SecEmuThunkPpi, &mSecEmuThunkPpi, sizeof (EMU_THUNK_PPI));
+  SecEmuThunkPpi->Argc                 = Argc;
+  SecEmuThunkPpi->Argv                 = Argv;
+  SecEmuThunkPpi->Envp                 = Envp;
+  SecEmuThunkPpi->PersistentMemorySize = FixedPcdGet32 (PcdPersistentMemorySize);
+  AddThunkPpi (EFI_PEI_PPI_DESCRIPTOR_PPI, &gEmuThunkPpiGuid, SecEmuThunkPpi);
+  AddThunkPpi (EFI_PEI_PPI_DESCRIPTOR_PPI, &gEfiPeiReset2PpiGuid, &mEmuReset2Ppi);
 
   //
   // Emulator Bus Driver Thunks
@@ -455,6 +544,31 @@ Returns:
   if (gSystemMemory == NULL) {
     SecPrint ("ERROR : Can not allocate memory for %S.  Exiting.\n\r", MemorySizeStr);
     exit (1);
+  }
+
+  //
+  // Allocate "physical" memory space for emulator. It will be reported out later throuth MemoryAutoScan()
+  //
+  for (Index = 0, Done = FALSE; !Done; Index++) {
+    ASSERT (Index < gSystemMemoryCount);
+    gSystemMemory[Index].Size   = ((UINT64)_wtoi (MemorySizeStr)) * ((UINT64)SIZE_1MB);
+    gSystemMemory[Index].Memory = (EFI_PHYSICAL_ADDRESS)(UINTN)VirtualAlloc (NULL, (SIZE_T)(gSystemMemory[Index].Size), MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+    if (gSystemMemory[Index].Memory == 0) {
+      SecPrint ("ERROR : Can not allocate memory for %S.  Exiting.\n\r", MemorySizeStr);
+      exit (1);
+    }
+
+    //
+    // Find the next region
+    //
+    for (Index1 = 0; MemorySizeStr[Index1] != '!' && MemorySizeStr[Index1] != 0; Index1++) {
+    }
+
+    if (MemorySizeStr[Index1] == 0) {
+      Done = TRUE;
+    }
+
+    MemorySizeStr = MemorySizeStr + Index1 + 1;
   }
 
   //
@@ -482,36 +596,6 @@ Returns:
   if (TemporaryRam == NULL) {
     SecPrint ("ERROR : Can not allocate enough space for SecStack\n\r");
     exit (1);
-  }
-
-  SetMem32 (TemporaryRam, TemporaryRamSize, PcdGet32 (PcdInitValueInTempStack));
-
-  SecPrint (
-    "  OS Emulator passing in %u KB of temp RAM at 0x%08lx to SEC\n\r",
-    TemporaryRamSize / SIZE_1KB,
-    TemporaryRam
-    );
-
-  //
-  // If enabled use the magic page to communicate between modules
-  // This replaces the PI PeiServicesTable pointer mechanism that
-  // deos not work in the emulator. It also allows the removal of
-  // writable globals from SEC, PEI_CORE (libraries), PEIMs
-  //
-  EmuMagicPage = (VOID *)(UINTN)(FixedPcdGet64 (PcdPeiServicesTablePage) & MAX_UINTN);
-  if (EmuMagicPage != NULL) {
-    UINT64  Size;
-    Status = WinNtOpenFile (
-               NULL,
-               SIZE_4KB,
-               0,
-               &EmuMagicPage,
-               &Size
-               );
-    if (EFI_ERROR (Status)) {
-      SecPrint ("ERROR : Could not allocate PeiServicesTablePage @ %p\n\r", EmuMagicPage);
-      return EFI_DEVICE_ERROR;
-    }
   }
 
   //
@@ -575,32 +659,24 @@ Returns:
     SecPrint ("\n\r");
   }
 
+  ResetJumpCode = SetJump (&mResetJumpBuffer);
+
   //
-  // Calculate memory regions and store the information in the gSystemMemory
-  //  global for later use. The autosizing code will use this data to
-  //  map this memory into the SEC process memory space.
+  // Do not clear memory content for warm reset.
   //
-  for (Index = 0, Done = FALSE; !Done; Index++) {
-    //
-    // Save the size of the memory and make a Unicode filename SystemMemory00, ...
-    //
-    gSystemMemory[Index].Size = ((UINT64)_wtoi (MemorySizeStr)) * ((UINT64)SIZE_1MB);
-
-    //
-    // Find the next region
-    //
-    for (Index1 = 0; MemorySizeStr[Index1] != '!' && MemorySizeStr[Index1] != 0; Index1++) {
+  if (ResetJumpCode != EfiResetWarm + 1) {
+    SecPrint ("  OS Emulator clearing temp RAM and physical RAM (to be discovered later)......\n\r");
+    SetMem32 (TemporaryRam, TemporaryRamSize, PcdGet32 (PcdInitValueInTempStack));
+    for (Index = 0; Index < gSystemMemoryCount; Index++) {
+      SetMem32 ((VOID *)(UINTN)gSystemMemory[Index].Memory, (UINTN)gSystemMemory[Index].Size, PcdGet32 (PcdInitValueInTempStack));
     }
-
-    if (MemorySizeStr[Index1] == 0) {
-      Done = TRUE;
-    }
-
-    MemorySizeStr = MemorySizeStr + Index1 + 1;
   }
 
-  SecPrint ("\n\r");
-
+  SecPrint (
+    "  OS Emulator passing in %u KB of temp RAM at 0x%08lx to SEC\n\r",
+    TemporaryRamSize / SIZE_1KB,
+    TemporaryRam
+    );
   //
   // Hand off to SEC Core
   //
@@ -728,19 +804,9 @@ SecPeCoffGetEntryPoint (
   }
 
   //
-  // Allocate space in NT (not emulator) memory with ReadWrite and Execute attribute.
-  // Extra space is for alignment
+  // XIP for SEC and PEI_CORE
   //
-  ImageContext.ImageAddress = (EFI_PHYSICAL_ADDRESS)(UINTN)VirtualAlloc (NULL, (SIZE_T)(ImageContext.ImageSize + (ImageContext.SectionAlignment * 2)), MEM_COMMIT, PAGE_EXECUTE_READWRITE);
-  if (ImageContext.ImageAddress == 0) {
-    return EFI_OUT_OF_RESOURCES;
-  }
-
-  //
-  // Align buffer on section boundary
-  //
-  ImageContext.ImageAddress += ImageContext.SectionAlignment - 1;
-  ImageContext.ImageAddress &= ~((EFI_PHYSICAL_ADDRESS)ImageContext.SectionAlignment - 1);
+  ImageContext.ImageAddress = (EFI_PHYSICAL_ADDRESS)(UINTN)Pe32Data;
 
   Status = PeCoffLoaderLoadImage (&ImageContext);
   if (EFI_ERROR (Status)) {
@@ -912,7 +978,7 @@ AddModHandle (
   for (Index = 0; Index < mPdbNameModHandleArraySize; Index++, Array++) {
     if (Array->PdbPointer == NULL) {
       //
-      // Make a copy of the stirng and store the ModHandle
+      // Make a copy of the string and store the ModHandle
       //
       Handle            = GetProcessHeap ();
       Size              = AsciiStrLen (ImageContext->PdbPointer) + 1;
@@ -991,26 +1057,45 @@ RemoveModHandle (
   return NULL;
 }
 
+typedef struct {
+  UINTN     Base;
+  UINT32    Size;
+  UINT32    Flags;
+} IMAGE_SECTION_DATA;
+
 VOID
 EFIAPI
 PeCoffLoaderRelocateImageExtraAction (
   IN OUT PE_COFF_LOADER_IMAGE_CONTEXT  *ImageContext
   )
 {
-  EFI_STATUS  Status;
-  VOID        *DllEntryPoint;
-  CHAR16      *DllFileName;
-  HMODULE     Library;
-  UINTN       Index;
+  EFI_STATUS                           Status;
+  VOID                                 *DllEntryPoint;
+  CHAR16                               *DllFileName;
+  HMODULE                              Library;
+  UINTN                                Index;
+  PE_COFF_LOADER_IMAGE_CONTEXT         PeCoffImageContext;
+  EFI_IMAGE_OPTIONAL_HEADER_PTR_UNION  Hdr;
+  EFI_IMAGE_SECTION_HEADER             *FirstSection;
+  EFI_IMAGE_SECTION_HEADER             *Section;
+  IMAGE_SECTION_DATA                   *SectionData;
+  UINTN                                NumberOfSections;
+  UINTN                                Base;
+  UINTN                                End;
+  UINTN                                RegionBase;
+  UINTN                                RegionSize;
+  UINT32                               Flags;
+  DWORD                                NewProtection;
+  DWORD                                OldProtection;
 
   ASSERT (ImageContext != NULL);
   //
-  // If we load our own PE COFF images the Windows debugger can not source
-  //  level debug our code. If a valid PDB pointer exists use it to load
-  //  the *.dll file as a library using Windows* APIs. This allows
-  //  source level debug. The image is still loaded and relocated
-  //  in the Framework memory space like on a real system (by the code above),
-  //  but the entry point points into the DLL loaded by the code below.
+  // If we load our own PE/COFF images the Windows debugger can not source
+  // level debug our code. If a valid PDB pointer exists use it to load
+  // the *.dll file as a library using Windows* APIs. This allows
+  // source level debug. The image is still loaded and relocated
+  // in the Framework memory space like on a real system (by the code above),
+  // but the entry point points into the DLL loaded by the code below.
   //
 
   DllEntryPoint = NULL;
@@ -1041,43 +1126,186 @@ PeCoffLoaderRelocateImageExtraAction (
     }
 
     //
-    // Replace .PDB with .DLL on the filename
+    // Replace .PDB with .DLL in the filename
     //
     DllFileName[Index - 3] = 'D';
     DllFileName[Index - 2] = 'L';
     DllFileName[Index - 1] = 'L';
 
     //
-    // Load the .DLL file into the user process's address space for source
-    // level debug
+    // Load the .DLL file into the process's address space for source level
+    // debug.
+    //
+    // EFI modules use the PE32 entry point for a different purpose than
+    // Windows. For Windows DLLs, the PE entry point is used for the DllMain()
+    // function. DllMain() has a very specific purpose; it initializes runtime
+    // libraries, instance data, and thread local storage. LoadLibrary()/
+    // LoadLibraryEx() will run the PE32 entry point and assume it to be a
+    // DllMain() implementation by default. By passing the
+    // DONT_RESOLVE_DLL_REFERENCES argument to LoadLibraryEx(), the execution
+    // of the entry point as a DllMain() function will be suppressed. This
+    // also prevents other modules that are referenced by the DLL from being
+    // loaded. We use LoadLibraryEx() to create a copy of the PE32
+    // image that the OS (and therefore the debugger) is aware of.
+    // Source level debugging is the only reason to do this.
     //
     Library = LoadLibraryEx (DllFileName, NULL, DONT_RESOLVE_DLL_REFERENCES);
     if (Library != NULL) {
       //
-      // InitializeDriver is the entry point we put in all our EFI DLL's. The
-      // DONT_RESOLVE_DLL_REFERENCES argument to LoadLIbraryEx() suppresses the
-      // normal DLL entry point of DllMain, and prevents other modules that are
-      // referenced in side the DllFileName from being loaded. There is no error
-      // checking as the we can point to the PE32 image loaded by Tiano. This
-      // step is only needed for source level debugging
+      // Parse the PE32 image loaded by the OS and find the entry point
       //
-      DllEntryPoint = (VOID *)(UINTN)GetProcAddress (Library, "InitializeDriver");
+      ZeroMem (&PeCoffImageContext, sizeof (PeCoffImageContext));
+      PeCoffImageContext.Handle    = Library;
+      PeCoffImageContext.ImageRead = PeCoffLoaderImageReadFromMemory;
+      Status                       = PeCoffLoaderGetImageInfo (&PeCoffImageContext);
+      if (EFI_ERROR (Status) || (PeCoffImageContext.ImageError != IMAGE_ERROR_SUCCESS)) {
+        SecPrint ("DLL is not a valid PE/COFF image.\n\r");
+        FreeLibrary (Library);
+        Library = NULL;
+      } else {
+        Hdr.Pe32 = (EFI_IMAGE_NT_HEADERS32 *)((UINTN)Library + (UINTN)PeCoffImageContext.PeCoffHeaderOffset);
+        if (Hdr.Pe32->OptionalHeader.Magic == EFI_IMAGE_NT_OPTIONAL_HDR32_MAGIC) {
+          //
+          // Use PE32 offset
+          //
+          DllEntryPoint = (VOID *)((UINTN)Library + (UINTN)Hdr.Pe32->OptionalHeader.AddressOfEntryPoint);
+        } else {
+          //
+          // Use PE32+ offset
+          //
+          DllEntryPoint = (VOID *)((UINTN)Library + (UINTN)Hdr.Pe32Plus->OptionalHeader.AddressOfEntryPoint);
+        }
+
+        //
+        // Now we need to configure memory access for the copy of the PE32 image
+        // loaded by the OS.
+        //
+        // Most Windows DLLs are linked with sections 4KB aligned but EFI
+        // modules are not to reduce size. Because of this we need to compute
+        // the union of memory access attributes and explicitly configure
+        // each page.
+        //
+        FirstSection = (EFI_IMAGE_SECTION_HEADER *)(
+                                                    (UINTN)Library +
+                                                    PeCoffImageContext.PeCoffHeaderOffset +
+                                                    sizeof (UINT32) +
+                                                    sizeof (EFI_IMAGE_FILE_HEADER) +
+                                                    Hdr.Pe32->FileHeader.SizeOfOptionalHeader
+                                                    );
+        NumberOfSections = (UINTN)(Hdr.Pe32->FileHeader.NumberOfSections);
+        Section          = FirstSection;
+        SectionData      = malloc (NumberOfSections * sizeof (IMAGE_SECTION_DATA));
+        if (SectionData == NULL) {
+          FreeLibrary (Library);
+          Library       = NULL;
+          DllEntryPoint = NULL;
+        }
+
+        ZeroMem (SectionData, NumberOfSections * sizeof (IMAGE_SECTION_DATA));
+        //
+        // Extract the section data from the PE32 image
+        //
+        for (Index = 0; Index < NumberOfSections; Index++) {
+          SectionData[Index].Base = (UINTN)Library + Section->VirtualAddress;
+          SectionData[Index].Size = Section->Misc.VirtualSize;
+          if (SectionData[Index].Size == 0) {
+            SectionData[Index].Size = Section->SizeOfRawData;
+          }
+
+          SectionData[Index].Flags = (Section->Characteristics &
+                                      (EFI_IMAGE_SCN_MEM_EXECUTE | EFI_IMAGE_SCN_MEM_WRITE));
+          Section += 1;
+        }
+
+        //
+        // Loop over every byte in memory and compute the union of the memory
+        // access bits.
+        //
+        End        = (UINTN)Library + (UINTN)PeCoffImageContext.ImageSize;
+        RegionBase = (UINTN)Library;
+        RegionSize = 0;
+        Flags      = 0;
+        for (Base = (UINTN)Library; Base < End; Base++) {
+          for (Index = 0; Index < NumberOfSections; Index++) {
+            if ((SectionData[Index].Base <= Base) &&
+                ((SectionData[Index].Base + SectionData[Index].Size) > Base))
+            {
+              Flags |= SectionData[Index].Flags;
+            }
+          }
+
+          //
+          // When end of current page is reached configure the memory access for
+          // the current page.
+          //
+          if (IS_ALIGNED (Base + 1, SIZE_4KB)) {
+            RegionSize += SIZE_4KB;
+            if ((Flags & EFI_IMAGE_SCN_MEM_WRITE) == EFI_IMAGE_SCN_MEM_WRITE) {
+              if ((Flags & EFI_IMAGE_SCN_MEM_EXECUTE) == EFI_IMAGE_SCN_MEM_EXECUTE) {
+                NewProtection = PAGE_EXECUTE_READWRITE;
+              } else {
+                NewProtection = PAGE_READWRITE;
+              }
+            } else {
+              if ((Flags & EFI_IMAGE_SCN_MEM_EXECUTE) == EFI_IMAGE_SCN_MEM_EXECUTE) {
+                NewProtection = PAGE_EXECUTE_READ;
+              } else {
+                NewProtection = PAGE_READONLY;
+              }
+            }
+
+            if (!VirtualProtect ((LPVOID)RegionBase, (SIZE_T)RegionSize, NewProtection, &OldProtection)) {
+              SecPrint ("Setting PE32 Section Access Failed\n\r");
+              FreeLibrary (Library);
+              free (SectionData);
+              Library       = NULL;
+              DllEntryPoint = NULL;
+              break;
+            }
+
+            Flags      = 0;
+            RegionBase = Base + 1;
+            RegionSize = 0;
+          }
+        }
+
+        free (SectionData);
+        //
+        // Configure the last partial page
+        //
+        if ((Library != NULL) && ((End - RegionBase) > 0)) {
+          if ((Flags & EFI_IMAGE_SCN_MEM_WRITE) == EFI_IMAGE_SCN_MEM_WRITE) {
+            if ((Flags & EFI_IMAGE_SCN_MEM_EXECUTE) == EFI_IMAGE_SCN_MEM_EXECUTE) {
+              NewProtection = PAGE_EXECUTE_READWRITE;
+            } else {
+              NewProtection = PAGE_READWRITE;
+            }
+          } else {
+            if ((Flags & EFI_IMAGE_SCN_MEM_EXECUTE) == EFI_IMAGE_SCN_MEM_EXECUTE) {
+              NewProtection = PAGE_EXECUTE_READ;
+            } else {
+              NewProtection = PAGE_READONLY;
+            }
+          }
+
+          if (!VirtualProtect ((LPVOID)RegionBase, (SIZE_T)(End - RegionBase), NewProtection, &OldProtection)) {
+            SecPrint ("Setting PE32 Section Access Failed\n\r");
+            FreeLibrary (Library);
+            Library       = NULL;
+            DllEntryPoint = NULL;
+          }
+        }
+      }
     }
 
     if ((Library != NULL) && (DllEntryPoint != NULL)) {
       Status = AddModHandle (ImageContext, Library);
-      if (Status == EFI_ALREADY_STARTED) {
+      if ((Status == EFI_SUCCESS) || (Status == EFI_ALREADY_STARTED)) {
         //
-        // If the DLL has already been loaded before, then this instance of the DLL can not be debugged.
-        //
-        ImageContext->PdbPointer = NULL;
-        SecPrint ("WARNING: DLL already loaded.  No source level debug %S.\n\r", DllFileName);
-      } else {
-        //
-        // This DLL is not already loaded, so source level debugging is supported.
+        // This DLL is either not loaded or already started, so source level debugging is supported.
         //
         ImageContext->EntryPoint = (EFI_PHYSICAL_ADDRESS)(UINTN)DllEntryPoint;
-        SecPrint ("LoadLibraryEx (\n\r  %S,\n\r  NULL, DONT_RESOLVE_DLL_REFERENCES)\n\r", DllFileName);
+        SecPrint ("LoadLibraryEx (\n\r  %S,\n\r  NULL, DONT_RESOLVE_DLL_REFERENCES) @ 0x%X\n\r", DllFileName, (int)(UINTN)Library);
       }
     } else {
       SecPrint ("WARNING: No source level debug %S. \n\r", DllFileName);

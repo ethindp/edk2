@@ -1,10 +1,14 @@
 ## @file
 #  CI configuration for StandaloneMmPkg
 #
+#  Copyright (c) 2024, Intel Corporation. All rights reserved.<BR>
 #  Copyright (c) 2020 - 2021, Arm Limited. All rights reserved.<BR>
 #  SPDX-License-Identifier: BSD-2-Clause-Patent
 ##
 {
+    "PrEval": {
+        "DscPath": "StandaloneMmPkg.dsc",
+    },
     "EccCheck": {
         ## Exception sample looks like below:
         ## "ExceptionList": [
@@ -24,7 +28,7 @@
 
     ## options defined .pytool/Plugin/HostUnitTestCompilerPlugin
     "HostUnitTestCompilerPlugin": {
-        "DscPath": "" # Don't support this test
+        "DscPath": "Test/StandaloneMmPkgHostTest.dsc"
     },
 
     ## options defined .pytool/Plugin/CharEncodingCheck
@@ -39,7 +43,8 @@
             "EmbeddedPkg/EmbeddedPkg.dec",
             "StandaloneMmPkg/StandaloneMmPkg.dec",
             "MdeModulePkg/MdeModulePkg.dec",
-            "MdePkg/MdePkg.dec"
+            "MdePkg/MdePkg.dec",
+            "UefiCpuPkg/UefiCpuPkg.dec"
         ],
         # For host based unit tests
         "AcceptableDependencies-HOST_APPLICATION":[
@@ -59,7 +64,7 @@
     ## options defined .pytool/Plugin/HostUnitTestDscCompleteCheck
     "HostUnitTestDscCompleteCheck": {
         "IgnoreInf": [""],
-        "DscPath": "" # Don't support this test
+        "DscPath": "Test/StandaloneMmPkgHostTest.dsc"
     },
 
     ## options defined .pytool/Plugin/GuidCheck
@@ -92,5 +97,11 @@
                                      # should be ignore
         "AdditionalIncludePaths": [] # Additional paths to spell check
                                      # (wildcards supported)
+    },
+
+    ## options defined .pytool/Plugin/MarkdownLintCheck
+    "MarkdownLintCheck": {
+        "AuditOnly": True,           # If True, log all errors and then mark as skipped
+        "IgnoreFiles": []            # package root relative file, folder, or glob pattern to ignore
     }
 }

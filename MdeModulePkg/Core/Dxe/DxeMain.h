@@ -7,8 +7,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _DXE_MAIN_H_
-#define _DXE_MAIN_H_
+#pragma once
 
 #include <PiDxe.h>
 
@@ -45,6 +44,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Protocol/HiiPackageList.h>
 #include <Protocol/SmmBase2.h>
 #include <Protocol/PeCoffImageEmulator.h>
+#include <Protocol/MemoryAttribute.h>
 #include <Guid/MemoryTypeInformation.h>
 #include <Guid/FirmwareFileSystem2.h>
 #include <Guid/FirmwareFileSystem3.h>
@@ -84,6 +84,9 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Library/DxeServicesLib.h>
 #include <Library/DebugAgentLib.h>
 #include <Library/CpuExceptionHandlerLib.h>
+#include <Library/OrderedCollectionLib.h>
+
+#include <MemoryBin.h>
 
 //
 // attributes for reserved memory before it is promoted to system memory
@@ -228,26 +231,6 @@ typedef struct {
 #define LOADED_IMAGE_PRIVATE_DATA_FROM_THIS(a) \
           CR(a, LOADED_IMAGE_PRIVATE_DATA, Info, LOADED_IMAGE_PRIVATE_DATA_SIGNATURE)
 
-#define IMAGE_PROPERTIES_RECORD_CODE_SECTION_SIGNATURE  SIGNATURE_32 ('I','P','R','C')
-
-typedef struct {
-  UINT32                  Signature;
-  LIST_ENTRY              Link;
-  EFI_PHYSICAL_ADDRESS    CodeSegmentBase;
-  UINT64                  CodeSegmentSize;
-} IMAGE_PROPERTIES_RECORD_CODE_SECTION;
-
-#define IMAGE_PROPERTIES_RECORD_SIGNATURE  SIGNATURE_32 ('I','P','R','D')
-
-typedef struct {
-  UINT32                  Signature;
-  LIST_ENTRY              Link;
-  EFI_PHYSICAL_ADDRESS    ImageBase;
-  UINT64                  ImageSize;
-  UINTN                   CodeSegmentCount;
-  LIST_ENTRY              CodeSegmentList;
-} IMAGE_PROPERTIES_RECORD;
-
 //
 // DXE Core Global Variables
 //
@@ -269,6 +252,7 @@ extern EFI_SECURITY_ARCH_PROTOCOL        *gSecurity;
 extern EFI_SECURITY2_ARCH_PROTOCOL       *gSecurity2;
 extern EFI_BDS_ARCH_PROTOCOL             *gBds;
 extern EFI_SMM_BASE2_PROTOCOL            *gSmmBase2;
+extern EFI_MEMORY_ATTRIBUTE_PROTOCOL     *gMemoryAttributeProtocol;
 
 extern EFI_TPL  gEfiCurrentTpl;
 
@@ -276,9 +260,15 @@ extern EFI_GUID                   *gDxeCoreFileName;
 extern EFI_LOADED_IMAGE_PROTOCOL  *gDxeCoreLoadedImage;
 
 extern EFI_MEMORY_TYPE_INFORMATION  gMemoryTypeInformation[EfiMaxMemoryType + 1];
+extern BOOLEAN                      mMemoryTypeInformationInitialized;
+extern EFI_MEMORY_TYPE_STATISTICS   mMemoryTypeStatistics[EfiMaxMemoryType + 1];
+extern EFI_PHYSICAL_ADDRESS         mDefaultMaximumAddress;
+extern EFI_PHYSICAL_ADDRESS         mDefaultBaseAddress;
 
 extern BOOLEAN                    gDispatcherRunning;
 extern EFI_RUNTIME_ARCH_PROTOCOL  gRuntimeTemplate;
+
+extern BOOLEAN  gMemoryAttributesTableForwardCfi;
 
 extern EFI_LOAD_FIXED_ADDRESS_CONFIGURATION_TABLE  gLoadModuleAtFixAddressConfigurationTable;
 extern BOOLEAN                                     gLoadFixedAddressCodeMemoryReady;
@@ -2802,4 +2792,13 @@ MergeMemoryMap (
   IN UINTN                      DescriptorSize
   );
 
-#endif
+/**
+  Initializes "handle" support.
+
+  @return Status code.
+
++**/
+EFI_STATUS
+CoreInitializeHandleServices (
+  VOID
+  );

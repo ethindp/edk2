@@ -424,8 +424,8 @@ SmbiosAdd (
     // in the Structure Table Length field of the SMBIOS Structure Table Entry Point,
     // which is a WORD field limited to 65,535 bytes. So the max size of 32-bit table should not exceed 65,535 bytes.
     //
-    if ((EntryPointStructure != NULL) &&
-        (EntryPointStructure->TableLength + StructureSize > SMBIOS_TABLE_MAX_LENGTH))
+    if (((EntryPointStructure != NULL) ? EntryPointStructure->TableLength : 0) +
+        StructureSize > SMBIOS_TABLE_MAX_LENGTH)
     {
       DEBUG ((DEBUG_INFO, "SmbiosAdd: Total length exceeds max 32-bit table length with type = %d size = 0x%x\n", Record->Type, StructureSize));
     } else {
@@ -1072,14 +1072,18 @@ SmbiosCreateTable (
     DEBUG ((DEBUG_INFO, "SmbiosCreateTable: Initialize 32-bit entry point structure\n"));
     EntryPointStructureData.MajorVersion      = mPrivateData.Smbios.MajorVersion;
     EntryPointStructureData.MinorVersion      = mPrivateData.Smbios.MinorVersion;
-    EntryPointStructureData.SmbiosBcdRevision = (UINT8)((PcdGet16 (PcdSmbiosVersion) >> 4) & 0xf0) | (UINT8)(PcdGet16 (PcdSmbiosVersion) & 0x0f);
-    PhysicalAddress                           = 0xffffffff;
-    Status                                    = gBS->AllocatePages (
-                                                       AllocateMaxAddress,
-                                                       EfiRuntimeServicesData,
-                                                       EFI_SIZE_TO_PAGES (sizeof (SMBIOS_TABLE_ENTRY_POINT)),
-                                                       &PhysicalAddress
-                                                       );
+    EntryPointStructureData.SmbiosBcdRevision = 0;
+    if ((mPrivateData.Smbios.MajorVersion <= 9) && (mPrivateData.Smbios.MinorVersion <= 9)) {
+      EntryPointStructureData.SmbiosBcdRevision = ((mPrivateData.Smbios.MajorVersion & 0x0f) << 4) | (mPrivateData.Smbios.MinorVersion & 0x0f);
+    }
+
+    PhysicalAddress = 0xffffffff;
+    Status          = gBS->AllocatePages (
+                             AllocateMaxAddress,
+                             EfiRuntimeServicesData,
+                             EFI_SIZE_TO_PAGES (sizeof (SMBIOS_TABLE_ENTRY_POINT)),
+                             &PhysicalAddress
+                             );
     if (EFI_ERROR (Status)) {
       DEBUG ((DEBUG_ERROR, "SmbiosCreateTable () could not allocate EntryPointStructure < 4GB\n"));
       Status = gBS->AllocatePages (
@@ -1157,7 +1161,7 @@ SmbiosCreateTable (
     DEBUG ((
       DEBUG_INFO,
       "%a() re-allocate SMBIOS 32-bit table\n",
-      __FUNCTION__
+      __func__
       ));
     if (EntryPointStructure->TableAddress != 0) {
       //
@@ -1329,7 +1333,7 @@ SmbiosCreate64BitTable (
     DEBUG ((
       DEBUG_INFO,
       "%a() re-allocate SMBIOS 64-bit table\n",
-      __FUNCTION__
+      __func__
       ));
     if (Smbios30EntryPointStructure->TableAddress != 0) {
       //
@@ -1447,7 +1451,9 @@ BOOLEAN
 IsValidSmbios20Table (
   IN  VOID   *TableEntry,
   OUT VOID   **TableAddress,
-  OUT UINTN  *TableMaximumSize
+  OUT UINTN  *TableMaximumSize,
+  OUT UINT8  *MajorVersion,
+  OUT UINT8  *MinorVersion
   )
 {
   UINT8                     Checksum;
@@ -1478,6 +1484,9 @@ IsValidSmbios20Table (
   if (SmbiosTable->MajorVersion < 2) {
     return FALSE;
   }
+
+  *MajorVersion = SmbiosTable->MajorVersion;
+  *MinorVersion = SmbiosTable->MinorVersion;
 
   //
   // The whole struct check sum should be zero
@@ -1522,7 +1531,9 @@ BOOLEAN
 IsValidSmbios30Table (
   IN  VOID   *TableEntry,
   OUT VOID   **TableAddress,
-  OUT UINTN  *TableMaximumSize
+  OUT UINTN  *TableMaximumSize,
+  OUT UINT8  *MajorVersion,
+  OUT UINT8  *MinorVersion
   )
 {
   UINT8                         Checksum;
@@ -1541,6 +1552,9 @@ IsValidSmbios30Table (
   if (SmbiosTable->MajorVersion < 3) {
     return FALSE;
   }
+
+  *MajorVersion = SmbiosTable->MajorVersion;
+  *MinorVersion = SmbiosTable->MinorVersion;
 
   //
   // The whole struct check sum should be zero
@@ -1575,13 +1589,18 @@ EFI_STATUS
 ParseAndAddExistingSmbiosTable (
   IN EFI_HANDLE                ImageHandle,
   IN SMBIOS_STRUCTURE_POINTER  Smbios,
-  IN UINTN                     Length
+  IN UINTN                     Length,
+  IN UINT8                     MajorVersion,
+  IN UINT8                     MinorVersion
   )
 {
   EFI_STATUS                Status;
   CHAR8                     *String;
   EFI_SMBIOS_HANDLE         SmbiosHandle;
   SMBIOS_STRUCTURE_POINTER  SmbiosEnd;
+
+  mPrivateData.Smbios.MajorVersion = MajorVersion;
+  mPrivateData.Smbios.MinorVersion = MinorVersion;
 
   SmbiosEnd.Raw = Smbios.Raw + Length;
 
@@ -1593,9 +1612,7 @@ ParseAndAddExistingSmbiosTable (
     //
     // Make sure not to access memory beyond SmbiosEnd
     //
-    if ((Smbios.Raw + sizeof (SMBIOS_STRUCTURE) > SmbiosEnd.Raw) ||
-        (Smbios.Raw + sizeof (SMBIOS_STRUCTURE) < Smbios.Raw))
-    {
+    if ((UINTN)(SmbiosEnd.Raw - Smbios.Raw) < sizeof (SMBIOS_STRUCTURE)) {
       return EFI_INVALID_PARAMETER;
     }
 
@@ -1610,9 +1627,7 @@ ParseAndAddExistingSmbiosTable (
     // Make sure not to access memory beyond SmbiosEnd
     // Each structure shall be terminated by a double-null (0000h).
     //
-    if ((Smbios.Raw + Smbios.Hdr->Length + 2 * sizeof (UINT8) > SmbiosEnd.Raw) ||
-        (Smbios.Raw + Smbios.Hdr->Length + 2 * sizeof (UINT8) < Smbios.Raw))
-    {
+    if ((UINTN)(SmbiosEnd.Raw - Smbios.Raw) < (Smbios.Hdr->Length + 2U)) {
       return EFI_INVALID_PARAMETER;
     }
 
@@ -1692,8 +1707,13 @@ RetrieveSmbiosFromHob (
   UNIVERSAL_PAYLOAD_GENERIC_HEADER  *GenericHeader;
   VOID                              *TableAddress;
   UINTN                             TableMaximumSize;
+  UINT8                             MajorVersion;
+  UINT8                             MinorVersion;
 
   Status = EFI_NOT_FOUND;
+
+  MajorVersion = 0;
+  MinorVersion = 0;
 
   for (Index = 0; Index < ARRAY_SIZE (mIsSmbiosTableValid); Index++) {
     GuidHob = GetFirstGuidHob (mIsSmbiosTableValid[Index].Guid);
@@ -1709,9 +1729,9 @@ RetrieveSmbiosFromHob (
         //
         SmBiosTableAdress = (UNIVERSAL_PAYLOAD_SMBIOS_TABLE *)GET_GUID_HOB_DATA (GuidHob);
         if (GenericHeader->Length >= UNIVERSAL_PAYLOAD_SIZEOF_THROUGH_FIELD (UNIVERSAL_PAYLOAD_SMBIOS_TABLE, SmBiosEntryPoint)) {
-          if (mIsSmbiosTableValid[Index].IsValid ((VOID *)(UINTN)SmBiosTableAdress->SmBiosEntryPoint, &TableAddress, &TableMaximumSize)) {
+          if (mIsSmbiosTableValid[Index].IsValid ((VOID *)(UINTN)SmBiosTableAdress->SmBiosEntryPoint, &TableAddress, &TableMaximumSize, &MajorVersion, &MinorVersion)) {
             Smbios.Raw = TableAddress;
-            Status     = ParseAndAddExistingSmbiosTable (ImageHandle, Smbios, TableMaximumSize);
+            Status     = ParseAndAddExistingSmbiosTable (ImageHandle, Smbios, TableMaximumSize, MajorVersion, MinorVersion);
             if (EFI_ERROR (Status)) {
               DEBUG ((DEBUG_ERROR, "RetrieveSmbiosFromHob: Failed to parse preinstalled tables from Guid Hob\n"));
               Status = EFI_UNSUPPORTED;

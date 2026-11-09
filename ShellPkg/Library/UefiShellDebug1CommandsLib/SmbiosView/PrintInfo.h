@@ -3,12 +3,12 @@
 
   Copyright (c) 2005 - 2015, Intel Corporation. All rights reserved.<BR>
   (C) Copyright 2017 - 2019 Hewlett Packard Enterprise Development LP<BR>
+  Copyright (c) 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _SMBIOS_PRINT_INFO_H_
-#define _SMBIOS_PRINT_INFO_H_
+#pragma once
 
 #include <IndustryStandard/SmBios.h>
 
@@ -439,4 +439,26 @@ DisplayProcessorArchitectureType (
   IN UINT8  Option
   );
 
-#endif
+/**
+  Display Firmware Characteristics (Type 45) details.
+
+  @param[in] Chara    The information bits.
+  @param[in] Option   The optional information.
+**/
+VOID
+DisplayFirmwareCharacteristics (
+  IN UINT16  Chara,
+  IN UINT8   Option
+  );
+
+/**
+  Display Firmware state (Type 45) details.
+
+  @param[in] Key            The key of the structure.
+  @param[in] Option         The optional information.
+**/
+VOID
+DisplayFirmwareState (
+  IN UINT8  Key,
+  IN UINT8  Option
+  );

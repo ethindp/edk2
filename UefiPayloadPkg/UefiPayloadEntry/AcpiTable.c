@@ -13,7 +13,7 @@
   Find the board related info from ACPI table
 
   @param  AcpiTableBase          ACPI table start address in memory
-  @param  AcpiBoardInfo          Pointer to the acpi board info strucutre
+  @param  AcpiBoardInfo          Pointer to the acpi board info structure
 
   @retval RETURN_SUCCESS     Successfully find out all the required information.
   @retval RETURN_NOT_FOUND   Failed to find the required info.
@@ -77,7 +77,7 @@ ParseAcpiInfo (
     Entry64    = (UINT64 *)(Xsdt + 1);
     Entry64Num = (Xsdt->Length - sizeof (EFI_ACPI_DESCRIPTION_HEADER)) >> 3;
     for (Idx = 0; Idx < Entry64Num; Idx++) {
-      Signature = (UINT32 *)(UINTN)Entry64[Idx];
+      Signature = (UINT32 *)(UINTN)ReadUnaligned64 (&Entry64[Idx]);
       if (*Signature == EFI_ACPI_3_0_FIXED_ACPI_DESCRIPTION_TABLE_SIGNATURE) {
         Fadt = (EFI_ACPI_3_0_FIXED_ACPI_DESCRIPTION_TABLE *)Signature;
         DEBUG ((DEBUG_INFO, "Found Fadt in Xsdt\n"));
@@ -124,53 +124,6 @@ Done:
   DEBUG ((DEBUG_INFO, "PmGpeEn Reg 0x%lx\n", AcpiBoardInfo->PmGpeEnBase));
   DEBUG ((DEBUG_INFO, "PcieBaseAddr 0x%lx\n", AcpiBoardInfo->PcieBaseAddress));
   DEBUG ((DEBUG_INFO, "PcieBaseSize 0x%lx\n", AcpiBoardInfo->PcieBaseSize));
-
-  //
-  // Verify values for proper operation
-  //
-  ASSERT (Fadt->Pm1aCntBlk != 0);
-  ASSERT (Fadt->PmTmrBlk != 0);
-  ASSERT (Fadt->ResetReg.Address != 0);
-  ASSERT (Fadt->Pm1aEvtBlk != 0);
-  ASSERT (Fadt->Gpe0Blk != 0);
-
-  DEBUG_CODE_BEGIN ();
-  BOOLEAN  SciEnabled;
-
-  //
-  // Check the consistency of SCI enabling
-  //
-
-  //
-  // Get SCI_EN value
-  //
-  if (Fadt->Pm1CntLen == 4) {
-    SciEnabled = (IoRead32 (Fadt->Pm1aCntBlk) & BIT0) ? TRUE : FALSE;
-  } else {
-    //
-    // if (Pm1CntLen == 2), use 16 bit IO read;
-    // if (Pm1CntLen != 2 && Pm1CntLen != 4), use 16 bit IO read as a fallback
-    //
-    SciEnabled = (IoRead16 (Fadt->Pm1aCntBlk) & BIT0) ? TRUE : FALSE;
-  }
-
-  if (!(Fadt->Flags & EFI_ACPI_5_0_HW_REDUCED_ACPI) &&
-      (Fadt->SmiCmd == 0) &&
-      !SciEnabled)
-  {
-    //
-    // The ACPI enabling status is inconsistent: SCI is not enabled but ACPI
-    // table does not provide a means to enable it through FADT->SmiCmd
-    //
-    DEBUG ((
-      DEBUG_ERROR,
-      "ERROR: The ACPI enabling status is inconsistent: SCI is not"
-      " enabled but the ACPI table does not provide a means to enable it through FADT->SmiCmd."
-      " This may cause issues in OS.\n"
-      ));
-  }
-
-  DEBUG_CODE_END ();
 
   return RETURN_SUCCESS;
 }

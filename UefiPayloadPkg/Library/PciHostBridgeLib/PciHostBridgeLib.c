@@ -135,7 +135,7 @@ InitRootBridge (
                  &mRootBridgeDevicePathTemplate
                  );
   if (DevicePath == NULL) {
-    DEBUG ((DEBUG_ERROR, "%a: %r\n", __FUNCTION__, EFI_OUT_OF_RESOURCES));
+    DEBUG ((DEBUG_ERROR, "%a: %r\n", __func__, EFI_OUT_OF_RESOURCES));
     return EFI_OUT_OF_RESOURCES;
   }
 
@@ -145,7 +145,7 @@ InitRootBridge (
   DEBUG ((
     DEBUG_INFO,
     "%a: populated root bus %d, with room for %d subordinate bus(es)\n",
-    __FUNCTION__,
+    __func__,
     RootBusNumber,
     MaxSubBusNumber - RootBusNumber
     ));
@@ -232,11 +232,11 @@ PciHostBridgeFreeRootBridges (
   UINTN            Count
   )
 {
-  if ((Bridges == NULL) && (Count == 0)) {
+  if ((Bridges == NULL) || (Count == 0)) {
     return;
   }
 
-  ASSERT (Bridges != NULL && Count > 0);
+  ASSERT (Bridges != NULL || Count > 0);
 
   do {
     --Count;

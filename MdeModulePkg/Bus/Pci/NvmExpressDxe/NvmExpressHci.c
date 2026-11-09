@@ -8,6 +8,7 @@
 **/
 
 #include "NvmExpress.h"
+#include <Guid/NVMeEventGroup.h>
 
 #define NVME_SHUTDOWN_PROCESS_TIMEOUT  45
 
@@ -399,6 +400,8 @@ NvmeEnableController (
   UINT32      Index;
   UINT8       Timeout;
 
+  EfiEventGroupSignal (&gNVMeEnableStartEventGroupGuid);
+
   //
   // Enable the controller.
   // CC.AMS, CC.MPS and CC.CSS are all set to 0.
@@ -410,7 +413,7 @@ NvmeEnableController (
 
   Status = WriteNvmeControllerConfiguration (Private, &Cc);
   if (EFI_ERROR (Status)) {
-    return Status;
+    goto Cleanup;
   }
 
   //
@@ -432,7 +435,7 @@ NvmeEnableController (
     Status = ReadNvmeControllerStatus (Private, &Csts);
 
     if (EFI_ERROR (Status)) {
-      return Status;
+      goto Cleanup;
     }
 
     if (Csts.Rdy) {
@@ -449,6 +452,9 @@ NvmeEnableController (
   }
 
   DEBUG ((DEBUG_INFO, "NVMe controller is enabled with status [%r].\n", Status));
+
+Cleanup:
+  EfiEventGroupSignal (&gNVMeEnableCompleteEventGroupGuid);
   return Status;
 }
 
@@ -728,20 +734,9 @@ NvmeControllerInit (
   UINT8                Mn[41];
 
   //
-  // Save original PCI attributes and enable this controller.
+  // Enable this controller.
   //
   PciIo  = Private->PciIo;
-  Status = PciIo->Attributes (
-                    PciIo,
-                    EfiPciIoAttributeOperationGet,
-                    0,
-                    &Private->PciAttributes
-                    );
-
-  if (EFI_ERROR (Status)) {
-    return Status;
-  }
-
   Status = PciIo->Attributes (
                     PciIo,
                     EfiPciIoAttributeOperationSupported,
@@ -765,19 +760,6 @@ NvmeControllerInit (
   }
 
   //
-  // Enable 64-bit DMA support in the PCI layer.
-  //
-  Status = PciIo->Attributes (
-                    PciIo,
-                    EfiPciIoAttributeOperationEnable,
-                    EFI_PCI_IO_ATTRIBUTE_DUAL_ADDRESS_CYCLE,
-                    NULL
-                    );
-  if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_WARN, "NvmeControllerInit: failed to enable 64-bit DMA (%r)\n", Status));
-  }
-
-  //
   // Read the Controller Capabilities register and verify that the NVM command set is supported
   //
   Status = ReadNvmeControllerCapabilities (Private, &Private->Cap);
@@ -785,7 +767,7 @@ NvmeControllerInit (
     return Status;
   }
 
-  if (Private->Cap.Css != 0x01) {
+  if ((Private->Cap.Css & BIT0) == 0) {
     DEBUG ((DEBUG_INFO, "NvmeControllerInit: the controller doesn't support NVMe command set\n"));
     return EFI_UNSUPPORTED;
   }
@@ -991,24 +973,26 @@ NvmeShutdownAllControllers (
   UINTN                                Index;
   NVME_CONTROLLER_PRIVATE_DATA         *Private;
 
-  Status = gBS->LocateHandleBuffer (
-                  ByProtocol,
-                  &gEfiPciIoProtocolGuid,
-                  NULL,
-                  &HandleCount,
-                  &Handles
-                  );
+  Handles = NULL;
+  Status  = gBS->LocateHandleBuffer (
+                   ByProtocol,
+                   &gEfiPciIoProtocolGuid,
+                   NULL,
+                   &HandleCount,
+                   &Handles
+                   );
   if (EFI_ERROR (Status)) {
     HandleCount = 0;
   }
 
   for (HandleIndex = 0; HandleIndex < HandleCount; HandleIndex++) {
-    Status = gBS->OpenProtocolInformation (
-                    Handles[HandleIndex],
-                    &gEfiPciIoProtocolGuid,
-                    &OpenInfos,
-                    &OpenInfoCount
-                    );
+    OpenInfos = NULL;
+    Status    = gBS->OpenProtocolInformation (
+                       Handles[HandleIndex],
+                       &gEfiPciIoProtocolGuid,
+                       &OpenInfos,
+                       &OpenInfoCount
+                       );
     if (EFI_ERROR (Status)) {
       continue;
     }
@@ -1029,53 +1013,89 @@ NvmeShutdownAllControllers (
                         NULL,
                         EFI_OPEN_PROTOCOL_GET_PROTOCOL
                         );
-        if (EFI_ERROR (Status)) {
-          continue;
-        }
+        if (!EFI_ERROR (Status)) {
+          Private = NVME_CONTROLLER_PRIVATE_DATA_FROM_PASS_THRU (NvmePassThru);
 
-        Private = NVME_CONTROLLER_PRIVATE_DATA_FROM_PASS_THRU (NvmePassThru);
-
-        //
-        // Read Controller Configuration Register.
-        //
-        Status = ReadNvmeControllerConfiguration (Private, &Cc);
-        if (EFI_ERROR (Status)) {
-          continue;
-        }
-
-        //
-        // The host should set the Shutdown Notification (CC.SHN) field to 01b
-        // to indicate a normal shutdown operation.
-        //
-        Cc.Shn = NVME_CC_SHN_NORMAL_SHUTDOWN;
-        Status = WriteNvmeControllerConfiguration (Private, &Cc);
-        if (EFI_ERROR (Status)) {
-          continue;
-        }
-
-        //
-        // The controller indicates when shutdown processing is completed by updating the
-        // Shutdown Status (CSTS.SHST) field to 10b.
-        // Wait up to 45 seconds (break down to 4500 x 10ms) for the shutdown to complete.
-        //
-        for (Index = 0; Index < NVME_SHUTDOWN_PROCESS_TIMEOUT * 100; Index++) {
-          Status = ReadNvmeControllerStatus (Private, &Csts);
-          if (!EFI_ERROR (Status) && (Csts.Shst == NVME_CSTS_SHST_SHUTDOWN_COMPLETED)) {
-            DEBUG ((DEBUG_INFO, "NvmeShutdownController: shutdown processing is completed after %dms.\n", Index * 10));
-            break;
+          //
+          // Read Controller Configuration Register.
+          //
+          Status = ReadNvmeControllerConfiguration (Private, &Cc);
+          if (!EFI_ERROR (Status)) {
+            //
+            // The host should set the Shutdown Notification (CC.SHN) field to 01b
+            // to indicate a normal shutdown operation.
+            //
+            Cc.Shn = NVME_CC_SHN_NORMAL_SHUTDOWN;
+            WriteNvmeControllerConfiguration (Private, &Cc);
           }
-
-          //
-          // Stall for 10ms
-          //
-          gBS->Stall (10 * 1000);
-        }
-
-        if (Index == NVME_SHUTDOWN_PROCESS_TIMEOUT * 100) {
-          DEBUG ((DEBUG_ERROR, "NvmeShutdownController: shutdown processing is timed out\n"));
         }
       }
     }
+
+    if (OpenInfos != NULL) {
+      gBS->FreePool (OpenInfos);
+    }
+  }
+
+  // Another cycle to polling every disk to check the shutdown status, can save time
+  for (HandleIndex = 0; HandleIndex < HandleCount; HandleIndex++) {
+    OpenInfos = NULL;
+    Status    = gBS->OpenProtocolInformation (
+                       Handles[HandleIndex],
+                       &gEfiPciIoProtocolGuid,
+                       &OpenInfos,
+                       &OpenInfoCount
+                       );
+    if (EFI_ERROR (Status)) {
+      continue;
+    }
+
+    for (OpenInfoIndex = 0; OpenInfoIndex < OpenInfoCount; OpenInfoIndex++) {
+      if (((OpenInfos[OpenInfoIndex].Attributes & EFI_OPEN_PROTOCOL_BY_DRIVER) != 0) &&
+          (OpenInfos[OpenInfoIndex].AgentHandle == gImageHandle))
+      {
+        Status = gBS->OpenProtocol (
+                        OpenInfos[OpenInfoIndex].ControllerHandle,
+                        &gEfiNvmExpressPassThruProtocolGuid,
+                        (VOID **)&NvmePassThru,
+                        NULL,
+                        NULL,
+                        EFI_OPEN_PROTOCOL_GET_PROTOCOL
+                        );
+        if (!EFI_ERROR (Status)) {
+          Private = NVME_CONTROLLER_PRIVATE_DATA_FROM_PASS_THRU (NvmePassThru);
+          //
+          // The controller indicates when shutdown processing is completed by updating the
+          // Shutdown Status (CSTS.SHST) field to 10b.
+          // Wait up to 45 seconds (break down to 4500 x 10ms) for the shutdown to complete.
+          //
+          for (Index = 0; Index < NVME_SHUTDOWN_PROCESS_TIMEOUT * 100; Index++) {
+            Status = ReadNvmeControllerStatus (Private, &Csts);
+            if (!EFI_ERROR (Status) && (Csts.Shst == NVME_CSTS_SHST_SHUTDOWN_COMPLETED)) {
+              DEBUG ((DEBUG_INFO, "NvmeShutdownController: disk %d shutdown processing is completed after %dms.\n", OpenInfoIndex, Index * 10));
+              break;
+            }
+
+            //
+            // Stall for 10ms
+            //
+            gBS->Stall (10 * 1000);
+          }
+
+          if (Index == NVME_SHUTDOWN_PROCESS_TIMEOUT * 100) {
+            DEBUG ((DEBUG_ERROR, "NvmeShutdownController: disk %d shutdown processing is timed out\n", OpenInfoIndex));
+          }
+        }
+      }
+    }
+
+    if (OpenInfos != NULL) {
+      gBS->FreePool (OpenInfos);
+    }
+  }
+
+  if (Handles != NULL) {
+    gBS->FreePool (Handles);
   }
 }
 

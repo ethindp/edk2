@@ -8,8 +8,7 @@
 
 **/
 
-#ifndef EFI_REDFISH_CONFIG_HANDLER_DRIVER_H_
-#define EFI_REDFISH_CONFIG_HANDLER_DRIVER_H_
+#pragma once
 
 #include "RedfishConfigHandlerCommon.h"
 
@@ -24,7 +23,9 @@
 //
 // Protocol instances
 //
-extern EFI_DRIVER_BINDING_PROTOCOL  gRedfishConfigDriverBinding;
+extern EFI_DRIVER_BINDING_PROTOCOL   gRedfishConfigDriverBinding;
+extern EFI_COMPONENT_NAME_PROTOCOL   gRedfishConfigHandlerComponentName;
+extern EFI_COMPONENT_NAME2_PROTOCOL  gRedfishConfigHandlerComponentName2;
 
 extern REDFISH_CONFIG_DRIVER_DATA         gRedfishConfigData;
 extern EDKII_REDFISH_CREDENTIAL_PROTOCOL  *gCredential;
@@ -156,5 +157,3 @@ RedfishConfigDriverBindingStop (
   IN  UINTN                        NumberOfChildren,
   IN  EFI_HANDLE                   *ChildHandleBuffer OPTIONAL
   );
-
-#endif

@@ -587,7 +587,6 @@ CreateSharedPopUp (
   )
 {
   UINTN   Index;
-  UINTN   Count;
   CHAR16  Character;
   UINTN   Start;
   UINTN   End;
@@ -627,8 +626,7 @@ CreateSharedPopUp (
   PrintCharAt ((UINTN)-1, (UINTN)-1, Character);
   Character = BOXDRAW_VERTICAL;
 
-  Count = 0;
-  for (Index = Top; Index + 2 < Bottom; Index++, Count++) {
+  for (Index = Top; Index + 2 < Bottom; Index++) {
     String = VA_ARG (Marker, CHAR16 *);
 
     //
@@ -944,13 +942,14 @@ PrintMismatchMenuInfo (
   UINTN                          FormsetBufferSize;
 
   Question = MenuOption->ThisTag;
-  HiiGetFormSetFromHiiHandle (gFormData->HiiHandle, &FormsetBuffer, &FormsetBufferSize);
 
-  FormSetTitleStr = GetToken (FormsetBuffer->FormSetTitle, gFormData->HiiHandle);
-  FormTitleStr    = GetToken (gFormData->FormTitle, gFormData->HiiHandle);
+  if (!EFI_ERROR (HiiGetFormSetFromHiiHandle (gFormData->HiiHandle, &FormsetBuffer, &FormsetBufferSize))) {
+    FormSetTitleStr = GetToken (FormsetBuffer->FormSetTitle, gFormData->HiiHandle);
+    FormTitleStr    = GetToken (gFormData->FormTitle, gFormData->HiiHandle);
 
-  DEBUG ((DEBUG_ERROR, "\n[%a]: Mismatch Formset    : Formset Guid = %g,  FormSet title = %s\n", gEfiCallerBaseName, &gFormData->FormSetGuid, FormSetTitleStr));
-  DEBUG ((DEBUG_ERROR, "[%a]: Mismatch Form       : FormId = %d,  Form title = %s.\n", gEfiCallerBaseName, gFormData->FormId, FormTitleStr));
+    DEBUG ((DEBUG_ERROR, "\n[%a]: Mismatch Formset    : Formset Guid = %g,  FormSet title = %s\n", gEfiCallerBaseName, &gFormData->FormSetGuid, FormSetTitleStr));
+    DEBUG ((DEBUG_ERROR, "[%a]: Mismatch Form       : FormId = %d,  Form title = %s.\n", gEfiCallerBaseName, gFormData->FormId, FormTitleStr));
+  }
 
   if (Question->OpCode->OpCode == EFI_IFR_ORDERED_LIST_OP) {
     QuestionName = GetToken (((EFI_IFR_ORDERED_LIST *)MenuOption->ThisTag->OpCode)->Question.Header.Prompt, gFormData->HiiHandle);

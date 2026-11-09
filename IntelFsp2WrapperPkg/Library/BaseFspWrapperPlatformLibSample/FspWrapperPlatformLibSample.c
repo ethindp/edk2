@@ -86,7 +86,7 @@ GetS3MemoryInfo (
 VOID
 EFIAPI
 CallFspWrapperResetSystem (
-  IN UINT32  FspStatusResetType
+  IN EFI_STATUS  FspStatusResetType
   )
 {
   //
@@ -94,4 +94,18 @@ CallFspWrapperResetSystem (
   //
 
   CpuDeadLoop ();
+}
+
+/**
+  This function overrides the default configurations in the FSP-I UPD data region.
+
+  @param[in,out] FspUpdRgnPtr   A pointer to the UPD data region data structure.
+
+**/
+VOID
+EFIAPI
+UpdateFspiUpdData (
+  IN OUT VOID  *FspUpdRgnPtr
+  )
+{
 }

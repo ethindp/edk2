@@ -1,23 +1,27 @@
 /** @file
-  Support routines for RDRAND instruction access.
+  Support routines for random number generation, which will leverage
+  the platform RngLib to provide high-quality random numbers for use
+  in applications, or entropy for seeding other random number generators.
 
-Copyright (c) 2013 - 2018, Intel Corporation. All rights reserved.<BR>
-(C) Copyright 2015 Hewlett Packard Enterprise Development LP<BR>
-SPDX-License-Identifier: BSD-2-Clause-Patent
+  Copyright (c) 2021 - 2022, Arm Limited. All rights reserved.<BR>
+  Copyright (c) 2013 - 2018, Intel Corporation. All rights reserved.<BR>
+  (C) Copyright 2015 Hewlett Packard Enterprise Development LP<BR>
+
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
+#include <Library/BaseLib.h>
+#include <Library/BaseMemoryLib.h>
 #include <Library/RngLib.h>
+#include <Library/TimerLib.h>
 
 #include "AesCore.h"
-#include "RdRand.h"
 #include "RngDxeInternals.h"
 
 /**
   Creates a 128bit random value that is fully forward and backward prediction resistant,
-  suitable for seeding a NIST SP800-90 Compliant, FIPS 1402-2 certifiable SW DRBG.
-  This function takes multiple random numbers through RDRAND without intervening
-  delays to ensure reseeding and performs AES-CBC-MAC over the data to compute the
-  seed value.
+  suitable for seeding a NIST SP800-90 Compliant, FIPS 1402-2 certifiable SW DRBG using
+  the platform RngLib.
 
   @param[out]  SeedBuffer    Pointer to a 128bit buffer to store the random seed.
 
@@ -76,7 +80,7 @@ RdRandGetSeed128 (
 }
 
 /**
-  Generate high-quality entropy source through RDRAND.
+  Generate high-quality entropy source.
 
   @param[in]   Length        Size of the buffer, in bytes, to fill with.
   @param[out]  Entropy       Pointer to the buffer to store the entropy data.
@@ -87,7 +91,7 @@ RdRandGetSeed128 (
 **/
 EFI_STATUS
 EFIAPI
-RdRandGenerateEntropy (
+GenerateEntropy (
   IN UINTN   Length,
   OUT UINT8  *Entropy
   )

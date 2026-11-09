@@ -1,14 +1,21 @@
 # Edk2 Continuous Integration
 
+This file focuses on information for those working with the `.pytools` directory
+directly or interested in lower-level details about how CI works.
+
+If you just want to get started building code, visit
+[Build Instructions](https://www.tianocore.org/tianocore-wiki.github.io/build-tooling/build-workflows/build_instructions.html)
+on the TianoCore wiki.
+
 ## Basic Status
 
-| Package              | Windows VS2019 (IA32/X64)| Ubuntu GCC (IA32/X64/ARM/AARCH64) | Known Issues |
+| Package              | Windows VS2026 (IA32/X64)| Ubuntu GCC (IA32/X64/AARCH64) | Known Issues |
 | :----                | :-----                   | :----                             | :---         |
 | ArmPkg               |                    | :heavy_check_mark: |
 | ArmPlatformPkg       |                    | :heavy_check_mark: |
 | ArmVirtPkg           | SEE PACKAGE README | SEE PACKAGE README |
 | CryptoPkg            | :heavy_check_mark: | :heavy_check_mark: | Spell checking in audit mode
-| DynamicTablesPkg     |                    | :heavy_check_mark: |
+| DynamicTablesPkg     | :heavy_check_mark: | :heavy_check_mark: |
 | EmbeddedPkg          |
 | EmulatorPkg          | SEE PACKAGE README | SEE PACKAGE README | Spell checking in audit mode
 | FatPkg               | :heavy_check_mark: | :heavy_check_mark: |
@@ -22,7 +29,6 @@
 | PcAtChipsetPkg       | :heavy_check_mark: | :heavy_check_mark: |
 | SecurityPkg          | :heavy_check_mark: | :heavy_check_mark: | Spell checking in audit mode
 | ShellPkg             | :heavy_check_mark: | :heavy_check_mark: | Spell checking in audit mode, 3 modules are not being built by DSC
-| SignedCapsulePkg     |
 | SourceLevelDebugPkg  |
 | StandaloneMmPkg      | :heavy_check_mark: | :heavy_check_mark: |
 | UefiCpuPkg           | :heavy_check_mark: | :heavy_check_mark: | Spell checking in audit mode, 2 binary modules not being built by DSC
@@ -41,7 +47,7 @@ located [here](https://github.com/tianocore/edk2-pytool-library) and
 [here](https://github.com/tianocore/edk2-pytool-extensions)).
 
 The primary execution flows can be found in the
-`.azurepipelines/Windows-VS2019.yml` and `.azurepipelines/Ubuntu-GCC5.yml`
+`.azurepipelines/Windows-VS.yml` and `.azurepipelines/Ubuntu-GCC.yml`
 files. These YAML files are consumed by the Azure Dev Ops Build Pipeline and
 dictate what server resources should be used, how they should be configured, and
 what processes should be run on them. An overview of this schema can be found
@@ -79,46 +85,23 @@ per package configuration which comes from this file.
 
 The EDKII Tools environment (and by extension the ci) is designed to support
 easily and consistently running locally and in a cloud ci environment.  To do
-that a few steps should be followed.  Details of EDKII Tools can be found in the
-[docs folder here](https://github.com/tianocore/edk2-pytool-extensions/tree/master/docs)
-
-### Prerequisets
-
-1. A supported toolchain (others might work but this is what is tested and validated)
-   * Windows 10:
-     * VS 2017 or VS 2019
-     * Windows SDK (for rc)
-     * Windows WDK (for capsules)
-   * Ubuntu 18.04 or Fedora
-     * GCC5
-   * Easy to add more but this is the current state
-2. Python 3.7.x or newer on path
-3. git on path
-4. Recommended to setup and activate a python virtual environment
-5. Install the requirements `pip install --upgrade pip-requirements.txt`
+that a few steps should be followed. These steps are detailed on the
+[How to Build With Stuart](https://www.tianocore.org/tianocore-wiki.github.io/build-tooling/build-workflows/how_to_build_with_stuart.html)
+page. Details of EDKII Tools can be found in the
+[docs folder here](https://github.com/tianocore/edk2-pytool-extensions/tree/master/docs).
 
 ### Running CI
 
-1. clone your edk2 repo
-2. Activate your python virtual environment in cmd window
-3. Get code dependencies (done only when submodules change)
-   * `stuart_setup -c .pytool/CISettings.py TOOL_CHAIN_TAG=<your tag here>`
-4. Update other dependencies (done more often)
-   * `stuart_update -c .pytool/CISettings.py TOOL_CHAIN_TAG=<your tag here>`
-5. Run CI build (--help will give you options)
-   * `stuart_ci_build -c .pytool/CISettings.py TOOL_CHAIN_TAG=<your tag here>`
-   * -p <pkg1,pkg2,pkg3> : To build only certain packages use a CSV list
-   * -a <arch1,arch2,arch3>: To run only certain architectures use a CSV list
-   * -t <target1,target2>: To run only tests related to certain targets use a
-     CSV list
-   * By default all tests are opted in.  Then given a package.ci.yaml file those
-     tests can be configured for a package. Finally setting the check to the
-     value `skip` will skip that plugin.  Examples:
-     * `CompilerPlugin=skip` skip the build test
-     * `GuidCheck=skip` skip the Guid check
-     * `SpellCheck=skip` skip the spell checker
-     * etc
-6. Detailed reports and logs per package are captured in the `Build` directory
+Quick notes:
+
+* By default all CI plugins are opted in.
+  * Setting the plugin to `skip` as an argument will skip running the plugin.
+    Examples:
+    * `CompilerPlugin=skip` skip the build test
+    * `GuidCheck=skip` skip the Guid check
+    * `SpellCheck=skip` skip the spell checker
+    * etc.
+* Detailed reports and logs per package are captured in the `Build` directory.
 
 ## Current PyTool Test Capabilities
 
@@ -290,7 +273,7 @@ few standard scopes.
 * PatchCheck tests as plugins
 * MacOS/xcode support
 * Clang/LLVM support
-* Visual Studio AARCH64 and ARM support
+* Visual Studio AARCH64 support
 * BaseTools C tools CI/PR and binary release process
 * BaseTools Python tools CI/PR process
 * Extensible private/closed source platform reporting

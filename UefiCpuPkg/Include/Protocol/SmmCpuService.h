@@ -1,13 +1,12 @@
 /** @file
 SMM CPU Service protocol definition.
 
-Copyright (c) 2013 - 2015, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2013 - 2022, Intel Corporation. All rights reserved.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _SMM_CPU_SERVICE_PROTOCOL_H_
-#define _SMM_CPU_SERVICE_PROTOCOL_H_
+#pragma once
 
 //
 // Share some definitions with MP Services and CPU Arch Protocol
@@ -200,4 +199,36 @@ struct _EFI_SMM_CPU_SERVICE_PROTOCOL {
 
 extern EFI_GUID  gEfiSmmCpuServiceProtocolGuid;
 
-#endif
+//
+//  EDKII_SMM_CPU_RENDEZVOUS_PROTOCOL provide SMM CPU
+//  rendezvous service support.
+//
+#define EDKII_SMM_CPU_RENDEZVOUS_PROTOCOL_GUID \
+  { \
+    0xaa00d50b, 0x4911, 0x428f, { 0xb9, 0x1a, 0xa5, 0x9d, 0xdb, 0x13, 0xe2, 0x4c } \
+  }
+
+typedef struct _EDKII_SMM_CPU_RENDEZVOUS_PROTOCOL EDKII_SMM_CPU_RENDEZVOUS_PROTOCOL;
+
+/**
+  Wait for all APs to arrive SMM mode in given timeout constraint.
+
+  @param[in]  This                  A pointer to the EDKII_SMM_CPU_RENDEZVOUS_PROTOCOL instance.
+  @param[in]  BlockingMode          Block or non-block mode.
+
+  @retval EFI_SUCCESS               All APs have arrived SMM mode except SMI disabled APs.
+  @retval EFI_TIMEOUT               There are APs not in SMM mode in given timeout constraint.
+
+**/
+typedef
+EFI_STATUS
+(EFIAPI *EDKII_WAIT_FOR_ALL_PROCESSOR)(
+  IN  EDKII_SMM_CPU_RENDEZVOUS_PROTOCOL  *This,
+  IN  BOOLEAN                            BlockingMode
+  );
+
+struct _EDKII_SMM_CPU_RENDEZVOUS_PROTOCOL {
+  EDKII_WAIT_FOR_ALL_PROCESSOR    WaitForAllProcessor;
+};
+
+extern EFI_GUID  gEdkiiSmmCpuRendezvousProtocolGuid;

@@ -8,8 +8,7 @@
 
 **/
 
-#ifndef _VIRTIO_GPU_DXE_H_
-#define _VIRTIO_GPU_DXE_H_
+#pragma once
 
 #include <IndustryStandard/VirtioGpu.h>
 #include <Library/BaseMemoryLib.h>
@@ -151,6 +150,12 @@ struct VGPU_GOP_STRUCT {
   // BackingStore is non-NULL.
   //
   VOID                                    *BackingStoreMap;
+
+  //
+  // native display resolution
+  //
+  UINT32                                  NativeXRes;
+  UINT32                                  NativeYRes;
 };
 
 //
@@ -366,6 +371,12 @@ VirtioGpuResourceFlush (
   IN     UINT32    ResourceId
   );
 
+EFI_STATUS
+VirtioGpuGetDisplayInfo (
+  IN OUT VGPU_DEV                        *VgpuDev,
+  volatile VIRTIO_GPU_RESP_DISPLAY_INFO  *Response
+  );
+
 /**
   Release guest-side and host-side resources that are related to an initialized
   VGPU_GOP.Gop.
@@ -399,5 +410,3 @@ ReleaseGopResources (
 // Template for initializing VGPU_GOP.Gop.
 //
 extern CONST EFI_GRAPHICS_OUTPUT_PROTOCOL  mGopTemplate;
-
-#endif // _VIRTIO_GPU_DXE_H_

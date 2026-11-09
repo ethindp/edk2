@@ -650,6 +650,8 @@ PopScancodeBufHead (
     if (Buf != NULL) {
       Buf[Index] = Queue->Buffer[Queue->Head];
     }
+
+    Queue->Buffer[Queue->Head] = 0;
   }
 
   return EFI_SUCCESS;
@@ -1731,13 +1733,7 @@ InitKeyboard (
     //
     // wait for BAT completion code
     //
-    mWaitForValueTimeOut = KEYBOARD_BAT_TIMEOUT;
-
-    Status = KeyboardWaitForValue (ConsoleIn, KEYBOARD_8048_RETURN_8042_BAT_SUCCESS);
-    if (EFI_ERROR (Status)) {
-      KeyboardError (ConsoleIn, L"Keyboard self test failed!\n\r");
-      goto Done;
-    }
+    KeyboardWaitForValue (ConsoleIn, KEYBOARD_8048_RETURN_8042_BAT_SUCCESS);
 
     mWaitForValueTimeOut = KEYBOARD_WAITFORVALUE_TIMEOUT;
 

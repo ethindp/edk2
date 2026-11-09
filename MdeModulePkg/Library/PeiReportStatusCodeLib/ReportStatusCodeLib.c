@@ -17,11 +17,6 @@
 #include <Library/OemHookStatusCodeLib.h>
 #include <Library/PcdLib.h>
 
-//
-// Define the maximum extended data size that is supported in the PEI phase
-//
-#define MAX_EXTENDED_DATA_SIZE  0x200
-
 /**
   Internal worker function that reports a status code through the PEI Status Code Service or
   OEM Hook Status Code Library.
@@ -494,12 +489,12 @@ ReportStatusCodeEx (
   Returns TRUE if status codes of type EFI_PROGRESS_CODE are enabled
 
   This function returns TRUE if the REPORT_STATUS_CODE_PROPERTY_PROGRESS_CODE_ENABLED
-  bit of PcdReportStatusCodeProperyMask is set.  Otherwise FALSE is returned.
+  bit of PcdReportStatusCodePropertyMask is set.  Otherwise FALSE is returned.
 
   @retval  TRUE   The REPORT_STATUS_CODE_PROPERTY_PROGRESS_CODE_ENABLED bit of
-                  PcdReportStatusCodeProperyMask is set.
+                  PcdReportStatusCodePropertyMask is set.
   @retval  FALSE  The REPORT_STATUS_CODE_PROPERTY_PROGRESS_CODE_ENABLED bit of
-                  PcdReportStatusCodeProperyMask is clear.
+                  PcdReportStatusCodePropertyMask is clear.
 
 **/
 BOOLEAN
@@ -515,12 +510,12 @@ ReportProgressCodeEnabled (
   Returns TRUE if status codes of type EFI_ERROR_CODE are enabled
 
   This function returns TRUE if the REPORT_STATUS_CODE_PROPERTY_ERROR_CODE_ENABLED
-  bit of PcdReportStatusCodeProperyMask is set.  Otherwise FALSE is returned.
+  bit of PcdReportStatusCodePropertyMask is set.  Otherwise FALSE is returned.
 
   @retval  TRUE   The REPORT_STATUS_CODE_PROPERTY_ERROR_CODE_ENABLED bit of
-                  PcdReportStatusCodeProperyMask is set.
+                  PcdReportStatusCodePropertyMask is set.
   @retval  FALSE  The REPORT_STATUS_CODE_PROPERTY_ERROR_CODE_ENABLED bit of
-                  PcdReportStatusCodeProperyMask is clear.
+                  PcdReportStatusCodePropertyMask is clear.
 
 **/
 BOOLEAN
@@ -536,12 +531,12 @@ ReportErrorCodeEnabled (
   Returns TRUE if status codes of type EFI_DEBUG_CODE are enabled
 
   This function returns TRUE if the REPORT_STATUS_CODE_PROPERTY_DEBUG_CODE_ENABLED
-  bit of PcdReportStatusCodeProperyMask is set.  Otherwise FALSE is returned.
+  bit of PcdReportStatusCodePropertyMask is set.  Otherwise FALSE is returned.
 
   @retval  TRUE   The REPORT_STATUS_CODE_PROPERTY_DEBUG_CODE_ENABLED bit of
-                  PcdReportStatusCodeProperyMask is set.
+                  PcdReportStatusCodePropertyMask is set.
   @retval  FALSE  The REPORT_STATUS_CODE_PROPERTY_DEBUG_CODE_ENABLED bit of
-                  PcdReportStatusCodeProperyMask is clear.
+                  PcdReportStatusCodePropertyMask is clear.
 
 **/
 BOOLEAN

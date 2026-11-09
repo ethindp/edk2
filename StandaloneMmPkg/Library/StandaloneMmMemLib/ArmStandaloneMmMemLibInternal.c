@@ -6,71 +6,70 @@
   all MMRAM range via MM_ACCESS_PROTOCOL, including the range for firmware (like MM Core
   and MM driver) and/or specific dedicated hardware.
 
-  Copyright (c) 2015, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2015 - 2024, Intel Corporation. All rights reserved.<BR>
   Copyright (c) 2016 - 2018, ARM Limited. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
-#include <Library/BaseLib.h>
-#include <Library/BaseMemoryLib.h>
-#include <Library/DebugLib.h>
+#include "StandaloneMmMemLibInternal.h"
 //
 // Maximum support address used to check input buffer
 //
 extern EFI_PHYSICAL_ADDRESS  mMmMemLibInternalMaximumSupportAddress;
-
-#ifdef MDE_CPU_AARCH64
-#define ARM_PHYSICAL_ADDRESS_BITS  36
-#endif
-#ifdef MDE_CPU_ARM
-#define ARM_PHYSICAL_ADDRESS_BITS  32
-#endif
 
 /**
   Calculate and save the maximum support address.
 
 **/
 VOID
-MmMemLibInternalCalculateMaximumSupportAddress (
+MmMemLibCalculateMaximumSupportAddress (
   VOID
   )
 {
-  UINT8  PhysicalAddressBits;
+  mMmMemLibInternalMaximumSupportAddress = MAX_ALLOC_ADDRESS;
 
-  PhysicalAddressBits = ARM_PHYSICAL_ADDRESS_BITS;
-
-  //
-  // Save the maximum support address in one global variable
-  //
-  mMmMemLibInternalMaximumSupportAddress = (EFI_PHYSICAL_ADDRESS)(UINTN)(LShiftU64 (1, PhysicalAddressBits) - 1);
   DEBUG ((DEBUG_INFO, "mMmMemLibInternalMaximumSupportAddress = 0x%lx\n", mMmMemLibInternalMaximumSupportAddress));
 }
 
 /**
-  Initialize cached Mmram Ranges from HOB.
-
-  @retval EFI_UNSUPPORTED   The routine is unable to extract MMRAM information.
-  @retval EFI_SUCCESS       MmRanges are populated successfully.
-
-**/
-EFI_STATUS
-MmMemLibInternalPopulateMmramRanges (
-  VOID
-  )
-{
-  // Not implemented for AARCH64.
-  return EFI_SUCCESS;
-}
-
-/**
-  Deinitialize cached Mmram Ranges.
+  Initialize valid non-Mmram Ranges from Resource HOB.
 
 **/
 VOID
-MmMemLibInternalFreeMmramRanges (
+MmMemLibInitializeValidNonMmramRanges (
   VOID
   )
 {
   // Not implemented for AARCH64.
+}
+
+/**
+  Deinitialize cached non-Mmram Ranges.
+
+**/
+VOID
+MmMemLibFreeValidNonMmramRanges (
+  VOID
+  )
+{
+  // Not implemented for AARCH64.
+}
+
+/**
+  This function check if the buffer is valid non-MMRAM memory range.
+
+  @param[in] Buffer  The buffer start address to be checked.
+  @param[in] Length  The buffer length to be checked.
+
+  @retval TRUE  This buffer is valid non-MMRAM memory range.
+  @retval FALSE This buffer is not valid non-MMRAM memory range.
+**/
+BOOLEAN
+MmMemLibIsValidNonMmramRange (
+  IN EFI_PHYSICAL_ADDRESS  Buffer,
+  IN UINT64                Length
+  )
+{
+  return TRUE;
 }

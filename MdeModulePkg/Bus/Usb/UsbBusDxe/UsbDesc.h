@@ -7,8 +7,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _USB_DESCRIPTOR_H_
-#define _USB_DESCRIPTOR_H_
+#pragma once
 
 #define USB_MAX_INTERFACE_SETTING  256
 
@@ -69,6 +68,10 @@ typedef struct {
 typedef struct {
   EFI_USB_DEVICE_DESCRIPTOR    Desc;
   USB_CONFIG_DESC              **Configs;
+  UINT8                        *StrDescManufacturerUS;
+  UINT8                        *StrDescProductUS;
+  UINT8                        *StrDescSerialNumberUS;
+  EFI_USB_BOS_DESCRIPTOR       *BosDesc;
 } USB_DEVICE_DESC;
 
 /**
@@ -223,5 +226,3 @@ UsbIoClearFeature (
   IN  UINT16               Feature,
   IN  UINT16               Index
   );
-
-#endif

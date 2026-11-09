@@ -6,8 +6,7 @@
 
 **/
 
-#ifndef _ARMPLATFORMLIB_H_
-#define _ARMPLATFORMLIB_H_
+#pragma once
 
 //
 // The package level header files this module uses
@@ -20,49 +19,6 @@
 #include <Ppi/BootInRecoveryMode.h>
 
 #include <Library/ArmLib.h>
-
-/**
-  Return the core position from the value of its MpId register
-
-  This function returns the core position from the position 0 in the processor.
-  This function might be called from assembler before any stack is set.
-
-  @return   Return the core position
-
-**/
-UINTN
-ArmPlatformGetCorePosition (
-  IN UINTN  MpId
-  );
-
-/**
-  Return a non-zero value if the callee is the primary core
-
-  This function returns a non-zero value if the callee is the primary core.
-  The primary core is the core responsible to initialize the hardware and run UEFI.
-  This function might be called from assembler before any stack is set.
-
-  @return   Return a non-zero value if the callee is the primary core.
-
-**/
-UINTN
-ArmPlatformIsPrimaryCore (
-  IN UINTN  MpId
-  );
-
-/**
-  Return the MpId of the primary core
-
-  This function returns the MpId of the primary core.
-  This function might be called from assembler before any stack is set.
-
-  @return   Return the MpId of the primary core
-
-**/
-UINTN
-ArmPlatformGetPrimaryCoreMpId (
-  VOID
-  );
 
 /**
   Return the current Boot Mode
@@ -135,5 +91,3 @@ ArmPlatformGetPlatformPpiList (
   OUT UINTN                   *PpiListSize,
   OUT EFI_PEI_PPI_DESCRIPTOR  **PpiList
   );
-
-#endif

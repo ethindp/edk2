@@ -4,6 +4,7 @@
 
   Copyright (c) 2019, Intel Corporation. All rights reserved.<BR>
   (C) Copyright 2020 Hewlett Packard Enterprise Development LP<BR>
+  Copyright (c) 2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 
     SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -17,8 +18,13 @@
 int   errno            = 0;
 char  errnum_message[] = "We don't support to map errnum to the error message on edk2 Redfish\n";
 
-// This is required to keep VC++ happy if you use floating-point
-int  _fltused = 1;
+// This is required to keep MSVC-mode toolchains happy if you use floating-point.
+#if defined (__GNUC__) || defined (__clang__)
+#define GLOBAL_USED  __attribute__((used))
+#else
+#define GLOBAL_USED
+#endif
+int  GLOBAL_USED  _fltused;
 
 /**
   Determine if a particular character is an alphanumeric character
@@ -519,7 +525,7 @@ strtoull (
 }
 
 /**
-  edk2 Jansson port does not support doubles, simply return 0.
+  edk2 Jansson port does not support doubles, simply return integer part.
 
   These conversion functions convert the initial portion of the string
   pointed to by nptr to double, float, and long double representation,
@@ -540,7 +546,7 @@ strtoull (
   the return value), and ERANGE is stored in errno.  If the correct value
   would cause underflow, zero is returned and ERANGE is stored in errno.
 
-  @return  Return 0.
+  @return  Integer part of decimal number.
 **/
 double
 strtod (
@@ -548,9 +554,30 @@ strtod (
   char **__restrict       endptr
   )
 {
-  DEBUG ((DEBUG_INFO, "We don't supprot double type on edk2 yet!"));
-  ASSERT (FALSE);
-  return (double)0;
+  UINTN  Data;
+  UINTN  StrLen;
+
+  Data   = 0;
+  StrLen = 0;
+
+  if (nptr == NULL) {
+    return (double)0;
+  }
+
+  AsciiStrDecimalToUintnS (nptr, NULL, &Data);
+  DEBUG ((DEBUG_WARN, "%a: \"%a\" We don't support double type on edk2 yet. Only integer part is returned: %d\n", __func__, nptr, Data));
+
+  //
+  // Force endptr to the last position of nptr because caller may
+  // check endptr and raise assertion. We don't support floating
+  // number in edk2 so this prevents unecessary assertion from happening.
+  //
+  if (endptr != NULL) {
+    StrLen  = AsciiStrLen (nptr);
+    *endptr = (char *__restrict)nptr + StrLen;
+  }
+
+  return (double)Data;
 }
 
 static UINT8  BitMask[] = {

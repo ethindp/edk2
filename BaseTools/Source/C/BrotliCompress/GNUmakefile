@@ -10,12 +10,21 @@ APPNAME = BrotliCompress
 
 OBJECTS = \
   BrotliCompress.o \
+  brotli/c/common/platform.o \
+  brotli/c/common/shared_dictionary.o \
+  brotli/c/common/constants.o \
+  brotli/c/common/context.o \
+  brotli/c/enc/command.o \
+  brotli/c/enc/compound_dictionary.o \
+  brotli/c/enc/fast_log.o \
   brotli/c/common/dictionary.o \
   brotli/c/common/transform.o \
   brotli/c/dec/bit_reader.o \
   brotli/c/dec/decode.o \
   brotli/c/dec/huffman.o \
+  brotli/c/dec/prefix.o \
   brotli/c/dec/state.o \
+  brotli/c/dec/static_init.o \
   brotli/c/enc/backward_references.o \
   brotli/c/enc/backward_references_hq.o \
   brotli/c/enc/bit_cost.o \
@@ -33,6 +42,8 @@ OBJECTS = \
   brotli/c/enc/memory.o \
   brotli/c/enc/metablock.o \
   brotli/c/enc/static_dict.o \
+  brotli/c/enc/static_dict_lut.o \
+  brotli/c/enc/static_init.o \
   brotli/c/enc/utf8_util.o
 
 include $(MAKEROOT)/Makefiles/app.makefile

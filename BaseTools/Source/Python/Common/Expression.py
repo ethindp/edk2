@@ -41,9 +41,36 @@ ERR_EMPTY_EXPR          = 'Empty expression is not allowed.'
 ERR_IN_OPERAND          = 'Macro after IN operator can only be: $(FAMILY), $(ARCH), $(TOOL_CHAIN_TAG) and $(TARGET).'
 
 __ValidString = re.compile(r'[_a-zA-Z][_0-9a-zA-Z]*$')
-_ReLabel = re.compile('LABEL\((\w+)\)')
-_ReOffset = re.compile('OFFSET_OF\((\w+)\)')
-PcdPattern = re.compile(r'[_a-zA-Z][0-9A-Za-z_]*\.[_a-zA-Z][0-9A-Za-z_]*$')
+_ReLabel = re.compile(r'LABEL\((\w+)\)')
+_ReOffset = re.compile(r'OFFSET_OF\((\w+)\)')
+PcdPattern = re.compile(r'^[_a-zA-Z][0-9A-Za-z_]*\.[_a-zA-Z][0-9A-Za-z_]*$')
+
+## Fast path for the simple byte array
+#
+#  Simple byte array refers to PCD data in the form of {0x01, 0x02, 0x03}
+#  - Enclosed in {}.
+#  - One or more comma-separated elements.
+#  - Each element is 0x followed by one or two hexadecimal digits.
+#  - Only spaces or tabs surround elements.
+#  - Used only for top-level VOID* real-value evaluation.
+#
+#  Return the stripped original value when valid. Otherwise None.
+def _NormalizeSimpleByteArray(Value):
+    Value = Value.strip()
+    if not Value.startswith('{') or not Value.endswith('}'):
+        return None
+
+    Items = Value[1:-1].split(',')
+    if not Items:
+        return None
+
+    for Item in Items:
+        Item = Item.strip(' \t')
+        if len(Item) < 3 or len(Item) > 4 or Item[:2].lower() != '0x' or \
+           not all(Char in string.hexdigits for Char in Item[2:]):
+            return None
+
+    return Value
 
 ## SplitString
 #  Split string to list according double quote
@@ -242,10 +269,10 @@ class ValueExpression(BaseExpression):
 
 
     SymbolPattern = re.compile("("
-                                 "\$\([A-Z][A-Z0-9_]*\)|\$\(\w+\.\w+\)|\w+\.\w+|"
-                                 "&&|\|\||!(?!=)|"
-                                 "(?<=\W)AND(?=\W)|(?<=\W)OR(?=\W)|(?<=\W)NOT(?=\W)|(?<=\W)XOR(?=\W)|"
-                                 "(?<=\W)EQ(?=\W)|(?<=\W)NE(?=\W)|(?<=\W)GT(?=\W)|(?<=\W)LT(?=\W)|(?<=\W)GE(?=\W)|(?<=\W)LE(?=\W)"
+                                 r"\$\([A-Z][A-Z0-9_]*\)|\$\(\w+\.\w+\)|\w+\.\w+|"
+                                 r"&&|\|\||!(?!=)|"
+                                 r"(?<=\W)AND(?=\W)|(?<=\W)OR(?=\W)|(?<=\W)NOT(?=\W)|(?<=\W)XOR(?=\W)|"
+                                 r"(?<=\W)EQ(?=\W)|(?<=\W)NE(?=\W)|(?<=\W)GT(?=\W)|(?<=\W)LT(?=\W)|(?<=\W)GE(?=\W)|(?<=\W)LE(?=\W)"
                                ")")
 
     @staticmethod
@@ -737,7 +764,7 @@ class ValueExpression(BaseExpression):
             self._Token = "'" + UStr + "'"
             return self._Token
         elif Expr.startswith('UINT'):
-            Re = re.compile('(?:UINT8|UINT16|UINT32|UINT64)\((.+)\)')
+            Re = re.compile(r'(?:UINT8|UINT16|UINT32|UINT64)\((.+)\)')
             try:
                 RetValue = Re.search(Expr).group(1)
             except:
@@ -821,6 +848,10 @@ class ValueExpressionEx(ValueExpression):
 
     def __call__(self, RealValue=False, Depth=0):
         PcdValue = self.PcdValue
+        if RealValue and Depth == 0 and self.PcdType == TAB_VOID and "{CODE(" not in PcdValue:
+            SimpleByteArray = _NormalizeSimpleByteArray(PcdValue)
+            if SimpleByteArray is not None:
+                return SimpleByteArray
         if "{CODE(" not in PcdValue:
             try:
                 PcdValue = ValueExpression.__call__(self, RealValue, Depth)
@@ -917,7 +948,7 @@ class ValueExpressionEx(ValueExpression):
                                 TmpList.append('0x%02x' % ((TmpValue >> I * 8) & 0xff))
                             PcdValue = '{' + ', '.join(TmpList) + '}'
                     except:
-                        if PcdValue.strip().startswith('{'):
+                        if PcdValue.strip().startswith('{') and PcdValue.strip().endswith('}'):
                             PcdValueList = SplitPcdValueString(PcdValue.strip()[1:-1])
                             LabelDict = {}
                             NewPcdValueList = []
@@ -969,13 +1000,13 @@ class ValueExpressionEx(ValueExpression):
                                 NewPcdValueList.append(Item)
 
                             AllPcdValueList = []
+                            Size = 0
                             for Item in NewPcdValueList:
-                                Size = 0
                                 ValueStr = ''
                                 TokenSpaceGuidName = ''
                                 if Item.startswith(TAB_GUID) and Item.endswith(')'):
                                     try:
-                                        TokenSpaceGuidName = re.search('GUID\((\w+)\)', Item).group(1)
+                                        TokenSpaceGuidName = re.search(r'GUID\((\w+)\)', Item).group(1)
                                     except:
                                         pass
                                     if TokenSpaceGuidName and TokenSpaceGuidName in self._Symb:
@@ -1026,7 +1057,9 @@ class ValueExpressionEx(ValueExpression):
                                     Size += ItemSize
 
                             if Size > 0:
-                                PcdValue = '{' + ','.join(AllPcdValueList) + '}'
+                                PcdValue = '{' + ', '.join(AllPcdValueList) + '}'
+                            else:
+                                raise BadExpression("PCD with value '%s' cannot be used. Please provide a valid value of at least one byte." % (self.PcdValue))
                         else:
                             raise  BadExpression("Type: %s, Value: %s, %s"%(self.PcdType, PcdValue, Value))
 

@@ -418,23 +418,41 @@ DevPathToTextAcpiEx (
   )
 {
   ACPI_EXTENDED_HID_DEVICE_PATH  *AcpiEx;
-  CHAR8                          *HIDStr;
-  CHAR8                          *UIDStr;
-  CHAR8                          *CIDStr;
   CHAR16                         HIDText[11];
   CHAR16                         CIDText[11];
+  UINTN                          CurrentLength;
+  CHAR8                          *CurrentPos;
+  UINTN                          NextStringOffset;
+  CHAR8                          *Strings[3];
+  UINT8                          HidStrIndex;
+  UINT8                          UidStrIndex;
+  UINT8                          CidStrIndex;
+  UINT8                          StrIndex;
 
-  AcpiEx = DevPath;
-  HIDStr = (CHAR8 *)(((UINT8 *)AcpiEx) + sizeof (ACPI_EXTENDED_HID_DEVICE_PATH));
-  UIDStr = HIDStr + AsciiStrLen (HIDStr) + 1;
-  CIDStr = UIDStr + AsciiStrLen (UIDStr) + 1;
+  HidStrIndex          = 0;
+  UidStrIndex          = 1;
+  CidStrIndex          = 2;
+  AcpiEx               = DevPath;
+  Strings[HidStrIndex] = NULL;
+  Strings[UidStrIndex] = NULL;
+  Strings[CidStrIndex] = NULL;
+  CurrentLength        = sizeof (ACPI_EXTENDED_HID_DEVICE_PATH);
+  CurrentPos           = (CHAR8 *)(((UINT8 *)AcpiEx) + sizeof (ACPI_EXTENDED_HID_DEVICE_PATH));
+  StrIndex             = 0;
+  while (CurrentLength < AcpiEx->Header.Length[0] && StrIndex < ARRAY_SIZE (Strings)) {
+    Strings[StrIndex] = CurrentPos;
+    NextStringOffset  = AsciiStrLen (CurrentPos) + 1;
+    CurrentLength    += NextStringOffset;
+    CurrentPos       += NextStringOffset;
+    StrIndex++;
+  }
 
   if (DisplayOnly) {
     if ((EISA_ID_TO_NUM (AcpiEx->HID) == 0x0A03) ||
         ((EISA_ID_TO_NUM (AcpiEx->CID) == 0x0A03) && (EISA_ID_TO_NUM (AcpiEx->HID) != 0x0A08)))
     {
-      if (AcpiEx->UID == 0) {
-        UefiDevicePathLibCatPrint (Str, L"PciRoot(%a)", UIDStr);
+      if (Strings[UidStrIndex] != NULL) {
+        UefiDevicePathLibCatPrint (Str, L"PciRoot(%a)", Strings[UidStrIndex]);
       } else {
         UefiDevicePathLibCatPrint (Str, L"PciRoot(0x%x)", AcpiEx->UID);
       }
@@ -443,8 +461,8 @@ DevPathToTextAcpiEx (
     }
 
     if ((EISA_ID_TO_NUM (AcpiEx->HID) == 0x0A08) || (EISA_ID_TO_NUM (AcpiEx->CID) == 0x0A08)) {
-      if (AcpiEx->UID == 0) {
-        UefiDevicePathLibCatPrint (Str, L"PcieRoot(%a)", UIDStr);
+      if (Strings[UidStrIndex] != NULL) {
+        UefiDevicePathLibCatPrint (Str, L"PcieRoot(%a)", Strings[UidStrIndex]);
       } else {
         UefiDevicePathLibCatPrint (Str, L"PcieRoot(0x%x)", AcpiEx->UID);
       }
@@ -475,7 +493,10 @@ DevPathToTextAcpiEx (
     (AcpiEx->CID >> 16) & 0xFFFF
     );
 
-  if ((*HIDStr == '\0') && (*CIDStr == '\0') && (*UIDStr != '\0')) {
+  if (((Strings[HidStrIndex] != NULL) && (*Strings[HidStrIndex] == '\0')) &&
+      ((Strings[CidStrIndex] != NULL) && (*Strings[CidStrIndex] == '\0')) &&
+      ((Strings[UidStrIndex] != NULL) && (*Strings[UidStrIndex] != '\0')))
+  {
     //
     // use AcpiExp()
     //
@@ -484,7 +505,7 @@ DevPathToTextAcpiEx (
         Str,
         L"AcpiExp(%s,0,%a)",
         HIDText,
-        UIDStr
+        Strings[UidStrIndex]
         );
     } else {
       UefiDevicePathLibCatPrint (
@@ -492,28 +513,25 @@ DevPathToTextAcpiEx (
         L"AcpiExp(%s,%s,%a)",
         HIDText,
         CIDText,
-        UIDStr
+        Strings[UidStrIndex]
         );
     }
   } else {
     if (DisplayOnly) {
-      //
-      // display only
-      //
-      if (AcpiEx->HID == 0) {
-        UefiDevicePathLibCatPrint (Str, L"AcpiEx(%a,", HIDStr);
+      if (Strings[HidStrIndex] != NULL) {
+        UefiDevicePathLibCatPrint (Str, L"AcpiEx(%a,", Strings[HidStrIndex]);
       } else {
         UefiDevicePathLibCatPrint (Str, L"AcpiEx(%s,", HIDText);
       }
 
-      if (AcpiEx->CID == 0) {
-        UefiDevicePathLibCatPrint (Str, L"%a,", CIDStr);
+      if (Strings[CidStrIndex] != NULL) {
+        UefiDevicePathLibCatPrint (Str, L"%a,", Strings[CidStrIndex]);
       } else {
         UefiDevicePathLibCatPrint (Str, L"%s,", CIDText);
       }
 
-      if (AcpiEx->UID == 0) {
-        UefiDevicePathLibCatPrint (Str, L"%a)", UIDStr);
+      if (Strings[UidStrIndex] != NULL) {
+        UefiDevicePathLibCatPrint (Str, L"%a)", Strings[UidStrIndex]);
       } else {
         UefiDevicePathLibCatPrint (Str, L"0x%x)", AcpiEx->UID);
       }
@@ -524,9 +542,9 @@ DevPathToTextAcpiEx (
         HIDText,
         CIDText,
         AcpiEx->UID,
-        HIDStr,
-        CIDStr,
-        UIDStr
+        Strings[HidStrIndex] != NULL ? Strings[HidStrIndex] : '\0',
+        Strings[CidStrIndex] != NULL ? Strings[CidStrIndex] : '\0',
+        Strings[UidStrIndex] != NULL ? Strings[UidStrIndex] : '\0'
         );
     }
   }
@@ -978,6 +996,7 @@ DevPathToTextUsbWWID (
   UINT16                Length;
 
   UsbWWId = DevPath;
+  NewStr  = NULL;
 
   SerialNumberStr = (CHAR16 *)((UINT8 *)UsbWWId + sizeof (USB_WWID_DEVICE_PATH));
   Length          = (UINT16)((DevicePathNodeLength ((EFI_DEVICE_PATH_PROTOCOL *)UsbWWId) - sizeof (USB_WWID_DEVICE_PATH)) / sizeof (CHAR16));
@@ -985,8 +1004,13 @@ DevPathToTextUsbWWID (
     //
     // In case no NULL terminator in SerialNumber, create a new one with NULL terminator
     //
-    NewStr = AllocateCopyPool ((Length + 1) * sizeof (CHAR16), SerialNumberStr);
+    NewStr = AllocatePool ((Length + 1) * sizeof (CHAR16));
     ASSERT (NewStr != NULL);
+    if (NewStr == NULL) {
+      return;
+    }
+
+    CopyMem (NewStr, SerialNumberStr, Length * sizeof (CHAR16));
     NewStr[Length]  = 0;
     SerialNumberStr = NewStr;
   }
@@ -999,6 +1023,10 @@ DevPathToTextUsbWWID (
     UsbWWId->InterfaceNumber,
     SerialNumberStr
     );
+
+  if (NewStr != NULL) {
+    FreePool (NewStr);
+  }
 }
 
 /**
@@ -1823,7 +1851,11 @@ DevPathToTextUri (
   Uri       = DevPath;
   UriLength = DevicePathNodeLength (Uri) - sizeof (URI_DEVICE_PATH);
   UriStr    = AllocatePool (UriLength + 1);
-  ASSERT (UriStr != NULL);
+
+  if (UriStr == NULL) {
+    ASSERT (UriStr != NULL);
+    return;
+  }
 
   CopyMem (UriStr, Uri->Uri, UriLength);
   UriStr[UriLength] = '\0';
@@ -1859,7 +1891,7 @@ DevPathToTextHardDrive (
     case SIGNATURE_TYPE_MBR:
       UefiDevicePathLibCatPrint (
         Str,
-        L"HD(%d,%s,0x%08x,",
+        L"HD(%d,%s,0x%08x",
         Hd->PartitionNumber,
         L"MBR",
         *((UINT32 *)(&(Hd->Signature[0])))
@@ -1869,7 +1901,7 @@ DevPathToTextHardDrive (
     case SIGNATURE_TYPE_GUID:
       UefiDevicePathLibCatPrint (
         Str,
-        L"HD(%d,%s,%g,",
+        L"HD(%d,%s,%g",
         Hd->PartitionNumber,
         L"GPT",
         (EFI_GUID *)&(Hd->Signature[0])
@@ -1879,14 +1911,18 @@ DevPathToTextHardDrive (
     default:
       UefiDevicePathLibCatPrint (
         Str,
-        L"HD(%d,%d,0,",
+        L"HD(%d,%d,0",
         Hd->PartitionNumber,
         Hd->SignatureType
         );
       break;
   }
 
-  UefiDevicePathLibCatPrint (Str, L"0x%lx,0x%lx)", Hd->PartitionStart, Hd->PartitionSize);
+  if (DisplayOnly) {
+    UefiDevicePathLibCatPrint (Str, L")");
+  } else {
+    UefiDevicePathLibCatPrint (Str, L",0x%lx,0x%lx)", Hd->PartitionStart, Hd->PartitionSize);
+  }
 }
 
 /**

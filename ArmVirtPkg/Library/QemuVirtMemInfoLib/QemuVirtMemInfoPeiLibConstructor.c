@@ -6,10 +6,12 @@
 
 **/
 
-#include <Base.h>
+#include <Uefi.h>
+#include <Pi/PiMultiPhase.h>
+#include <Library/BaseLib.h>
 #include <Library/DebugLib.h>
-#include <Library/PcdLib.h>
-#include <libfdt.h>
+#include <Library/FdtLib.h>
+#include <Library/HobLib.h>
 
 RETURN_STATUS
 EFIAPI
@@ -17,14 +19,14 @@ QemuVirtMemInfoPeiLibConstructor (
   VOID
   )
 {
-  VOID           *DeviceTreeBase;
-  INT32          Node, Prev;
-  UINT64         NewBase, CurBase;
-  UINT64         NewSize, CurSize;
-  CONST CHAR8    *Type;
-  INT32          Len;
-  CONST UINT64   *RegProp;
-  RETURN_STATUS  PcdStatus;
+  VOID          *DeviceTreeBase;
+  INT32         Node, Prev;
+  UINT64        NewBase, CurBase;
+  UINT64        NewSize, CurSize;
+  CONST CHAR8   *Type;
+  INT32         Len;
+  CONST UINT64  *RegProp;
+  VOID          *Hob;
 
   NewBase = 0;
   NewSize = 0;
@@ -35,13 +37,13 @@ QemuVirtMemInfoPeiLibConstructor (
   //
   // Make sure we have a valid device tree blob
   //
-  ASSERT (fdt_check_header (DeviceTreeBase) == 0);
+  ASSERT (FdtCheckHeader (DeviceTreeBase) == 0);
 
   //
   // Look for the lowest memory node
   //
   for (Prev = 0; ; Prev = Node) {
-    Node = fdt_next_node (DeviceTreeBase, Prev, NULL);
+    Node = FdtNextNode (DeviceTreeBase, Prev, NULL);
     if (Node < 0) {
       break;
     }
@@ -49,21 +51,21 @@ QemuVirtMemInfoPeiLibConstructor (
     //
     // Check for memory node
     //
-    Type = fdt_getprop (DeviceTreeBase, Node, "device_type", &Len);
+    Type = FdtGetProp (DeviceTreeBase, Node, "device_type", &Len);
     if (Type && (AsciiStrnCmp (Type, "memory", Len) == 0)) {
       //
       // Get the 'reg' property of this node. For now, we will assume
       // two 8 byte quantities for base and size, respectively.
       //
-      RegProp = fdt_getprop (DeviceTreeBase, Node, "reg", &Len);
+      RegProp = FdtGetProp (DeviceTreeBase, Node, "reg", &Len);
       if ((RegProp != 0) && (Len == (2 * sizeof (UINT64)))) {
-        CurBase = fdt64_to_cpu (ReadUnaligned64 (RegProp));
-        CurSize = fdt64_to_cpu (ReadUnaligned64 (RegProp + 1));
+        CurBase = Fdt64ToCpu (ReadUnaligned64 (RegProp));
+        CurSize = Fdt64ToCpu (ReadUnaligned64 (RegProp + 1));
 
         DEBUG ((
           DEBUG_INFO,
           "%a: System RAM @ 0x%lx - 0x%lx\n",
-          __FUNCTION__,
+          __func__,
           CurBase,
           CurBase + CurSize - 1
           ));
@@ -76,7 +78,7 @@ QemuVirtMemInfoPeiLibConstructor (
         DEBUG ((
           DEBUG_ERROR,
           "%a: Failed to parse FDT memory node\n",
-          __FUNCTION__
+          __func__
           ));
       }
     }
@@ -86,8 +88,13 @@ QemuVirtMemInfoPeiLibConstructor (
   // Make sure the start of DRAM matches our expectation
   //
   ASSERT (FixedPcdGet64 (PcdSystemMemoryBase) == NewBase);
-  PcdStatus = PcdSet64S (PcdSystemMemorySize, NewSize);
-  ASSERT_RETURN_ERROR (PcdStatus);
+
+  Hob = BuildGuidDataHob (
+          &gArmVirtSystemMemorySizeGuid,
+          &NewSize,
+          sizeof NewSize
+          );
+  ASSERT (Hob != NULL);
 
   //
   // We need to make sure that the machine we are running on has at least

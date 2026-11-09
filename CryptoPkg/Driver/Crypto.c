@@ -3,7 +3,9 @@
   from BaseCryptLib and TlsLib.
 
   Copyright (C) Microsoft Corporation. All rights reserved.
-  Copyright (c) 2019 - 2020, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2019 - 2022, Intel Corporation. All rights reserved.<BR>
+  (c) Copyright 2026 HP Development Company, L.P.
+  Copyright (c) 2026, Arm Limited. All rights reserved.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
@@ -1847,6 +1849,218 @@ CryptoServiceHmacSha256Final (
   return CALL_BASECRYPTLIB (HmacSha256.Services.Final, HmacSha256Final, (HmacSha256Context, HmacValue), FALSE);
 }
 
+/**
+  Computes the HMAC-SHA256 digest of a input data buffer.
+
+  This function performs the HMAC-SHA256 digest of a given data buffer, and places
+  the digest value into the specified memory.
+
+  If this interface is not supported, then return FALSE.
+
+  @param[in]   Data        Pointer to the buffer containing the data to be digested.
+  @param[in]   DataSize    Size of Data buffer in bytes.
+  @param[in]   Key         Pointer to the user-supplied key.
+  @param[in]   KeySize     Key size in bytes.
+  @param[out]  HmacValue   Pointer to a buffer that receives the HMAC-SHA256 digest
+                           value (32 bytes).
+
+  @retval TRUE   HMAC-SHA256 digest computation succeeded.
+  @retval FALSE  HMAC-SHA256 digest computation failed.
+  @retval FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceHmacSha256All (
+  IN   CONST VOID   *Data,
+  IN   UINTN        DataSize,
+  IN   CONST UINT8  *Key,
+  IN   UINTN        KeySize,
+  OUT  UINT8        *HmacValue
+  )
+{
+  return CALL_BASECRYPTLIB (HmacSha256.Services.All, HmacSha256All, (Data, DataSize, Key, KeySize, HmacValue), FALSE);
+}
+
+/**
+  Allocates and initializes one HMAC_CTX context for subsequent HMAC-SHA384 use.
+
+  @return  Pointer to the HMAC_CTX context that has been initialized.
+           If the allocations fails, HmacSha384New() returns NULL.
+
+**/
+VOID *
+EFIAPI
+CryptoServiceHmacSha384New (
+  VOID
+  )
+{
+  return CALL_BASECRYPTLIB (HmacSha384.Services.New, HmacSha384New, (), NULL);
+}
+
+/**
+  Release the specified HMAC_CTX context.
+
+  @param[in]  HmacSha384Ctx  Pointer to the HMAC_CTX context to be released.
+
+**/
+VOID
+EFIAPI
+CryptoServiceHmacSha384Free (
+  IN  VOID  *HmacSha384Ctx
+  )
+{
+  CALL_VOID_BASECRYPTLIB (HmacSha384.Services.Free, HmacSha384Free, (HmacSha384Ctx));
+}
+
+/**
+  Set user-supplied key for subsequent use. It must be done before any
+  calling to HmacSha384Update().
+
+  If HmacSha384Context is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[out]  HmacSha384Context  Pointer to HMAC-SHA384 context.
+  @param[in]   Key                Pointer to the user-supplied key.
+  @param[in]   KeySize            Key size in bytes.
+
+  @retval TRUE   The Key is set successfully.
+  @retval FALSE  The Key is set unsuccessfully.
+  @retval FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceHmacSha384SetKey (
+  OUT  VOID         *HmacSha384Context,
+  IN   CONST UINT8  *Key,
+  IN   UINTN        KeySize
+  )
+{
+  return CALL_BASECRYPTLIB (HmacSha384.Services.SetKey, HmacSha384SetKey, (HmacSha384Context, Key, KeySize), FALSE);
+}
+
+/**
+  Makes a copy of an existing HMAC-SHA384 context.
+
+  If HmacSha384Context is NULL, then return FALSE.
+  If NewHmacSha384Context is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]  HmacSha384Context     Pointer to HMAC-SHA384 context being copied.
+  @param[out] NewHmacSha384Context  Pointer to new HMAC-SHA384 context.
+
+  @retval TRUE   HMAC-SHA384 context copy succeeded.
+  @retval FALSE  HMAC-SHA384 context copy failed.
+  @retval FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceHmacSha384Duplicate (
+  IN   CONST VOID  *HmacSha384Context,
+  OUT  VOID        *NewHmacSha384Context
+  )
+{
+  return CALL_BASECRYPTLIB (HmacSha384.Services.Duplicate, HmacSha256Duplicate, (HmacSha384Context, NewHmacSha384Context), FALSE);
+}
+
+/**
+  Digests the input data and updates HMAC-SHA384 context.
+
+  This function performs HMAC-SHA384 digest on a data buffer of the specified size.
+  It can be called multiple times to compute the digest of long or discontinuous data streams.
+  HMAC-SHA384 context should be initialized by HmacSha384New(), and should not be finalized
+  by HmacSha384Final(). Behavior with invalid context is undefined.
+
+  If HmacSha384Context is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in, out]  HmacSha384Context Pointer to the HMAC-SHA384 context.
+  @param[in]       Data              Pointer to the buffer containing the data to be digested.
+  @param[in]       DataSize          Size of Data buffer in bytes.
+
+  @retval TRUE   HMAC-SHA384 data digest succeeded.
+  @retval FALSE  HMAC-SHA384 data digest failed.
+  @retval FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceHmacSha384Update (
+  IN OUT  VOID        *HmacSha384Context,
+  IN      CONST VOID  *Data,
+  IN      UINTN       DataSize
+  )
+{
+  return CALL_BASECRYPTLIB (HmacSha384.Services.Update, HmacSha384Update, (HmacSha384Context, Data, DataSize), FALSE);
+}
+
+/**
+  Completes computation of the HMAC-SHA384 digest value.
+
+  This function completes HMAC-SHA384 hash computation and retrieves the digest value into
+  the specified memory. After this function has been called, the HMAC-SHA384 context cannot
+  be used again.
+  HMAC-SHA384 context should be initialized by HmacSha384New(), and should not be finalized
+  by HmacSha384Final(). Behavior with invalid HMAC-SHA384 context is undefined.
+
+  If HmacSha384Context is NULL, then return FALSE.
+  If HmacValue is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in, out]  HmacSha384Context  Pointer to the HMAC-SHA384 context.
+  @param[out]      HmacValue          Pointer to a buffer that receives the HMAC-SHA384 digest
+                                      value (48 bytes).
+
+  @retval TRUE   HMAC-SHA384 digest computation succeeded.
+  @retval FALSE  HMAC-SHA384 digest computation failed.
+  @retval FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceHmacSha384Final (
+  IN OUT  VOID   *HmacSha384Context,
+  OUT     UINT8  *HmacValue
+  )
+{
+  return CALL_BASECRYPTLIB (HmacSha384.Services.Final, HmacSha384Final, (HmacSha384Context, HmacValue), FALSE);
+}
+
+/**
+  Computes the HMAC-SHA384 digest of a input data buffer.
+
+  This function performs the HMAC-SHA384 digest of a given data buffer, and places
+  the digest value into the specified memory.
+
+  If this interface is not supported, then return FALSE.
+
+  @param[in]   Data        Pointer to the buffer containing the data to be digested.
+  @param[in]   DataSize    Size of Data buffer in bytes.
+  @param[in]   Key         Pointer to the user-supplied key.
+  @param[in]   KeySize     Key size in bytes.
+  @param[out]  HmacValue   Pointer to a buffer that receives the HMAC-SHA384 digest
+                           value (48 bytes).
+
+  @retval TRUE   HMAC-SHA384 digest computation succeeded.
+  @retval FALSE  HMAC-SHA384 digest computation failed.
+  @retval FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceHmacSha384All (
+  IN   CONST VOID   *Data,
+  IN   UINTN        DataSize,
+  IN   CONST UINT8  *Key,
+  IN   UINTN        KeySize,
+  OUT  UINT8        *HmacValue
+  )
+{
+  return CALL_BASECRYPTLIB (HmacSha384.Services.All, HmacSha384All, (Data, DataSize, Key, KeySize, HmacValue), FALSE);
+}
+
 // =====================================================================================
 //    Symmetric Cryptography Primitive
 // =====================================================================================
@@ -2173,6 +2387,70 @@ CryptoServiceAesCbcDecrypt (
 }
 
 /**
+  Performs AES encryption on single block (AES_BLOCK_SIZE)
+
+  This function performs AES encryption on single block pointed by Input.
+
+  Caller must perform padding, if necessary, to ensure single block size.
+  AesContext should be already correctly initialized by AesInit().
+  Behavior with invalid AES context is undefined.
+
+  If AesContext is NULL, then return FALSE.
+  If Input is NULL, then return FALSE.
+  If Output is NULL, then return FALSE.
+
+  @param[in]   AesContext  Pointer to the AES context.
+  @param[in]   Input       Pointer to the buffer containing single block data
+  @param[out]  Output      Pointer to a buffer that receives the AES encryption output.
+
+  @retval TRUE   AES encryption succeeded.
+  @retval FALSE  AES encryption failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceAesEncrypt (
+  IN   VOID         *AesContext,
+  IN   CONST UINT8  *Input,
+  OUT  UINT8        *Output
+  )
+{
+  return CALL_BASECRYPTLIB (Aes.Services.Encrypt, AesEncrypt, (AesContext, Input, Output), FALSE);
+}
+
+/**
+  Performs AES decryption on single block (AES_BLOCK_SIZE)
+
+  This function performs AES decryption on single block pointed by Input.
+
+  Caller must perform padding, if necessary, to ensure single block size.
+  AesContext should be already correctly initialized by AesInit().
+  Behavior with invalid AES context is undefined.
+
+  If AesContext is NULL, then return FALSE.
+  If Input is NULL, then return FALSE.
+  If Output is NULL, then return FALSE.
+
+  @param[in]   AesContext  Pointer to the AES context.
+  @param[in]   Input       Pointer to the buffer containing single block encrpyted data.
+  @param[out]  Output      Pointer to a buffer that receives the AES decryption output.
+
+  @retval TRUE   AES decryption succeeded.
+  @retval FALSE  AES decryption failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceAesDecrypt (
+  IN   VOID         *AesContext,
+  IN   CONST UINT8  *Input,
+  OUT  UINT8        *Output
+  )
+{
+  return CALL_BASECRYPTLIB (Aes.Services.Decrypt, AesDecrypt, (AesContext, Input, Output), FALSE);
+}
+
+/**
   ARC4 is deprecated and unsupported any longer.
   Keep the function field for binary compability.
 
@@ -2274,6 +2552,117 @@ DeprecatedCryptoServiceArc4Reset (
   )
 {
   return BaseCryptLibServiceDeprecated ("Arc4Reset"), FALSE;
+}
+
+/**
+  Retrieves the size, in bytes, of the context buffer required for CAMELLIA operations.
+
+  @return  The size, in bytes, of the context buffer required for CAMELLIA operations.
+
+**/
+UINTN
+EFIAPI
+CryptoServiceCamelliaGetContextSize (
+  VOID
+  )
+{
+  return CALL_BASECRYPTLIB (Camellia.Services.GetContextSize, CamelliaGetContextSize, (), 0);
+}
+
+/**
+  Initializes user-supplied memory as Camellia context for subsequent use.
+
+  This function initializes user-supplied memory pointed by CamelliaContext as
+  CAMELLIA context.
+  In addition, it sets up all CAMELLIA key materials for subsequent
+  encryption and decryption operations.
+  There are 3 options for key length, 128 bits, 192 bits, and 256 bits.
+
+  If CamelliaContext is NULL, then return FALSE.
+  If Key is NULL, then return FALSE.
+  If KeyLength is not valid, then return FALSE.
+
+  @param[out]  CamelliaContext  Pointer to CAMELLIA context being initialized.
+  @param[in]   Key              Pointer to the user-supplied CAMELLIA key.
+  @param[in]   KeyLength        Length of CAMELLIA key in bits.
+
+  @retval TRUE   CAMELLIA context initialization succeeded.
+  @retval FALSE  CAMELLIA context initialization failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceCamelliaInit (
+  OUT  VOID         *CamelliaContext,
+  IN   CONST UINT8  *Key,
+  IN   UINTN        KeyLength
+  )
+{
+  return CALL_BASECRYPTLIB (Camellia.Services.Init, CamelliaInit, (CamelliaContext, Key, KeyLength), FALSE);
+}
+
+/**
+  Performs CAMELLIA encryption on single block (128 bits)
+
+  This function performs CAMELLIA encryption on single block pointed by Input.
+
+  Caller must perform padding, if necessary, to ensure single block size.
+  CamelliaContext should be already correctly initialized by CamelliaInit().
+  Behavior with invalid Camellia context is undefined.
+
+  If CamelliaContext is NULL, then return FALSE.
+  If Input is NULL, then return FALSE.
+  If Output is NULL, then return FALSE.
+
+  @param[in]   CamelliaContext  Pointer to the CAMELLIA context.
+  @param[in]   Input            Pointer to the buffer containing single block data
+  @param[out]  Output           Pointer to a buffer that receives the CAMELLIA encryption output.
+
+  @retval TRUE   CAMELLIA encryption succeeded.
+  @retval FALSE  CAMELLIA encryption failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceCamelliaEncrypt (
+  IN   VOID         *CamelliaContext,
+  IN   CONST UINT8  *Input,
+  OUT  UINT8        *Output
+  )
+{
+  return CALL_BASECRYPTLIB (Camellia.Services.Encrypt, CamelliaEncrypt, (CamelliaContext, Input, Output), FALSE);
+}
+
+/**
+  Performs CAMELLIA decryption on single block (128 bits)
+
+  This function performs CAMELLIA decryption on single block pointed by Input.
+
+  Caller must perform padding, if necessary, to ensure single block size.
+  CamelliaContext should be already correctly initialized by CamelliaInit().
+  Behavior with invalid CAMELLIA context is undefined.
+
+  If CamelliaContext is NULL, then return FALSE.
+  If Input is NULL, then return FALSE.
+  If Output is NULL, then return FALSE.
+
+  @param[in]   CamelliaContext  Pointer to the CAMELLIA context.
+  @param[in]   Input            Pointer to the buffer containing single block encrpyted data.
+  @param[out]  Output           Pointer to a buffer that receives the CAMELLIA decryption output.
+
+  @retval TRUE   CAMELLIA decryption succeeded.
+  @retval FALSE  CAMELLIA decryption failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceCamelliaDecrypt (
+  IN   VOID         *CamelliaContext,
+  IN   CONST UINT8  *Input,
+  OUT  UINT8        *Output
+  )
+{
+  return CALL_BASECRYPTLIB (Camellia.Services.Decrypt, CamelliaDecrypt, (CamelliaContext, Input, Output), FALSE);
 }
 
 // =====================================================================================
@@ -2875,6 +3264,421 @@ CryptoServiceX509GetTBSCert (
 }
 
 /**
+  Retrieve the version from one X.509 certificate.
+
+  If Cert is NULL, then return FALSE.
+  If CertSize is 0, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]      Cert         Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize     Size of the X509 certificate in bytes.
+  @param[out]     Version      Pointer to the retrieved version integer.
+
+  @retval TRUE           The certificate version retrieved successfully.
+  @retval FALSE          If  Cert is NULL or CertSize is Zero.
+  @retval FALSE          The operation is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceX509GetVersion (
+  IN      CONST UINT8  *Cert,
+  IN      UINTN        CertSize,
+  OUT     UINTN        *Version
+  )
+{
+  return CALL_BASECRYPTLIB (X509.Services.GetVersion, X509GetVersion, (Cert, CertSize, Version), FALSE);
+}
+
+/**
+  Retrieve the serialNumber from one X.509 certificate.
+
+  If Cert is NULL, then return FALSE.
+  If CertSize is 0, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]      Cert         Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize     Size of the X509 certificate in bytes.
+  @param[out]     SerialNumber  Pointer to the retrieved certificate SerialNumber bytes.
+  @param[in, out] SerialNumberSize  The size in bytes of the SerialNumber buffer on input,
+                               and the size of buffer returned SerialNumber on output.
+
+  @retval TRUE                     The certificate serialNumber retrieved successfully.
+  @retval FALSE                    If Cert is NULL or CertSize is Zero.
+                                   If SerialNumberSize is NULL.
+                                   If Certificate is invalid.
+  @retval FALSE                    If no SerialNumber exists.
+  @retval FALSE                    If the SerialNumber is NULL. The required buffer size
+                                   (including the final null) is returned in the
+                                   SerialNumberSize parameter.
+  @retval FALSE                    The operation is not supported.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceX509GetSerialNumber (
+  IN      CONST UINT8 *Cert,
+  IN      UINTN CertSize,
+  OUT     UINT8 *SerialNumber, OPTIONAL
+  IN OUT  UINTN         *SerialNumberSize
+  )
+{
+  return CALL_BASECRYPTLIB (X509.Services.GetSerialNumber, X509GetSerialNumber, (Cert, CertSize, SerialNumber, SerialNumberSize), FALSE);
+}
+
+/**
+  Retrieve the issuer bytes from one X.509 certificate.
+
+  If Cert is NULL, then return FALSE.
+  If CertIssuerSize is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]      Cert         Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize     Size of the X509 certificate in bytes.
+  @param[out]     CertIssuer  Pointer to the retrieved certificate subject bytes.
+  @param[in, out] CertIssuerSize  The size in bytes of the CertIssuer buffer on input,
+                               and the size of buffer returned CertSubject on output.
+
+  @retval  TRUE   The certificate issuer retrieved successfully.
+  @retval  FALSE  Invalid certificate, or the CertIssuerSize is too small for the result.
+                  The CertIssuerSize will be updated with the required size.
+  @retval  FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceX509GetIssuerName (
+  IN      CONST UINT8  *Cert,
+  IN      UINTN        CertSize,
+  OUT     UINT8        *CertIssuer,
+  IN OUT  UINTN        *CertIssuerSize
+  )
+{
+  return CALL_BASECRYPTLIB (X509.Services.GetIssuerName, X509GetIssuerName, (Cert, CertSize, CertIssuer, CertIssuerSize), FALSE);
+}
+
+/**
+  Retrieve the Signature Algorithm from one X.509 certificate.
+
+  @param[in]      Cert             Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize         Size of the X509 certificate in bytes.
+  @param[out]     Oid              Signature Algorithm Object identifier buffer.
+  @param[in,out]  OidSize          Signature Algorithm Object identifier buffer size
+
+  @retval TRUE                     The certificate Extension data retrieved successfully.
+  @retval FALSE                    If Cert is NULL.
+                                   If OidSize is NULL.
+                                   If Oid is not NULL and *OidSize is 0.
+                                   If Certificate is invalid.
+  @retval FALSE                    If no SignatureType.
+  @retval FALSE                    If the Oid is NULL. The required buffer size
+                                   is returned in the OidSize.
+  @retval FALSE                    The operation is not supported.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceX509GetSignatureAlgorithm (
+  IN CONST UINT8 *Cert,
+  IN       UINTN CertSize,
+  OUT   UINT8 *Oid, OPTIONAL
+  IN OUT   UINTN       *OidSize
+  )
+{
+  return CALL_BASECRYPTLIB (X509.Services.GetSignatureAlgorithm, X509GetSignatureAlgorithm, (Cert, CertSize, Oid, OidSize), FALSE);
+}
+
+/**
+  Retrieve Extension data from one X.509 certificate.
+
+  @param[in]      Cert             Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize         Size of the X509 certificate in bytes.
+  @param[in]      Oid              Object identifier buffer
+  @param[in]      OidSize          Object identifier buffer size
+  @param[out]     ExtensionData    Extension bytes.
+  @param[in, out] ExtensionDataSize Extension bytes size.
+
+  @retval TRUE                     The certificate Extension data retrieved successfully.
+  @retval TRUE                     The Certificate Extension is found, but the oid extension is not found.
+  @retval FALSE                    If Cert is NULL.
+                                   If ExtensionDataSize is NULL.
+                                   If ExtensionData is not NULL and *ExtensionDataSize is 0.
+                                   If Certificate is invalid.
+  @retval FALSE                    If the ExtensionData is NULL. The required buffer size
+                                   is returned in the ExtensionDataSize parameter.
+  @retval FALSE                    The operation is not supported.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceX509GetExtensionData (
+  IN     CONST UINT8  *Cert,
+  IN     UINTN        CertSize,
+  IN     CONST UINT8  *Oid,
+  IN     UINTN        OidSize,
+  OUT UINT8           *ExtensionData,
+  IN OUT UINTN        *ExtensionDataSize
+  )
+{
+  return CALL_BASECRYPTLIB (X509.Services.GetExtensionData, X509GetExtensionData, (Cert, CertSize, Oid, OidSize, ExtensionData, ExtensionDataSize), FALSE);
+}
+
+/**
+  Retrieve the Extended Key Usage from one X.509 certificate.
+
+  @param[in]      Cert             Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize         Size of the X509 certificate in bytes.
+  @param[out]     Usage            Key Usage bytes.
+  @param[in, out] UsageSize        Key Usage buffer sizs in bytes.
+
+  @retval TRUE                     The Usage bytes retrieve successfully.
+  @retval FALSE                    If Cert is NULL.
+                                   If CertSize is NULL.
+                                   If Usage is not NULL and *UsageSize is 0.
+                                   If Cert is invalid.
+  @retval FALSE                    If the Usage is NULL. The required buffer size
+                                   is returned in the UsageSize parameter.
+  @retval FALSE                    The operation is not supported.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceX509GetExtendedKeyUsage (
+  IN     CONST UINT8  *Cert,
+  IN     UINTN        CertSize,
+  OUT UINT8           *Usage,
+  IN OUT UINTN        *UsageSize
+  )
+{
+  return CALL_BASECRYPTLIB (X509.Services.GetExtendedKeyUsage, X509GetExtendedKeyUsage, (Cert, CertSize, Usage, UsageSize), FALSE);
+}
+
+/**
+  Retrieve the Validity from one X.509 certificate
+
+  If Cert is NULL, then return FALSE.
+  If CertIssuerSize is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]      Cert         Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize     Size of the X509 certificate in bytes.
+  @param[in]      From         notBefore Pointer to DateTime object.
+  @param[in,out]  FromSize     notBefore DateTime object size.
+  @param[in]      To           notAfter Pointer to DateTime object.
+  @param[in,out]  ToSize       notAfter DateTime object size.
+
+  Note: X509CompareDateTime to compare DateTime oject
+        x509SetDateTime to get a DateTime object from a DateTimeStr
+
+  @retval  TRUE   The certificate Validity retrieved successfully.
+  @retval  FALSE  Invalid certificate, or Validity retrieve failed.
+  @retval  FALSE  This interface is not supported.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceX509GetValidity  (
+  IN     CONST UINT8  *Cert,
+  IN     UINTN        CertSize,
+  IN     UINT8        *From,
+  IN OUT UINTN        *FromSize,
+  IN     UINT8        *To,
+  IN OUT UINTN        *ToSize
+  )
+{
+  return CALL_BASECRYPTLIB (X509.Services.GetValidity, X509GetValidity, (Cert, CertSize, From, FromSize, To, ToSize), FALSE);
+}
+
+/**
+  Format a DateTimeStr to DataTime object in DataTime Buffer
+
+  If DateTimeStr is NULL, then return FALSE.
+  If DateTimeSize is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]      DateTimeStr      DateTime string like YYYYMMDDhhmmssZ
+                                   Ref: https://www.w3.org/TR/NOTE-datetime
+                                   Z stand for UTC time
+  @param[out]     DateTime         Pointer to a DateTime object.
+  @param[in,out]  DateTimeSize     DateTime object buffer size.
+
+  @retval TRUE                     The DateTime object create successfully.
+  @retval FALSE                    If DateTimeStr is NULL.
+                                   If DateTimeSize is NULL.
+                                   If DateTime is not NULL and *DateTimeSize is 0.
+                                   If Year Month Day Hour Minute Second combination is invalid datetime.
+  @retval FALSE                    If the DateTime is NULL. The required buffer size
+                                   (including the final null) is returned in the
+                                   DateTimeSize parameter.
+  @retval FALSE                    The operation is not supported.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceX509FormatDateTime (
+  IN CONST CHAR8  *DateTimeStr,
+  OUT VOID        *DateTime,
+  IN OUT UINTN    *DateTimeSize
+  )
+{
+  return CALL_BASECRYPTLIB (X509.Services.FormatDateTime, X509FormatDateTime, (DateTimeStr, DateTime, DateTimeSize), FALSE);
+}
+
+/**
+  Compare DateTime1 object and DateTime2 object.
+
+  If DateTime1 is NULL, then return -2.
+  If DateTime2 is NULL, then return -2.
+  If DateTime1 == DateTime2, then return 0
+  If DateTime1 > DateTime2, then return 1
+  If DateTime1 < DateTime2, then return -1
+
+  @param[in]      DateTime1         Pointer to a DateTime Ojbect
+  @param[in]      DateTime2         Pointer to a DateTime Object
+
+  @retval  0      If DateTime1 == DateTime2
+  @retval  1      If DateTime1 > DateTime2
+  @retval  -1     If DateTime1 < DateTime2
+**/
+INT32
+EFIAPI
+CryptoServiceX509CompareDateTime (
+  IN  CONST VOID  *DateTime1,
+  IN  CONST VOID  *DateTime2
+  )
+{
+  return CALL_BASECRYPTLIB (X509.Services.CompareDateTime, X509CompareDateTime, (DateTime1, DateTime2), FALSE);
+}
+
+/**
+  Retrieve the Key Usage from one X.509 certificate.
+
+  @param[in]      Cert             Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize         Size of the X509 certificate in bytes.
+  @param[out]     Usage            Key Usage (CRYPTO_X509_KU_*)
+
+  @retval  TRUE   The certificate Key Usage retrieved successfully.
+  @retval  FALSE  Invalid certificate, or Usage is NULL
+  @retval  FALSE  This interface is not supported.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceX509GetKeyUsage (
+  IN    CONST UINT8  *Cert,
+  IN    UINTN        CertSize,
+  OUT   UINTN        *Usage
+  )
+{
+  return CALL_BASECRYPTLIB (X509.Services.GetKeyUsage, X509GetKeyUsage, (Cert, CertSize, Usage), FALSE);
+}
+
+/**
+  Verify one X509 certificate was issued by the trusted CA.
+  @param[in]      RootCert          Trusted Root Certificate buffer
+
+  @param[in]      RootCertLength    Trusted Root Certificate buffer length
+  @param[in]      CertChain         One or more ASN.1 DER-encoded X.509 certificates
+                                    where the first certificate is signed by the Root
+                                    Certificate or is the Root Cerificate itself. and
+                                    subsequent cerificate is signed by the preceding
+                                    cerificate.
+  @param[in]      CertChainLength   Total length of the certificate chain, in bytes.
+
+  @retval  TRUE   All cerificates was issued by the first certificate in X509Certchain.
+  @retval  FALSE  Invalid certificate or the certificate was not issued by the given
+                  trusted CA.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceX509VerifyCertChain (
+  IN CONST UINT8  *RootCert,
+  IN UINTN        RootCertLength,
+  IN CONST UINT8  *CertChain,
+  IN UINTN        CertChainLength
+  )
+{
+  return CALL_BASECRYPTLIB (X509.Services.VerifyCertChain, X509VerifyCertChain, (RootCert, RootCertLength, CertChain, CertChainLength), FALSE);
+}
+
+/**
+  Get one X509 certificate from CertChain.
+
+  @param[in]      CertChain         One or more ASN.1 DER-encoded X.509 certificates
+                                    where the first certificate is signed by the Root
+                                    Certificate or is the Root Cerificate itself. and
+                                    subsequent cerificate is signed by the preceding
+                                    cerificate.
+  @param[in]      CertChainLength   Total length of the certificate chain, in bytes.
+
+  @param[in]      CertIndex         Index of certificate.
+
+  @param[out]     Cert              The certificate at the index of CertChain.
+  @param[out]     CertLength        The length certificate at the index of CertChain.
+
+  @retval  TRUE   Success.
+  @retval  FALSE  Failed to get certificate from certificate chain.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceX509GetCertFromCertChain (
+  IN CONST UINT8   *CertChain,
+  IN UINTN         CertChainLength,
+  IN CONST INT32   CertIndex,
+  OUT CONST UINT8  **Cert,
+  OUT UINTN        *CertLength
+  )
+{
+  return CALL_BASECRYPTLIB (X509.Services.GetCertFromCertChain, X509GetCertFromCertChain, (CertChain, CertChainLength, CertIndex, Cert, CertLength), FALSE);
+}
+
+/**
+  Retrieve the tag and length of the tag.
+
+  @param Ptr      The position in the ASN.1 data
+  @param End      End of data
+  @param Length   The variable that will receive the length
+  @param Tag      The expected tag
+
+  @retval      TRUE   Get tag successful
+  @retval      FALSe  Failed to get tag or tag not match
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceAsn1GetTag (
+  IN OUT UINT8    **Ptr,
+  IN CONST UINT8  *End,
+  OUT UINTN       *Length,
+  IN     UINT32   Tag
+  )
+{
+  return CALL_BASECRYPTLIB (X509.Services.Asn1GetTag, Asn1GetTag, (Ptr, End, Length, Tag), FALSE);
+}
+
+/**
+  Retrieve the basic constraints from one X.509 certificate.
+
+  @param[in]      Cert                     Pointer to the DER-encoded X509 certificate.
+  @param[in]      CertSize                 size of the X509 certificate in bytes.
+  @param[out]     BasicConstraints         basic constraints bytes.
+  @param[in, out] BasicConstraintsSize     basic constraints buffer sizs in bytes.
+
+  @retval TRUE                     The basic constraints retrieve successfully.
+  @retval FALSE                    If cert is NULL.
+                                   If cert_size is NULL.
+                                   If basic_constraints is not NULL and *basic_constraints_size is 0.
+                                   If cert is invalid.
+  @retval FALSE                    The required buffer size is small.
+                                   The return buffer size is basic_constraints_size parameter.
+  @retval FALSE                    If no Extension entry match oid.
+  @retval FALSE                    The operation is not supported.
+ **/
+BOOLEAN
+EFIAPI
+CryptoServiceX509GetExtendedBasicConstraints             (
+  CONST UINT8  *Cert,
+  UINTN        CertSize,
+  UINT8        *BasicConstraints,
+  UINTN        *BasicConstraintsSize
+  )
+{
+  return CALL_BASECRYPTLIB (X509.Services.GetExtendedBasicConstraints, X509GetExtendedBasicConstraints, (Cert, CertSize, BasicConstraints, BasicConstraintsSize), FALSE);
+}
+
+/**
   Derives a key from a password using a salt and iteration count, based on PKCS#5 v2.0
   password based encryption key derivation function PBKDF2, as specified in RFC 2898.
 
@@ -2960,6 +3764,131 @@ CryptoServicePkcs1v2Encrypt (
   )
 {
   return CALL_BASECRYPTLIB (Pkcs.Services.Pkcs1v2Encrypt, Pkcs1v2Encrypt, (PublicKey, PublicKeySize, InData, InDataSize, PrngSeed, PrngSeedSize, EncryptedData, EncryptedDataSize), FALSE);
+}
+
+/**
+  Encrypts a blob using PKCS1v2 (RSAES-OAEP) schema. On success, will return the
+  encrypted message in a newly allocated buffer.
+
+  Things that can cause a failure include:
+  - X509 key size does not match any known key size.
+  - Fail to allocate an intermediate buffer.
+  - Null pointer provided for a non-optional parameter.
+  - Data size is too large for the provided key size (max size is a function of key size
+    and hash digest size).
+
+  @param[in]  RsaContext          A pointer to an RSA context created by RsaNew() and
+                                  provisioned with a public key using RsaSetKey().
+  @param[in]  InData              Data to be encrypted.
+  @param[in]  InDataSize          Size of the data buffer.
+  @param[in]  PrngSeed            [Optional] If provided, a pointer to a random seed buffer
+                                  to be used when initializing the PRNG. NULL otherwise.
+  @param[in]  PrngSeedSize        [Optional] If provided, size of the random seed buffer.
+                                  0 otherwise.
+  @param[in]  DigestLen           [Optional] If provided, size of the hash used:
+                                  SHA1_DIGEST_SIZE
+                                  SHA256_DIGEST_SIZE
+                                  SHA384_DIGEST_SIZE
+                                  SHA512_DIGEST_SIZE
+                                  0 to use default (SHA1)
+  @param[out] EncryptedData       Pointer to an allocated buffer containing the encrypted
+                                  message.
+  @param[out] EncryptedDataSize   Size of the encrypted message buffer.
+
+  @retval     TRUE                Encryption was successful.
+  @retval     FALSE               Encryption failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceRsaOaepEncrypt (
+  IN   VOID         *RsaContext,
+  IN   UINT8        *InData,
+  IN   UINTN        InDataSize,
+  IN   CONST UINT8  *PrngSeed   OPTIONAL,
+  IN   UINTN        PrngSeedSize   OPTIONAL,
+  IN   UINT16       DigestLen   OPTIONAL,
+  OUT  UINT8        **EncryptedData,
+  OUT  UINTN        *EncryptedDataSize
+  )
+{
+  return CALL_BASECRYPTLIB (Rsa.Services.RsaOaepEncrypt, RsaOaepEncrypt, (RsaContext, InData, InDataSize, PrngSeed, PrngSeedSize, DigestLen, EncryptedData, EncryptedDataSize), FALSE);
+}
+
+/**
+  Decrypts a blob using PKCS1v2 (RSAES-OAEP) schema. On success, will return the
+  decrypted message in a newly allocated buffer.
+
+  Things that can cause a failure include:
+  - Fail to parse private key.
+  - Fail to allocate an intermediate buffer.
+  - Null pointer provided for a non-optional parameter.
+
+  @param[in]  PrivateKey          A pointer to the DER-encoded private key.
+  @param[in]  PrivateKeySize      Size of the private key buffer.
+  @param[in]  EncryptedData       Data to be decrypted.
+  @param[in]  EncryptedDataSize   Size of the encrypted buffer.
+  @param[out] OutData             Pointer to an allocated buffer containing the encrypted
+                                  message.
+  @param[out] OutDataSize         Size of the encrypted message buffer.
+
+  @retval     TRUE                Encryption was successful.
+  @retval     FALSE               Encryption failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServicePkcs1v2Decrypt (
+  IN   CONST UINT8  *PrivateKey,
+  IN   UINTN        PrivateKeySize,
+  IN   UINT8        *EncryptedData,
+  IN   UINTN        EncryptedDataSize,
+  OUT  UINT8        **OutData,
+  OUT  UINTN        *OutDataSize
+  )
+{
+  return CALL_BASECRYPTLIB (Pkcs.Services.Pkcs1v2Decrypt, Pkcs1v2Decrypt, (PrivateKey, PrivateKeySize, EncryptedData, EncryptedDataSize, OutData, OutDataSize), FALSE);
+}
+
+/**
+  Decrypts a blob using PKCS1v2 (RSAES-OAEP) schema. On success, will return the
+  decrypted message in a newly allocated buffer.
+
+  Things that can cause a failure include:
+  - Fail to parse private key.
+  - Fail to allocate an intermediate buffer.
+  - Null pointer provided for a non-optional parameter.
+
+  @param[in]  RsaContext          A pointer to an RSA context created by RsaNew() and
+                                  provisioned with a private key using RsaSetKey().
+  @param[in]  EncryptedData       Data to be decrypted.
+  @param[in]  EncryptedDataSize   Size of the encrypted buffer.
+  @param[in]  DigestLen           [Optional] If provided, size of the hash used:
+                                  SHA1_DIGEST_SIZE
+                                  SHA256_DIGEST_SIZE
+                                  SHA384_DIGEST_SIZE
+                                  SHA512_DIGEST_SIZE
+                                  0 to use default (SHA1)
+  @param[out] OutData             Pointer to an allocated buffer containing the encrypted
+                                  message.
+  @param[out] OutDataSize         Size of the encrypted message buffer.
+
+  @retval     TRUE                Encryption was successful.
+  @retval     FALSE               Encryption failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceRsaOaepDecrypt (
+  IN   VOID    *RsaContext,
+  IN   UINT8   *EncryptedData,
+  IN   UINTN   EncryptedDataSize,
+  IN   UINT16  DigestLen   OPTIONAL,
+  OUT  UINT8   **OutData,
+  OUT  UINTN   *OutDataSize
+  )
+{
+  return CALL_BASECRYPTLIB (Rsa.Services.RsaOaepDecrypt, RsaOaepDecrypt, (RsaContext, EncryptedData, EncryptedDataSize, DigestLen, OutData, OutDataSize), FALSE);
 }
 
 /**
@@ -3097,6 +4026,115 @@ CryptoServicePkcs7Sign (
   )
 {
   return CALL_BASECRYPTLIB (Pkcs.Services.Pkcs7Sign, Pkcs7Sign, (PrivateKey, PrivateKeySize, KeyPassword, InData, InDataSize, SignCert, OtherCerts, SignedData, SignedDataSize), FALSE);
+}
+
+/**
+  Creates a DER-encoded PKCS#7 ContentInfo containing an envelopedData structure
+  that wraps content encrypted for secure transmission to one or more recipients.
+
+  If this interface is not supported, return FALSE.
+
+  @param[in]  X509Stack        Pointer to a stack of X.509 certificates for the
+                               intended recipients of this message, created using
+                               X509ConstructCertificateStack or similar. Each
+                               certificate must provide an RSA public key. Any of the
+                               corresponding private keys will be able to decrypt the
+                               content of the returned ContentInfo.
+  @param[in]  InData           Pointer to the content to be encrypted.
+  @param[in]  InDataSize       Size of the content to be encrypted in bytes.
+  @param[in]  CipherNid        NID of the symmetric cipher to use for encryption.
+                               Supported values are CRYPTO_NID_AES128CBC,
+                               CRYPTO_NID_AES192CBC, and CRYPTO_NID_AES256CBC.
+  @param[in]  Flags            Flags for the encryption operation. Currently only
+                               CRYPTO_PKCS7_DEFAULT is supported, which indicates that
+                               the input data is treated as binary data.
+  @param[out] ContentInfo      Receives a pointer to the output, which is a PKCS#7
+                               DER-encoded ContentInfo that wraps an envelopedData. The
+                               caller must free the returned buffer with FreePool().
+  @param[out] ContentInfoSize  Receives the size of the output in bytes.
+
+  @retval     TRUE             PKCS#7 data encryption succeeded.
+  @retval     FALSE            PKCS#7 data encryption failed.
+  @retval     FALSE            This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServicePkcs7Encrypt (
+  IN   UINT8   *X509Stack,
+  IN   UINT8   *InData,
+  IN   UINTN   InDataSize,
+  IN   UINT32  CipherNid,
+  IN   UINT32  Flags,
+  OUT  UINT8   **ContentInfo,
+  OUT  UINTN   *ContentInfoSize
+  )
+{
+  return CALL_BASECRYPTLIB (Pkcs.Services.Pkcs7Encrypt, Pkcs7Encrypt, (X509Stack, InData, InDataSize, CipherNid, Flags, ContentInfo, ContentInfoSize), FALSE);
+}
+
+/**
+  Decrypts a DER-encoded PKCS#7 ContentInfo containing an envelopedData structure
+  (such as one produced by Pkcs7Encrypt) and recovers the original content.
+
+  The private key is supplied in PEM form so that this interface is not tied to any
+  particular key algorithm (currently supports RSA).
+
+  The correct recipient within the envelopedData is identified automatically. The
+  envelopedData carries, for each recipient, an issuer name and serial number that
+  identify the recipient certificate. If RecipientCert is supplied, its issuer name
+  and serial number are used to select the matching recipient. If RecipientCert is
+  NULL, the supplied private key is tried against every recipient in the envelope.
+
+  If this interface is not supported, return FALSE.
+
+  @param[in]  PemData           Pointer to the PEM-encoded private key of a recipient
+                                of the message. May be an RSA or other supported key
+                                type.
+  @param[in]  PemSize           Size of the PEM key data in bytes.
+  @param[in]  Password          [Optional] NULL-terminated passphrase used to decrypt an
+                                encrypted PEM key. Pass NULL if the PEM key is not
+                                password protected.
+  @param[in]  RecipientCert     [Optional] Pointer to the DER-encoded X.509 certificate
+                                of the recipient whose private key is supplied in
+                                PemData. If provided, it is used to select the matching
+                                recipient in the envelope by issuer name and serial
+                                number. Pass NULL to try the private key against every
+                                recipient.
+  @param[in]  RecipientCertSize Size of the DER-encoded certificate in bytes. Ignored
+                                (and may be 0) when RecipientCert is NULL.
+  @param[in]  ContentInfo       Pointer to the PKCS#7 DER-encoded ContentInfo that wraps
+                                an envelopedData to be decrypted.
+  @param[in]  ContentInfoSize   Size of the ContentInfo in bytes.
+  @param[in]  Flags             Flags for the decryption operation. Currently only
+                                CRYPTO_PKCS7_DEFAULT is supported, which indicates that
+                                the decrypted content is treated as binary data.
+  @param[out] OutData           Receives a pointer to the newly allocated buffer
+                                containing the decrypted content. The caller must free
+                                the returned buffer with FreePool().
+  @param[out] OutDataSize       Receives the size of the decrypted content in bytes.
+
+  @retval     TRUE              PKCS#7 data decryption succeeded.
+  @retval     FALSE             PKCS#7 data decryption failed.
+  @retval     FALSE             This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServicePkcs7Decrypt (
+  IN   CONST UINT8  *PemData,
+  IN   UINTN        PemSize,
+  IN   CONST CHAR8  *Password           OPTIONAL,
+  IN   CONST UINT8  *RecipientCert      OPTIONAL,
+  IN   UINTN        RecipientCertSize   OPTIONAL,
+  IN   CONST UINT8  *ContentInfo,
+  IN   UINTN        ContentInfoSize,
+  IN   UINT32       Flags,
+  OUT  UINT8        **OutData,
+  OUT  UINTN        *OutDataSize
+  )
+{
+  return CALL_BASECRYPTLIB (Pkcs.Services.Pkcs7Decrypt, Pkcs7Decrypt, (PemData, PemSize, Password, RecipientCert, RecipientCertSize, ContentInfo, ContentInfoSize, Flags, OutData, OutDataSize), FALSE);
 }
 
 /**
@@ -3559,6 +4597,238 @@ CryptoServiceHkdfSha256ExtractAndExpand (
 }
 
 /**
+  Derive SHA256 HMAC-based Extract key Derivation Function (HKDF).
+
+  @param[in]   Key              Pointer to the user-supplied key.
+  @param[in]   KeySize          key size in bytes.
+  @param[in]   Salt             Pointer to the salt(non-secret) value.
+  @param[in]   SaltSize         salt size in bytes.
+  @param[out]  PrkOut           Pointer to buffer to receive hkdf value.
+  @param[in]   PrkOutSize       size of hkdf bytes to generate.
+
+  @retval true   Hkdf generated successfully.
+  @retval false  Hkdf generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceHkdfSha256Extract (
+  IN CONST UINT8  *Key,
+  IN UINTN        KeySize,
+  IN CONST UINT8  *Salt,
+  IN UINTN        SaltSize,
+  OUT UINT8       *PrkOut,
+  UINTN           PrkOutSize
+  )
+{
+  return CALL_BASECRYPTLIB (Hkdf.Services.Sha256Extract, HkdfSha256Extract, (Key, KeySize, Salt, SaltSize, PrkOut, PrkOutSize), FALSE);
+}
+
+/**
+  Derive SHA256 HMAC-based Expand Key Derivation Function (HKDF).
+
+  @param[in]   Prk              Pointer to the user-supplied key.
+  @param[in]   PrkSize          Key size in bytes.
+  @param[in]   Info             Pointer to the application specific info.
+  @param[in]   InfoSize         Info size in bytes.
+  @param[out]  Out              Pointer to buffer to receive hkdf value.
+  @param[in]   OutSize          Size of hkdf bytes to generate.
+
+  @retval TRUE   Hkdf generated successfully.
+  @retval FALSE  Hkdf generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceHkdfSha256Expand (
+  IN   CONST UINT8  *Prk,
+  IN   UINTN        PrkSize,
+  IN   CONST UINT8  *Info,
+  IN   UINTN        InfoSize,
+  OUT  UINT8        *Out,
+  IN   UINTN        OutSize
+  )
+{
+  return CALL_BASECRYPTLIB (Hkdf.Services.Sha256Expand, HkdfSha256Expand, (Prk, PrkSize, Info, InfoSize, Out, OutSize), FALSE);
+}
+
+/**
+  Derive SHA384 HMAC-based Extract-and-Expand Key Derivation Function (HKDF).
+
+  @param[in]   Key              Pointer to the user-supplied key.
+  @param[in]   KeySize          Key size in bytes.
+  @param[in]   Salt             Pointer to the salt(non-secret) value.
+  @param[in]   SaltSize         Salt size in bytes.
+  @param[in]   Info             Pointer to the application specific info.
+  @param[in]   InfoSize         Info size in bytes.
+  @param[out]  Out              Pointer to buffer to receive hkdf value.
+  @param[in]   OutSize          Size of hkdf bytes to generate.
+
+  @retval TRUE   Hkdf generated successfully.
+  @retval FALSE  Hkdf generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceHkdfSha384ExtractAndExpand (
+  IN   CONST UINT8  *Key,
+  IN   UINTN        KeySize,
+  IN   CONST UINT8  *Salt,
+  IN   UINTN        SaltSize,
+  IN   CONST UINT8  *Info,
+  IN   UINTN        InfoSize,
+  OUT  UINT8        *Out,
+  IN   UINTN        OutSize
+  )
+{
+  return CALL_BASECRYPTLIB (Hkdf.Services.Sha384ExtractAndExpand, HkdfSha384ExtractAndExpand, (Key, KeySize, Salt, SaltSize, Info, InfoSize, Out, OutSize), FALSE);
+}
+
+/**
+  Derive SHA384 HMAC-based Extract key Derivation Function (HKDF).
+
+  @param[in]   Key              Pointer to the user-supplied key.
+  @param[in]   KeySize          key size in bytes.
+  @param[in]   Salt             Pointer to the salt(non-secret) value.
+  @param[in]   SaltSize         salt size in bytes.
+  @param[out]  PrkOut           Pointer to buffer to receive hkdf value.
+  @param[in]   PrkOutSize       size of hkdf bytes to generate.
+
+  @retval true   Hkdf generated successfully.
+  @retval false  Hkdf generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceHkdfSha384Extract (
+  IN CONST UINT8  *Key,
+  IN UINTN        KeySize,
+  IN CONST UINT8  *Salt,
+  IN UINTN        SaltSize,
+  OUT UINT8       *PrkOut,
+  UINTN           PrkOutSize
+  )
+{
+  return CALL_BASECRYPTLIB (Hkdf.Services.Sha384Extract, HkdfSha384Extract, (Key, KeySize, Salt, SaltSize, PrkOut, PrkOutSize), FALSE);
+}
+
+/**
+  Derive SHA384 HMAC-based Expand Key Derivation Function (HKDF).
+
+  @param[in]   Prk              Pointer to the user-supplied key.
+  @param[in]   PrkSize          Key size in bytes.
+  @param[in]   Info             Pointer to the application specific info.
+  @param[in]   InfoSize         Info size in bytes.
+  @param[out]  Out              Pointer to buffer to receive hkdf value.
+  @param[in]   OutSize          Size of hkdf bytes to generate.
+
+  @retval TRUE   Hkdf generated successfully.
+  @retval FALSE  Hkdf generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceHkdfSha384Expand (
+  IN   CONST UINT8  *Prk,
+  IN   UINTN        PrkSize,
+  IN   CONST UINT8  *Info,
+  IN   UINTN        InfoSize,
+  OUT  UINT8        *Out,
+  IN   UINTN        OutSize
+  )
+{
+  return CALL_BASECRYPTLIB (Hkdf.Services.Sha384Expand, HkdfSha384Expand, (Prk, PrkSize, Info, InfoSize, Out, OutSize), FALSE);
+}
+
+/**
+  Derive SHA512 HMAC-based Extract-and-Expand Key Derivation Function (HKDF).
+
+  @param[in]   Key              Pointer to the user-supplied key.
+  @param[in]   KeySize          Key size in bytes.
+  @param[in]   Salt             Pointer to the salt (non-secret) value.
+  @param[in]   SaltSize         Salt size in bytes.
+  @param[in]   Info             Pointer to the application specific info.
+  @param[in]   InfoSize         Info size in bytes.
+  @param[out]  Out              Pointer to buffer to receive hkdf value.
+  @param[in]   OutSize          Size of hkdf bytes to generate.
+
+  @retval TRUE   Hkdf generated successfully.
+  @retval FALSE  Hkdf generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceHkdfSha512ExtractAndExpand (
+  IN   CONST UINT8  *Key,
+  IN   UINTN        KeySize,
+  IN   CONST UINT8  *Salt,
+  IN   UINTN        SaltSize,
+  IN   CONST UINT8  *Info,
+  IN   UINTN        InfoSize,
+  OUT  UINT8        *Out,
+  IN   UINTN        OutSize
+  )
+{
+  return CALL_BASECRYPTLIB (Hkdf.Services.Sha512ExtractAndExpand, HkdfSha512ExtractAndExpand, (Key, KeySize, Salt, SaltSize, Info, InfoSize, Out, OutSize), FALSE);
+}
+
+/**
+  Derive SHA512 HMAC-based Extract key Derivation Function (HKDF).
+
+  @param[in]   Key              Pointer to the user-supplied key.
+  @param[in]   KeySize          key size in bytes.
+  @param[in]   Salt             Pointer to the salt (non-secret) value.
+  @param[in]   SaltSize         salt size in bytes.
+  @param[out]  PrkOut           Pointer to buffer to receive hkdf value.
+  @param[in]   PrkOutSize       size of hkdf bytes to generate.
+
+  @retval TRUE   Hkdf generated successfully.
+  @retval FALSE  Hkdf generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceHkdfSha512Extract (
+  IN CONST UINT8  *Key,
+  IN UINTN        KeySize,
+  IN CONST UINT8  *Salt,
+  IN UINTN        SaltSize,
+  OUT UINT8       *PrkOut,
+  UINTN           PrkOutSize
+  )
+{
+  return CALL_BASECRYPTLIB (Hkdf.Services.Sha512Extract, HkdfSha512Extract, (Key, KeySize, Salt, SaltSize, PrkOut, PrkOutSize), FALSE);
+}
+
+/**
+  Derive SHA512 HMAC-based Expand Key Derivation Function (HKDF).
+
+  @param[in]   Prk              Pointer to the user-supplied key.
+  @param[in]   PrkSize          Key size in bytes.
+  @param[in]   Info             Pointer to the application specific info.
+  @param[in]   InfoSize         Info size in bytes.
+  @param[out]  Out              Pointer to buffer to receive hkdf value.
+  @param[in]   OutSize          Size of hkdf bytes to generate.
+
+  @retval TRUE   Hkdf generated successfully.
+  @retval FALSE  Hkdf generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceHkdfSha512Expand (
+  IN   CONST UINT8  *Prk,
+  IN   UINTN        PrkSize,
+  IN   CONST UINT8  *Info,
+  IN   UINTN        InfoSize,
+  OUT  UINT8        *Out,
+  IN   UINTN        OutSize
+  )
+{
+  return CALL_BASECRYPTLIB (Hkdf.Services.Sha512Expand, HkdfSha512Expand, (Prk, PrkSize, Info, InfoSize, Out, OutSize), FALSE);
+}
+
+/**
   Initializes the OpenSSL library.
 
   This function registers ciphers and digests used directly and indirectly
@@ -3883,6 +5153,28 @@ CryptoServiceTlsWrite (
 }
 
 /**
+  Shutdown a TLS connection.
+
+  Shutdown the TLS connection without releasing the resources, meaning a new
+  connection can be started without calling TlsNew() and without setting
+  certificates etc.
+
+  @param[in]       Tls            Pointer to the TLS object to shutdown.
+
+  @retval EFI_SUCCESS             The TLS is shutdown successfully.
+  @retval EFI_INVALID_PARAMETER   Tls is NULL.
+  @retval EFI_PROTOCOL_ERROR      Some other error occurred.
+**/
+EFI_STATUS
+EFIAPI
+CryptoServiceTlsShutdown (
+  IN     VOID  *Tls
+  )
+{
+  return CALL_BASECRYPTLIB (Tls.Services.Shutdown, TlsShutdown, (Tls), EFI_UNSUPPORTED);
+}
+
+/**
   Set a new TLS/SSL method for a particular TLS object.
 
   This function sets a new TLS/SSL method for a particular TLS object.
@@ -4107,11 +5399,41 @@ CryptoServiceTlsSetHostPublicCert (
 /**
   Adds the local private key to the specified TLS object.
 
-  This function adds the local private key (PEM-encoded RSA or PKCS#8 private
+  This function adds the local private key (DER-encoded or PEM-encoded or PKCS#8 private
   key) into the specified TLS object for TLS negotiation.
 
   @param[in]  Tls         Pointer to the TLS object.
-  @param[in]  Data        Pointer to the data buffer of a PEM-encoded RSA
+  @param[in]  Data        Pointer to the data buffer of a DER-encoded or PEM-encoded
+                          or PKCS#8 private key.
+  @param[in]  DataSize    The size of data buffer in bytes.
+  @param[in]  Password    Pointer to NULL-terminated private key password, set it to NULL
+                          if private key not encrypted.
+
+  @retval  EFI_SUCCESS     The operation succeeded.
+  @retval  EFI_UNSUPPORTED This function is not supported.
+  @retval  EFI_ABORTED     Invalid private key data.
+
+**/
+EFI_STATUS
+EFIAPI
+CryptoServiceTlsSetHostPrivateKeyEx (
+  IN     VOID   *Tls,
+  IN     VOID   *Data,
+  IN     UINTN  DataSize,
+  IN     VOID   *Password  OPTIONAL
+  )
+{
+  return CALL_BASECRYPTLIB (TlsSet.Services.HostPrivateKeyEx, TlsSetHostPrivateKeyEx, (Tls, Data, DataSize, Password), EFI_UNSUPPORTED);
+}
+
+/**
+  Adds the local private key to the specified TLS object.
+
+  This function adds the local private key (DER-encoded or PEM-encoded or PKCS#8 private
+  key) into the specified TLS object for TLS negotiation.
+
+  @param[in]  Tls         Pointer to the TLS object.
+  @param[in]  Data        Pointer to the data buffer of a DER-encoded or PEM-encoded
                           or PKCS#8 private key.
   @param[in]  DataSize    The size of data buffer in bytes.
 
@@ -4153,6 +5475,104 @@ CryptoServiceTlsSetCertRevocationList (
   )
 {
   return CALL_BASECRYPTLIB (TlsSet.Services.CertRevocationList, TlsSetCertRevocationList, (Data, DataSize), EFI_UNSUPPORTED);
+}
+
+/**
+  Set the specified server name in Server/Client.
+
+  @param[in]  Tls           Pointer to the TLS object.
+  @param[in]  SslCtx        Pointer to the SSL object.
+  @param[in]  HostName      The specified server name to be set.
+
+  @retval  EFI_SUCCESS      The Server Name was set successfully.
+  @retval  EFI_UNSUPPORTED  Failed to set the Server Name.
+**/
+EFI_STATUS
+EFIAPI
+CryptoServiceTlsSetServerName (
+  VOID   *Tls,
+  VOID   *SslCtx,
+  CHAR8  *HostName
+  )
+{
+  return CALL_BASECRYPTLIB (TlsSet.Services.ServerName, TlsSetServerName, (Tls, SslCtx, HostName), EFI_UNSUPPORTED);
+}
+
+/**
+  Set the Tls security level.
+
+  This function Set the Tls security level.
+  If Tls is NULL, nothing is done.
+
+  @param[in]  Tls                Pointer to the TLS object.
+  @param[in]  Level              The Tls Security level need to set.
+
+  @retval  EFI_SUCCESS           The Tls security level was set successfully.
+  @retval  EFI_INVALID_PARAMETER The parameters are invalid.
+  @retval  EFI_UNSUPPORTED       The requested TLS set security level is not supported.
+
+**/
+EFI_STATUS
+EFIAPI
+CryptoServiceTlsSetSecurityLevel (
+  IN VOID   *Tls,
+  IN UINT8  Level
+  )
+{
+  return CALL_BASECRYPTLIB (TlsSet.Services.SecurityLevel, TlsSetSecurityLevel, (Tls, Level), EFI_UNSUPPORTED);
+}
+
+/**
+  Set the signature algorithm list to used by the TLS object.
+
+  This function sets the signature algorithms for use by a specified TLS object.
+
+  @param[in]  Tls                Pointer to a TLS object.
+  @param[in]  Data               Array of UINT8 of signature algorithms. The array consists of
+                                 pairs of the hash algorithm and the signature algorithm as defined
+                                 in RFC 5246
+  @param[in]  DataSize           The length the SignatureAlgoList. Must be divisible by 2.
+
+  @retval  EFI_SUCCESS           The signature algorithm list was set successfully.
+  @retval  EFI_INVALID_PARAMETER The parameters are invalid.
+  @retval  EFI_UNSUPPORTED       No supported TLS signature algorithm was found in SignatureAlgoList
+  @retval  EFI_OUT_OF_RESOURCES  Memory allocation failed.
+
+**/
+EFI_STATUS
+EFIAPI
+CryptoServiceTlsSetSignatureAlgoList (
+  IN     VOID   *Tls,
+  IN     UINT8  *Data,
+  IN     UINTN  DataSize
+  )
+{
+  return CALL_BASECRYPTLIB (TlsSet.Services.SignatureAlgoList, TlsSetSignatureAlgoList, (Tls, Data, DataSize), EFI_UNSUPPORTED);
+}
+
+/**
+  Set the EC curve to be used for TLS flows
+
+  This function sets the EC curve to be used for TLS flows.
+
+  @param[in]  Tls                Pointer to a TLS object.
+  @param[in]  Data               An EC named curve as defined in section 5.1.1 of RFC 4492.
+  @param[in]  DataSize           Size of Data, it should be sizeof (UINT32)
+
+  @retval  EFI_SUCCESS           The EC curve was set successfully.
+  @retval  EFI_INVALID_PARAMETER The parameters are invalid.
+  @retval  EFI_UNSUPPORTED       The requested TLS EC curve is not supported
+
+**/
+EFI_STATUS
+EFIAPI
+CryptoServiceTlsSetEcCurve (
+  IN     VOID   *Tls,
+  IN     UINT8  *Data,
+  IN     UINTN  DataSize
+  )
+{
+  return CALL_BASECRYPTLIB (TlsSet.Services.EcCurve, TlsSetEcCurve, (Tls, Data, DataSize), EFI_UNSUPPORTED);
 }
 
 /**
@@ -4470,6 +5890,2546 @@ CryptoServiceTlsGetCertRevocationList (
   return CALL_BASECRYPTLIB (TlsGet.Services.CertRevocationList, TlsGetCertRevocationList, (Data, DataSize), EFI_UNSUPPORTED);
 }
 
+/**
+  Derive keying material from a TLS connection.
+
+  This function exports keying material using the mechanism described in RFC
+  5705.
+
+  @param[in]      Tls          Pointer to the TLS object
+  @param[in]      Label        Description of the key for the PRF function
+  @param[in]      Context      Optional context
+  @param[in]      ContextLen   The length of the context value in bytes
+  @param[out]     KeyBuffer    Buffer to hold the output of the TLS-PRF
+  @param[in]      KeyBufferLen The length of the KeyBuffer
+
+  @retval  EFI_SUCCESS             The operation succeeded.
+  @retval  EFI_INVALID_PARAMETER   The TLS object is invalid.
+  @retval  EFI_PROTOCOL_ERROR      Some other error occurred.
+
+**/
+EFI_STATUS
+EFIAPI
+CryptoServiceTlsGetExportKey (
+  IN     VOID        *Tls,
+  IN     CONST VOID  *Label,
+  IN     CONST VOID  *Context,
+  IN     UINTN       ContextLen,
+  OUT    VOID        *KeyBuffer,
+  IN     UINTN       KeyBufferLen
+  )
+{
+  return CALL_BASECRYPTLIB (
+           TlsGet.Services.ExportKey,
+           TlsGetExportKey,
+           (Tls, Label, Context, ContextLen,
+            KeyBuffer, KeyBufferLen),
+           EFI_UNSUPPORTED
+           );
+}
+
+/**
+  Carries out the RSA-SSA signature generation with EMSA-PSS encoding scheme.
+
+  This function carries out the RSA-SSA signature generation with EMSA-PSS encoding scheme defined in
+  RFC 8017.
+  Mask generation function is the same as the message digest algorithm.
+  If the Signature buffer is too small to hold the contents of signature, FALSE
+  is returned and SigSize is set to the required buffer size to obtain the signature.
+
+  If RsaContext is NULL, then return FALSE.
+  If Message is NULL, then return FALSE.
+  If MsgSize is zero or > INT_MAX, then return FALSE.
+  If DigestLen is NOT 32, 48 or 64, return FALSE.
+  If SaltLen is not equal to DigestLen, then return FALSE.
+  If SigSize is large enough but Signature is NULL, then return FALSE.
+  If this interface is not supported, then return FALSE.
+
+  @param[in]      RsaContext   Pointer to RSA context for signature generation.
+  @param[in]      Message      Pointer to octet message to be signed.
+  @param[in]      MsgSize      Size of the message in bytes.
+  @param[in]      DigestLen    Length of the digest in bytes to be used for RSA signature operation.
+  @param[in]      SaltLen      Length of the salt in bytes to be used for PSS encoding.
+  @param[out]     Signature    Pointer to buffer to receive RSA PSS signature.
+  @param[in, out] SigSize      On input, the size of Signature buffer in bytes.
+                               On output, the size of data returned in Signature buffer in bytes.
+
+  @retval  TRUE   Signature successfully generated in RSASSA-PSS.
+  @retval  FALSE  Signature generation failed.
+  @retval  FALSE  SigSize is too small.
+  @retval  FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceRsaPssSign (
+  IN      VOID         *RsaContext,
+  IN      CONST UINT8  *Message,
+  IN      UINTN        MsgSize,
+  IN      UINT16       DigestLen,
+  IN      UINT16       SaltLen,
+  OUT     UINT8        *Signature,
+  IN OUT  UINTN        *SigSize
+  )
+{
+  return CALL_BASECRYPTLIB (RsaPss.Services.Sign, RsaPssSign, (RsaContext, Message, MsgSize, DigestLen, SaltLen, Signature, SigSize), FALSE);
+}
+
+/**
+  Verifies the RSA signature with RSASSA-PSS signature scheme defined in RFC 8017.
+  Implementation determines salt length automatically from the signature encoding.
+  Mask generation function is the same as the message digest algorithm.
+  Salt length should be equal to digest length.
+
+  @param[in]  RsaContext      Pointer to RSA context for signature verification.
+  @param[in]  Message         Pointer to octet message to be verified.
+  @param[in]  MsgSize         Size of the message in bytes.
+  @param[in]  Signature       Pointer to RSASSA-PSS signature to be verified.
+  @param[in]  SigSize         Size of signature in bytes.
+  @param[in]  DigestLen       Length of digest for RSA operation.
+  @param[in]  SaltLen         Salt length for PSS encoding.
+
+  @retval  TRUE   Valid signature encoded in RSASSA-PSS.
+  @retval  FALSE  Invalid signature or invalid RSA context.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceRsaPssVerify (
+  IN  VOID         *RsaContext,
+  IN  CONST UINT8  *Message,
+  IN  UINTN        MsgSize,
+  IN  CONST UINT8  *Signature,
+  IN  UINTN        SigSize,
+  IN  UINT16       DigestLen,
+  IN  UINT16       SaltLen
+  )
+{
+  return CALL_BASECRYPTLIB (RsaPss.Services.Verify, RsaPssVerify, (RsaContext, Message, MsgSize, Signature, SigSize, DigestLen, SaltLen), FALSE);
+}
+
+/**
+  Carries out the RSA-PSS signature generation over a precomputed message digest.
+
+  @param[in]      RsaContext   Pointer to RSA context for signature generation.
+  @param[in]      Digest       Pointer to the precomputed message digest.
+  @param[in]      DigestSize   Digest size in bytes (32=SHA-256, 48=SHA-384, 64=SHA-512).
+  @param[out]     Signature    Pointer to buffer to receive RSA PSS signature.
+  @param[in, out] SigSize      On input, the size of Signature buffer in bytes.
+                               On output, the size of data returned in Signature buffer in bytes.
+
+  @retval  TRUE   Signature successfully generated in RSASSA-PSS.
+  @retval  FALSE  Signature generation failed.
+  @retval  FALSE  SigSize is too small.
+  @retval  FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceRsaPssSignDigest (
+  IN      VOID         *RsaContext,
+  IN      CONST UINT8  *Digest,
+  IN      UINTN        DigestSize,
+  OUT     UINT8        *Signature,
+  IN OUT  UINTN        *SigSize
+  )
+{
+  return CALL_BASECRYPTLIB (RsaPss.Services.SignDigest, RsaPssSignDigest, (RsaContext, Digest, DigestSize, Signature, SigSize), FALSE);
+}
+
+/**
+  Verifies an RSA-PSS signature over a precomputed message digest.
+
+  @param[in]  RsaContext   Pointer to RSA context for signature verification.
+  @param[in]  Digest       Pointer to the message digest.
+  @param[in]  DigestSize   Digest size in bytes (32=SHA-256, 48=SHA-384, 64=SHA-512).
+  @param[in]  Signature    Pointer to RSASSA-PSS signature to be verified.
+  @param[in]  SigSize      Size of signature in bytes.
+
+  @retval  TRUE   Valid signature encoded in RSASSA-PSS.
+  @retval  FALSE  Invalid signature or invalid RSA context.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceRsaPssVerifyDigest (
+  IN  VOID         *RsaContext,
+  IN  CONST UINT8  *Digest,
+  IN  UINTN        DigestSize,
+  IN  CONST UINT8  *Signature,
+  IN  UINTN        SigSize
+  )
+{
+  return CALL_BASECRYPTLIB (RsaPss.Services.VerifyDigest, RsaPssVerifyDigest, (RsaContext, Digest, DigestSize, Signature, SigSize), FALSE);
+}
+
+/**
+  Parallel hash function ParallelHash256, as defined in NIST's Special Publication 800-185,
+  published December 2016.
+
+  @param[in]   Input            Pointer to the input message (X).
+  @param[in]   InputByteLen     The number(>0) of input bytes provided for the input data.
+  @param[in]   BlockSize        The size of each block (B).
+  @param[out]  Output           Pointer to the output buffer.
+  @param[in]   OutputByteLen    The desired number of output bytes (L).
+  @param[in]   Customization    Pointer to the customization string (S).
+  @param[in]   CustomByteLen    The length of the customization string in bytes.
+
+  @retval TRUE   ParallelHash256 digest computation succeeded.
+  @retval FALSE  ParallelHash256 digest computation failed.
+  @retval FALSE  This interface is not supported.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceParallelHash256HashAll (
+  IN CONST VOID   *Input,
+  IN       UINTN  InputByteLen,
+  IN       UINTN  BlockSize,
+  OUT      VOID   *Output,
+  IN       UINTN  OutputByteLen,
+  IN CONST VOID   *Customization,
+  IN       UINTN  CustomByteLen
+  )
+{
+  return CALL_BASECRYPTLIB (ParallelHash.Services.HashAll, ParallelHash256HashAll, (Input, InputByteLen, BlockSize, Output, OutputByteLen, Customization, CustomByteLen), FALSE);
+}
+
+/**
+  Performs AEAD AES-GCM authenticated encryption on a data buffer and additional authenticated data (AAD).
+
+  IvSize must be 12, otherwise FALSE is returned.
+  KeySize must be 16, 24 or 32, otherwise FALSE is returned.
+  TagSize must be 12, 13, 14, 15, 16, otherwise FALSE is returned.
+
+  @param[in]   Key         Pointer to the encryption key.
+  @param[in]   KeySize     Size of the encryption key in bytes.
+  @param[in]   Iv          Pointer to the IV value.
+  @param[in]   IvSize      Size of the IV value in bytes.
+  @param[in]   AData       Pointer to the additional authenticated data (AAD).
+  @param[in]   ADataSize   Size of the additional authenticated data (AAD) in bytes.
+  @param[in]   DataIn      Pointer to the input data buffer to be encrypted.
+  @param[in]   DataInSize  Size of the input data buffer in bytes.
+  @param[out]  TagOut      Pointer to a buffer that receives the authentication tag output.
+  @param[in]   TagSize     Size of the authentication tag in bytes.
+  @param[out]  DataOut     Pointer to a buffer that receives the encryption output.
+  @param[out]  DataOutSize Size of the output data buffer in bytes.
+
+  @retval TRUE   AEAD AES-GCM authenticated encryption succeeded.
+  @retval FALSE  AEAD AES-GCM authenticated encryption failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceAeadAesGcmEncrypt (
+  IN   CONST UINT8  *Key,
+  IN   UINTN        KeySize,
+  IN   CONST UINT8  *Iv,
+  IN   UINTN        IvSize,
+  IN   CONST UINT8  *AData,
+  IN   UINTN        ADataSize,
+  IN   CONST UINT8  *DataIn,
+  IN   UINTN        DataInSize,
+  OUT  UINT8        *TagOut,
+  IN   UINTN        TagSize,
+  OUT  UINT8        *DataOut,
+  OUT  UINTN        *DataOutSize
+  )
+{
+  return CALL_BASECRYPTLIB (AeadAesGcm.Services.Encrypt, AeadAesGcmEncrypt, (Key, KeySize, Iv, IvSize, AData, ADataSize, DataIn, DataInSize, TagOut, TagSize, DataOut, DataOutSize), FALSE);
+}
+
+/**
+  Performs AEAD AES-GCM authenticated decryption on a data buffer and additional authenticated data (AAD).
+
+  IvSize must be 12, otherwise FALSE is returned.
+  KeySize must be 16, 24 or 32, otherwise FALSE is returned.
+  TagSize must be 12, 13, 14, 15, 16, otherwise FALSE is returned.
+  If additional authenticated data verification fails, FALSE is returned.
+
+  @param[in]   Key         Pointer to the encryption key.
+  @param[in]   KeySize     Size of the encryption key in bytes.
+  @param[in]   Iv          Pointer to the IV value.
+  @param[in]   IvSize      Size of the IV value in bytes.
+  @param[in]   AData       Pointer to the additional authenticated data (AAD).
+  @param[in]   ADataSize   Size of the additional authenticated data (AAD) in bytes.
+  @param[in]   DataIn      Pointer to the input data buffer to be decrypted.
+  @param[in]   DataInSize  Size of the input data buffer in bytes.
+  @param[in]   Tag         Pointer to a buffer that contains the authentication tag.
+  @param[in]   TagSize     Size of the authentication tag in bytes.
+  @param[out]  DataOut     Pointer to a buffer that receives the decryption output.
+  @param[out]  DataOutSize Size of the output data buffer in bytes.
+
+  @retval TRUE   AEAD AES-GCM authenticated decryption succeeded.
+  @retval FALSE  AEAD AES-GCM authenticated decryption failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceAeadAesGcmDecrypt (
+  IN   CONST UINT8  *Key,
+  IN   UINTN        KeySize,
+  IN   CONST UINT8  *Iv,
+  IN   UINTN        IvSize,
+  IN   CONST UINT8  *AData,
+  IN   UINTN        ADataSize,
+  IN   CONST UINT8  *DataIn,
+  IN   UINTN        DataInSize,
+  IN   CONST UINT8  *Tag,
+  IN   UINTN        TagSize,
+  OUT  UINT8        *DataOut,
+  OUT  UINTN        *DataOutSize
+  )
+{
+  return CALL_BASECRYPTLIB (AeadAesGcm.Services.Decrypt, AeadAesGcmDecrypt, (Key, KeySize, Iv, IvSize, AData, ADataSize, DataIn, DataInSize, Tag, TagSize, DataOut, DataOutSize), FALSE);
+}
+
+// =====================================================================================
+//    Big number primitives
+// =====================================================================================
+
+/**
+  Allocate new Big Number.
+
+  @retval New BigNum opaque structure or NULL on failure.
+**/
+VOID *
+EFIAPI
+CryptoServiceBigNumInit (
+  VOID
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.Init, BigNumInit, (), NULL);
+}
+
+/**
+  Allocate new Big Number and assign the provided value to it.
+
+  @param[in]   Buf    Big endian encoded buffer.
+  @param[in]   Len    Buffer length.
+
+  @retval New BigNum opaque structure or NULL on failure.
+**/
+VOID *
+EFIAPI
+CryptoServiceBigNumFromBin (
+  IN CONST UINT8  *Buf,
+  IN UINTN        Len
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.FromBin, BigNumFromBin, (Buf, Len), NULL);
+}
+
+/**
+  Convert the absolute value of Bn into big-endian form and store it at Buf.
+  The Buf array should have at least BigNumBytes() in it.
+
+  @param[in]   Bn     Big number to convert.
+  @param[out]  Buf    Output buffer.
+
+  @retval The length of the big-endian number placed at Buf or -1 on error.
+**/
+INTN
+EFIAPI
+CryptoServiceBigNumToBin (
+  IN CONST VOID  *Bn,
+  OUT UINT8      *Buf
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.ToBin, BigNumToBin, (Bn, Buf), -1);
+}
+
+/**
+  Free the Big Number.
+
+  @param[in]   Bn      Big number to free.
+  @param[in]   Clear   TRUE if the buffer should be cleared.
+**/
+VOID
+EFIAPI
+CryptoServiceBigNumFree (
+  IN VOID     *Bn,
+  IN BOOLEAN  Clear
+  )
+{
+  CALL_VOID_BASECRYPTLIB (Bn.Services.Free, BigNumFree, (Bn, Clear));
+}
+
+/**
+  Calculate the sum of two Big Numbers.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnB     Big number.
+  @param[out]  BnRes   The result of BnA + BnB.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceBigNumAdd (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB,
+  OUT VOID       *BnRes
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.Add, BigNumAdd, (BnA, BnB, BnRes), FALSE);
+}
+
+/**
+  Subtract two Big Numbers.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnB     Big number.
+  @param[out]  BnRes   The result of BnA - BnB.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceBigNumSub (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB,
+  OUT VOID       *BnRes
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.Sub, BigNumSub, (BnA, BnB, BnRes), FALSE);
+}
+
+/**
+  Calculate BnRes = BnA * BnB.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnB     Big number.
+  @param[out]  BnRes   The result of BnA * BnB.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceBigNumMul (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB,
+  OUT VOID       *BnRes
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.Mul, BigNumMul, (BnA, BnB, BnRes), FALSE);
+}
+
+/**
+  Calculate remainder: BnRes = BnA % BnB.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnB     Big number.
+  @param[out]  BnRes   The result of BnA % BnB.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceBigNumMod (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB,
+  OUT VOID       *BnRes
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.Mod, BigNumMod, (BnA, BnB, BnRes), FALSE);
+}
+
+/**
+  Compute BnA to the BnP-th power modulo BnM.
+  Please note, all "out" Big number arguments should be properly initialized.
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnP     Big number (power).
+  @param[in]   BnM     Big number (modulo).
+  @param[out]  BnRes   The result of (BnA ^ BnP) % BnM.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceBigNumExpMod (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnP,
+  IN CONST VOID  *BnM,
+  OUT VOID       *BnRes
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.ExpMod, BigNumExpMod, (BnA, BnP, BnM, BnRes), FALSE);
+}
+
+/**
+  Compute BnA inverse modulo BnM.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnM     Big number (modulo).
+  @param[out]  BnRes   The result, such that (BnA * BnRes) % BnM == 1.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceBigNumInverseMod (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnM,
+  OUT VOID       *BnRes
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.InverseMod, BigNumInverseMod, (BnA, BnM, BnRes), FALSE);
+}
+
+/**
+  Divide two Big Numbers.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnB     Big number.
+  @param[out]  BnRes   The result, such that BnA / BnB.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceBigNumDiv (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB,
+  OUT VOID       *BnRes
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.Div, BigNumDiv, (BnA, BnB, BnRes), FALSE);
+}
+
+/**
+  Divide two Big Numbers and obtain the quotient and the remainder.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnB     Big number.
+  @param[out]  BnResQ  The result, such that BnA / BnB.
+  @param[out]  BnResR  The result, such that BnA % BnB.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceBigNumDiv2 (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB,
+  OUT VOID       *BnResQ,
+  OUT VOID       *BnResR
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.Div2, BigNumDiv2, (BnA, BnB, BnResQ, BnResR), FALSE);
+}
+
+/**
+  Multiply two Big Numbers modulo BnM.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnB     Big number.
+  @param[in]   BnM     Big number (modulo).
+  @param[out]  BnRes   The result, such that (BnA * BnB) % BnM.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceBigNumMulMod (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB,
+  IN CONST VOID  *BnM,
+  OUT VOID       *BnRes
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.MulMod, BigNumMulMod, (BnA, BnB, BnM, BnRes), FALSE);
+}
+
+/**
+  Computes the greatest common divisor (GCD) of two BIGNUM values.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnB     Big number.
+  @param[out]  BnRes   The result, such that GCD(BnA, BnB).
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceBigNumGcd (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB,
+  OUT VOID       *BnRes
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.Gcd, BigNumGcd, (BnA, BnB, BnRes), FALSE);
+}
+
+/**
+  Compare two Big Numbers.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnB     Big number.
+
+  @retval 0          BnA == BnB.
+  @retval 1          BnA > BnB.
+  @retval -1         BnA < BnB.
+**/
+INTN
+EFIAPI
+CryptoServiceBigNumCmp (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.Cmp, BigNumCmp, (BnA, BnB), 0);
+}
+
+/**
+  Get number of bits in Bn.
+
+  @param[in]   Bn     Big number.
+
+  @retval Number of bits.
+**/
+UINTN
+EFIAPI
+CryptoServiceBigNumBits (
+  IN CONST VOID  *Bn
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.Bits, BigNumBits, (Bn), 0);
+}
+
+/**
+  Get number of bytes in Bn.
+
+  @param[in]   Bn     Big number.
+
+  @retval Number of bytes.
+**/
+UINTN
+EFIAPI
+CryptoServiceBigNumBytes (
+  IN CONST VOID  *Bn
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.Bytes, BigNumBytes, (Bn), 0);
+}
+
+/**
+  Checks if Big Number equals to the given Num.
+
+  @param[in]   Bn     Big number.
+  @param[in]   Num    Number.
+
+  @retval TRUE   iff Bn == Num.
+  @retval FALSE  otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceBigNumIsWord (
+  IN CONST VOID  *Bn,
+  IN UINTN       Num
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.IsWord, BigNumIsWord, (Bn, Num), FALSE);
+}
+
+/**
+  Checks if Big Number is odd.
+
+  @param[in]   Bn     Big number.
+
+  @retval TRUE   Bn is odd (Bn % 2 == 1).
+  @retval FALSE  otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceBigNumIsOdd (
+  IN CONST VOID  *Bn
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.IsOdd, BigNumIsOdd, (Bn), FALSE);
+}
+
+/**
+  Copy Big number.
+
+  @param[out]  BnDst     Destination.
+  @param[in]   BnSrc     Source.
+
+  @retval BnDst on success.
+  @retval NULL otherwise.
+**/
+VOID *
+EFIAPI
+CryptoServiceBigNumCopy (
+  OUT VOID       *BnDst,
+  IN CONST VOID  *BnSrc
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.Copy, BigNumCopy, (BnDst, BnSrc), NULL);
+}
+
+/**
+  Get constant Big number with value of "1".
+  This may be used to save expensive allocations.
+
+  @retval Big Number with value of 1.
+**/
+CONST VOID *
+EFIAPI
+CryptoServiceBigNumValueOne (
+  VOID
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.ValueOne, BigNumValueOne, (), NULL);
+}
+
+/**
+  Shift right Big Number.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   Bn      Big number.
+  @param[in]   N       Number of bits to shift.
+  @param[out]  BnRes   The result.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceBigNumRShift (
+  IN CONST VOID  *Bn,
+  IN UINTN       N,
+  OUT VOID       *BnRes
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.RShift, BigNumRShift, (Bn, N, BnRes), FALSE);
+}
+
+/**
+  Mark Big Number for constant time computations.
+  This function should be called before any constant time computations are
+  performed on the given Big number.
+
+  @param[in]   Bn     Big number.
+**/
+VOID
+EFIAPI
+CryptoServiceBigNumConstTime (
+  IN VOID  *Bn
+  )
+{
+  CALL_VOID_BASECRYPTLIB (Bn.Services.ConstTime, BigNumConstTime, (Bn));
+}
+
+/**
+  Calculate square modulo.
+  Please note, all "out" Big number arguments should be properly initialized
+  by calling to BigNumInit() or BigNumFromBin() functions.
+
+  @param[in]   BnA     Big number.
+  @param[in]   BnM     Big number (modulo).
+  @param[out]  BnRes   The result, such that (BnA ^ 2) % BnM.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceBigNumSqrMod (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnM,
+  OUT VOID       *BnRes
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.SqrMod, BigNumSqrMod, (BnA, BnM, BnRes), FALSE);
+}
+
+/**
+  Create new Big Number computation context. This is an opaque structure
+  which should be passed to any function that requires it. The BN context is
+  needed to optimize calculations and expensive allocations.
+
+  @retval Big Number context struct or NULL on failure.
+**/
+VOID *
+EFIAPI
+CryptoServiceBigNumNewContext (
+  VOID
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.NewContext, BigNumNewContext, (), NULL);
+}
+
+/**
+  Free Big Number context that was allocated with BigNumNewContext().
+
+  @param[in]   BnCtx     Big number context to free.
+**/
+VOID
+EFIAPI
+CryptoServiceBigNumContextFree (
+  IN VOID  *BnCtx
+  )
+{
+  CALL_VOID_BASECRYPTLIB (Bn.Services.ContextFree, BigNumContextFree, (BnCtx));
+}
+
+/**
+  Marks the start of a temporary BIGNUM allocation frame.
+  Must be paired with BigNumContextEnd().
+
+  @param[in]   BnCtx     Big number context.
+**/
+VOID
+EFIAPI
+CryptoServiceBigNumContextStart (
+  IN VOID  *BnCtx
+  )
+{
+  CALL_VOID_BASECRYPTLIB (Bn.Services.ContextStart, BigNumContextStart, (BnCtx));
+}
+
+/**
+  Ends the current BN_CTX allocation frame and releases all temporary BIGNUMs.
+
+  @param[in]   BnCtx     Big number context.
+**/
+VOID
+EFIAPI
+CryptoServiceBigNumContextEnd (
+  IN VOID  *BnCtx
+  )
+{
+  CALL_VOID_BASECRYPTLIB (Bn.Services.ContextEnd, BigNumContextEnd, (BnCtx));
+}
+
+/**
+  Returns a temporary BIGNUM from the given BN_CTX.
+  The returned BIGNUM is managed by the context and must not be freed manually.
+  Must be called between BigNumContextStart() and BigNumContextEnd().
+
+  @param[in]   BnCtx     Big number context.
+**/
+VOID *
+EFIAPI
+CryptoServiceBigNumContextGet (
+  IN VOID  *BnCtx
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.ContextGet, BigNumContextGet, (BnCtx), NULL);
+}
+
+/**
+  Set Big Number to a given value.
+
+  @param[in]   Bn     Big number to set.
+  @param[in]   Val    Value to set.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceBigNumSetUint (
+  IN VOID   *Bn,
+  IN UINTN  Val
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.SetUint, BigNumSetUint, (Bn, Val), FALSE);
+}
+
+/**
+  Add two Big Numbers modulo BnM.
+
+  @param[in]   BnA       Big number.
+  @param[in]   BnB       Big number.
+  @param[in]   BnM       Big number (modulo).
+  @param[out]  BnRes     The result, such that (BnA + BnB) % BnM.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceBigNumAddMod (
+  IN CONST VOID  *BnA,
+  IN CONST VOID  *BnB,
+  IN CONST VOID  *BnM,
+  OUT VOID       *BnRes
+  )
+{
+  return CALL_BASECRYPTLIB (Bn.Services.AddMod, BigNumAddMod, (BnA, BnB, BnM, BnRes), FALSE);
+}
+
+// =====================================================================================
+//    Basic Elliptic Curve Primitives
+// =====================================================================================
+
+/**
+  Initialize new opaque EcGroup object. This object represents an EC curve and
+  and is used for calculation within this group. This object should be freed
+  using EcGroupFree() function.
+
+  @param[in]  CryptoNid   Identifying number for the ECC curve (Defined in
+                          BaseCryptLib.h).
+
+  @retval EcGroup object  On success.
+  @retval NULL            On failure.
+**/
+VOID *
+EFIAPI
+CryptoServiceEcGroupInit (
+  IN UINTN  CryptoNid
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.GroupInit, EcGroupInit, (CryptoNid), NULL);
+}
+
+/**
+  Create a new EC_GROUP over a prime field GF(p).
+
+  @param[in] BnPrime    Group prime number.
+  @param[in] BnA        A coefficient.
+  @param[in] BnB        B coefficient.
+  @param[in] BnCtx      BN context.
+
+  @retval EcGroup object  On success.
+  @retval NULL            On failure.
+**/
+VOID *
+EFIAPI
+CryptoServiceEcGroupInitGFp (
+  IN VOID  *BnPrime,
+  IN VOID  *BnA,
+  IN VOID  *BnB,
+  IN VOID  *BnCtx        OPTIONAL
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.GroupInitGFp, EcGroupInitGFp, (BnPrime, BnA, BnB, BnCtx), NULL);
+}
+
+/**
+  Get EC curve parameters. While elliptic curve equation is Y^2 mod P = (X^3 + AX + B) Mod P.
+  This function will set the provided Big Number objects  to the corresponding
+  values. The caller needs to make sure all the "out" BigNumber parameters
+  are properly initialized.
+  @param[in]  EcGroup    EC group object.
+  @param[out] BnPrime    Group prime number.
+  @param[out] BnA        A coefficient.
+  @param[out] BnB        B coefficient.
+  @param[in]  BnCtx      BN context.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcGroupGetCurve (
+  IN CONST VOID  *EcGroup,
+  OUT VOID       *BnPrime,
+  OUT VOID       *BnA,
+  OUT VOID       *BnB,
+  IN VOID        *BnCtx
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.GroupGetCurve, EcGroupGetCurve, (EcGroup, BnPrime, BnA, BnB, BnCtx), FALSE);
+}
+
+/**
+  Get EC group order.
+  This function will set the provided Big Number object to the corresponding
+  value. The caller needs to make sure that the "out" BigNumber parameter
+  is properly initialized.
+
+  @param[in]  EcGroup   EC group object.
+  @param[out] BnOrder   Group prime number.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcGroupGetOrder (
+  IN VOID   *EcGroup,
+  OUT VOID  *BnOrder
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.GroupGetOrder, EcGroupGetOrder, (EcGroup, BnOrder), FALSE);
+}
+
+/**
+  Free previously allocated EC group object using EcGroupInit().
+
+  @param[in]  EcGroup   EC group object to free.
+**/
+VOID
+EFIAPI
+CryptoServiceEcGroupFree (
+  IN VOID  *EcGroup
+  )
+{
+  CALL_VOID_BASECRYPTLIB (Ec.Services.GroupFree, EcGroupFree, (EcGroup));
+}
+
+/**
+  Set the generator for an EC_GROUP.
+
+  @param[in]  EcGroup           The EC_GROUP object.
+  @param[in]  EcPointGenerator  The generator point G.
+  @param[in]  BnOrder           The order of the generator.
+  @param[in]  BnCoFactor        The cofactor of the group.
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcGroupSetGenerator (
+  IN VOID        *EcGroup,
+  IN CONST VOID  *EcPointGenerator,
+  IN CONST VOID  *BnOrder,
+  IN CONST VOID  *BnCoFactor            OPTIONAL
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.GroupSetGenerator, EcGroupSetGenerator, (EcGroup, EcPointGenerator, BnOrder, BnCoFactor), FALSE);
+}
+
+/**
+  Initialize new opaque EC Point object. This object represents an EC point
+  within the given EC group (curve).
+
+  @param[in]  EC Group, properly initialized using EcGroupInit().
+
+  @retval EC Point object  On success.
+  @retval NULL             On failure.
+**/
+VOID *
+EFIAPI
+CryptoServiceEcPointInit (
+  IN CONST VOID  *EcGroup
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.PointInit, EcPointInit, (EcGroup), NULL);
+}
+
+/**
+  Free previously allocated EC Point object using EcPointInit().
+
+  @param[in]  EcPoint   EC Point to free.
+  @param[in]  Clear     TRUE iff the memory should be cleared.
+**/
+VOID
+EFIAPI
+CryptoServiceEcPointDeInit (
+  IN VOID     *EcPoint,
+  IN BOOLEAN  Clear
+  )
+{
+  CALL_VOID_BASECRYPTLIB (Ec.Services.PointDeInit, EcPointDeInit, (EcPoint, Clear));
+}
+
+/**
+  Get EC point affine (x,y) coordinates.
+  This function will set the provided Big Number objects to the corresponding
+  values. The caller needs to make sure all the "out" BigNumber parameters
+  are properly initialized.
+
+  @param[in]  EcGroup    EC group object.
+  @param[in]  EcPoint    EC point object.
+  @param[out] BnX        X coordinate.
+  @param[out] BnY        Y coordinate.
+  @param[in]  BnCtx      BN context, created with BigNumNewContext().
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcPointGetAffineCoordinates (
+  IN CONST VOID  *EcGroup,
+  IN CONST VOID  *EcPoint,
+  OUT VOID       *BnX,
+  OUT VOID       *BnY,
+  IN VOID        *BnCtx
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.PointGetAffineCoordinates, EcPointGetAffineCoordinates, (EcGroup, EcPoint, BnX, BnY, BnCtx), FALSE);
+}
+
+/**
+  Set EC point affine (x,y) coordinates.
+
+  @param[in]  EcGroup    EC group object.
+  @param[in]  EcPoint    EC point object.
+  @param[in]  BnX        X coordinate.
+  @param[in]  BnY        Y coordinate.
+  @param[in]  BnCtx      BN context, created with BigNumNewContext().
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcPointSetAffineCoordinates (
+  IN CONST VOID  *EcGroup,
+  IN VOID        *EcPoint,
+  IN CONST VOID  *BnX,
+  IN CONST VOID  *BnY,
+  IN VOID        *BnCtx
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.PointSetAffineCoordinates, EcPointSetAffineCoordinates, (EcGroup, EcPoint, BnX, BnY, BnCtx), FALSE);
+}
+
+/**
+  EC Point addition. EcPointResult = EcPointA + EcPointB.
+  @param[in]  EcGroup          EC group object.
+  @param[out] EcPointResult    EC point to hold the result. The point should
+                               be properly initialized.
+  @param[in]  EcPointA         EC Point.
+  @param[in]  EcPointB         EC Point.
+  @param[in]  BnCtx            BN context, created with BigNumNewContext().
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcPointAdd (
+  IN CONST VOID  *EcGroup,
+  OUT VOID       *EcPointResult,
+  IN CONST VOID  *EcPointA,
+  IN CONST VOID  *EcPointB,
+  IN VOID        *BnCtx
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.PointAdd, EcPointAdd, (EcGroup, EcPointResult, EcPointA, EcPointB, BnCtx), FALSE);
+}
+
+/**
+  Variable EC point multiplication. EcPointResult = EcPoint * BnPScalar.
+
+  @param[in]  EcGroup          EC group object.
+  @param[out] EcPointResult    EC point to hold the result. The point should
+                               be properly initialized.
+  @param[in]  EcPoint          EC Point.
+  @param[in]  BnPScalar        P Scalar.
+  @param[in]  BnCtx            BN context, created with BigNumNewContext().
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcPointMul (
+  IN CONST VOID  *EcGroup,
+  OUT VOID       *EcPointResult,
+  IN CONST VOID  *EcPoint,
+  IN CONST VOID  *BnPScalar,
+  IN VOID        *BnCtx
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.PointMul, EcPointMul, (EcGroup, EcPointResult, EcPoint, BnPScalar, BnCtx), FALSE);
+}
+
+/**
+  Variable EC point multiplication. EcPointResult = BnGScalar * G + EcPoint * BnPScalar.
+
+  @param[in]  EcGroup          EC group object.
+  @param[out] EcPointResult    EC point to hold the result. The point should
+                               be properly initialized.
+  @param[in]  BnGScalar        G Scalar.
+  @param[in]  EcPoint          EC Point.
+  @param[in]  BnPScalar        P Scalar.
+  @param[in]  BnCtx            BN context, created with BigNumNewContext().
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcPointMul2 (
+  IN CONST VOID  *EcGroup,
+  OUT VOID       *EcPointResult,
+  IN CONST VOID  *BnGScalar,
+  IN CONST VOID  *EcPoint,
+  IN CONST VOID  *BnPScalar,
+  IN VOID        *BnCtx
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.PointMul2, EcPointMul2, (EcGroup, EcPointResult, BnGScalar, EcPoint, BnPScalar, BnCtx), FALSE);
+}
+
+/**
+  Compute a linear combination of multiple EC points.
+
+  This function calculates:
+    EcPointResult = BnGScalar * G + Σ (EcPoints[i] * BnPScalars[i])
+
+  where G is the generator of the EC_GROUP, and Q[i] are arbitrary points.
+
+  @param[in]  EcGroup          EC group object.
+  @param[out] EcPointResult    EC point to hold the result. The point should
+                               be properly initialized.
+  @param[in]  BnGScalar        G Scalar.
+                               May be NULL if not used.
+  @param[in]  Count            The number of EcPoints and P scalars.
+  @param[in]  EcPoints         EC Points.
+  @param[in]  BnPScalars       P Scalars.
+  @param[in]  BnCtx            BN context, created with BigNumNewContext().
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcPointsMul (
+  IN CONST VOID  *EcGroup,
+  OUT VOID       *EcPointResult,
+  IN CONST VOID  *BnGScalar,
+  UINTN          Count,
+  IN CONST VOID  *EcPoints[],
+  IN CONST VOID  *BnPScalars[],
+  IN VOID        *BnCtx
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.PointsMul, EcPointsMul, (EcGroup, EcPointResult, BnGScalar, Count, EcPoints, BnPScalars, BnCtx), FALSE);
+}
+
+/**
+  Retrieve the EC Public Key from PEM key data.
+
+  @param[in]  PemData      Pointer to the PEM-encoded key data to be retrieved.
+  @param[in]  PemSize      Size of the PEM key data in bytes.
+  @param[in]  Password     NULL-terminated passphrase used for encrypted
+                           PEM key data.
+  @param[out] EcContext    Pointer to new-generated EC DSA context which
+                           contain the retrieved EC public key component.
+                           Use EcFree() function to free the resource.
+
+  If PemData is NULL, then return FALSE.
+  If EcContext is NULL, then return FALSE.
+
+  @retval  TRUE   EC Public Key was retrieved successfully.
+  @retval  FALSE  Invalid PEM key data or incorrect password.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcGetPublicKeyFromPem (
+  IN   CONST UINT8  *PemData,
+  IN   UINTN        PemSize,
+  IN   CONST CHAR8  *Password,
+  OUT  VOID         **EcContext
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.GetPublicKeyFromPem, EcGetPublicKeyFromPem, (PemData, PemSize, Password, EcContext), FALSE);
+}
+
+/**
+  Convert the EC Public Key to PEM key data.
+
+  @param[in]      EcContext   Pointer to EC DSA context.
+  @param[out]     PemData     Pointer to the PEM-encoded key data to be
+                              retrieved.
+  @param[in, out] PemSize     On input, size of PemData in bytes.
+                              On output, size of data returned or required size.
+
+  If EcContext is NULL, then return FALSE.
+  If PemSize is NULL, then return FALSE.
+  If PemData is NULL and *PemSize is zero, then return FALSE and set
+  *PemSize to the required size of the PemData buffer.
+  If PemData is NULL and *PemSize is not zero, then return FALSE.
+  If PemData is not NULL and *PemSize is too small, then return FALSE and
+  set *PemSize to the required size of the PemData buffer.
+
+  @retval  TRUE   EC Public Key was converted to the PEM data successfully.
+  @retval  FALSE  Invalid EC Context.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcPublicKeyToPEM (
+  IN  VOID      *EcContext,
+  OUT UINT8     *PemData,
+  IN OUT UINTN  *PemSize
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.PublicKeyToPEM, EcPublicKeyToPEM, (EcContext, PemData, PemSize), FALSE);
+}
+
+/**
+  Calculate the inverse of the supplied EC point.
+
+  @param[in]     EcGroup   EC group object.
+  @param[in,out] EcPoint   EC point to invert.
+  @param[in]     BnCtx     BN context, created with BigNumNewContext().
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcPointInvert (
+  IN CONST VOID  *EcGroup,
+  IN OUT VOID    *EcPoint,
+  IN VOID        *BnCtx
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.PointInvert, EcPointInvert, (EcGroup, EcPoint, BnCtx), FALSE);
+}
+
+/**
+  Check if the supplied point is on EC curve.
+
+  @param[in]  EcGroup   EC group object.
+  @param[in]  EcPoint   EC point to check.
+  @param[in]  BnCtx     BN context, created with BigNumNewContext().
+
+  @retval TRUE          On curve.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcPointIsOnCurve (
+  IN CONST VOID  *EcGroup,
+  IN CONST VOID  *EcPoint,
+  IN VOID        *BnCtx
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.PointIsOnCurve, EcPointIsOnCurve, (EcGroup, EcPoint, BnCtx), FALSE);
+}
+
+/**
+  Check if the supplied point is at infinity.
+
+  @param[in]  EcGroup   EC group object.
+  @param[in]  EcPoint   EC point to check.
+
+  @retval TRUE          At infinity.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcPointIsAtInfinity (
+  IN CONST VOID  *EcGroup,
+  IN CONST VOID  *EcPoint
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.PointIsAtInfinity, EcPointIsAtInfinity, (EcGroup, EcPoint), FALSE);
+}
+
+/**
+  Check if EC points are equal.
+
+  @param[in]  EcGroup   EC group object.
+  @param[in]  EcPointA  EC point A.
+  @param[in]  EcPointB  EC point B.
+  @param[in]  BnCtx     BN context, created with BigNumNewContext().
+
+  @retval TRUE          A == B.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcPointEqual (
+  IN CONST VOID  *EcGroup,
+  IN CONST VOID  *EcPointA,
+  IN CONST VOID  *EcPointB,
+  IN VOID        *BnCtx
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.PointEqual, EcPointEqual, (EcGroup, EcPointA, EcPointB, BnCtx), FALSE);
+}
+
+/**
+  Set EC point compressed coordinates. Points can be described in terms of
+  their compressed coordinates. For a point (x, y), for any given value for x
+  such that the point is on the curve there will only ever be two possible
+  values for y. Therefore, a point can be set using this function where BnX is
+  the x coordinate and YBit is a value 0 or 1 to identify which of the two
+  possible values for y should be used.
+
+  @param[in]  EcGroup    EC group object.
+  @param[in]  EcPoint    EC Point.
+  @param[in]  BnX        X coordinate.
+  @param[in]  YBit       0 or 1 to identify which Y value is used.
+  @param[in]  BnCtx      BN context, created with BigNumNewContext().
+
+  @retval TRUE          On success.
+  @retval FALSE         Otherwise.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcPointSetCompressedCoordinates (
+  IN CONST VOID  *EcGroup,
+  IN VOID        *EcPoint,
+  IN CONST VOID  *BnX,
+  IN UINT8       YBit,
+  IN VOID        *BnCtx
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.PointSetCompressedCoordinates, EcPointSetCompressedCoordinates, (EcGroup, EcPoint, BnX, YBit, BnCtx), FALSE);
+}
+
+// =====================================================================================
+//    Elliptic Curve Diffie Hellman Primitives
+// =====================================================================================
+
+/**
+  Allocates and Initializes one Elliptic Curve Context for subsequent use
+  with the NID.
+
+  @param[in]  Nid cipher NID
+  @return     Pointer to the Elliptic Curve Context that has been initialized.
+              If the allocations fails, EcNewByNid() returns NULL.
+**/
+VOID *
+EFIAPI
+CryptoServiceEcNewByNid (
+  IN UINTN  Nid
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.NewByNid, EcNewByNid, (Nid), NULL);
+}
+
+/**
+  Release the specified EC context.
+
+  @param[in]  EcContext  Pointer to the EC context to be released.
+**/
+VOID
+EFIAPI
+CryptoServiceEcFree (
+  IN  VOID  *EcContext
+  )
+{
+  CALL_VOID_BASECRYPTLIB (Ec.Services.Free, EcFree, (EcContext));
+}
+
+/**
+  Return the NID for the Elliptic Curve Context.
+
+  @param[in]  EcContext  Pointer to the EC context.
+  @param[out] Nid        Identifying number for the ECC curve (Defined in
+                         BaseCryptLib.h).
+
+  @retval  TRUE   The NID for the EC key component was retrieved successfully.
+  @retval  FALSE  Invalid EC key component or Nid is NULL.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcGetCurveNid (
+  IN      VOID   *EcContext,
+  OUT     UINTN  *Nid
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.GetCurveNid, EcGetCurveNid, (EcContext, Nid), FALSE);
+}
+
+/**
+  Generates EC key and returns EC public key (X, Y), Please note, this function uses
+  pseudo random number generator. The caller must make sure RandomSeed()
+  function was properly called before.
+  The Ec context should be correctly initialized by EcNewByNid.
+  This function generates random secret, and computes the public key (X, Y), which is
+  returned via parameter Public, PublicSize.
+  X is the first half of Public with size being PublicSize / 2,
+  Y is the second half of Public with size being PublicSize / 2.
+  EC context is updated accordingly.
+  If the Public buffer is too small to hold the public X, Y, FALSE is returned and
+  PublicSize is set to the required buffer size to obtain the public X, Y.
+  For P-256, the PublicSize is 64. First 32-byte is X, Second 32-byte is Y.
+  For P-384, the PublicSize is 96. First 48-byte is X, Second 48-byte is Y.
+  For P-521, the PublicSize is 132. First 66-byte is X, Second 66-byte is Y.
+  If EcContext is NULL, then return FALSE.
+  If PublicSize is NULL, then return FALSE.
+  If PublicSize is large enough but Public is NULL, then return FALSE.
+  @param[in, out]  EcContext      Pointer to the EC context.
+  @param[out]      PublicKey      Pointer to t buffer to receive generated public X,Y.
+  @param[in, out]  PublicKeySize  On input, the size of Public buffer in bytes.
+                                  On output, the size of data returned in Public buffer in bytes.
+  @retval TRUE   EC public X,Y generation succeeded.
+  @retval FALSE  EC public X,Y generation failed.
+  @retval FALSE  PublicKeySize is not large enough.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcGenerateKey (
+  IN OUT  VOID   *EcContext,
+  OUT     UINT8  *PublicKey,
+  IN OUT  UINTN  *PublicKeySize
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.GenerateKey, EcGenerateKey, (EcContext, PublicKey, PublicKeySize), FALSE);
+}
+
+/**
+  Gets the public key component from the established EC context.
+  The Ec context should be correctly initialized by EcNewByNid, and successfully
+  generate key pair from EcGenerateKey().
+  For P-256, the PublicSize is 64. First 32-byte is X, Second 32-byte is Y.
+  For P-384, the PublicSize is 96. First 48-byte is X, Second 48-byte is Y.
+  For P-521, the PublicSize is 132. First 66-byte is X, Second 66-byte is Y.
+  @param[in, out]  EcContext      Pointer to EC context being set.
+  @param[out]      PublicKey      Pointer to t buffer to receive generated public X,Y.
+  @param[in, out]  PublicKeySize  On input, the size of Public buffer in bytes.
+                                  On output, the size of data returned in Public buffer in bytes.
+  @retval  TRUE   EC key component was retrieved successfully.
+  @retval  FALSE  Invalid EC key component.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcGetPubKey (
+  IN OUT  VOID   *EcContext,
+  OUT     UINT8  *PublicKey,
+  IN OUT  UINTN  *PublicKeySize
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.GetPubKey, EcGetPubKey, (EcContext, PublicKey, PublicKeySize), FALSE);
+}
+
+/**
+  Computes exchanged common key.
+  Given peer's public key (X, Y), this function computes the exchanged common key,
+  based on its own context including value of curve parameter and random secret.
+  X is the first half of PeerPublic with size being PeerPublicSize / 2,
+  Y is the second half of PeerPublic with size being PeerPublicSize / 2.
+  If EcContext is NULL, then return FALSE.
+  If PeerPublic is NULL, then return FALSE.
+  If PeerPublicSize is 0, then return FALSE.
+  If Key is NULL, then return FALSE.
+  If KeySize is not large enough, then return FALSE.
+  For P-256, the PeerPublicSize is 64. First 32-byte is X, Second 32-byte is Y.
+  For P-384, the PeerPublicSize is 96. First 48-byte is X, Second 48-byte is Y.
+  For P-521, the PeerPublicSize is 132. First 66-byte is X, Second 66-byte is Y.
+  @param[in, out]  EcContext          Pointer to the EC context.
+  @param[in]       PeerPublic         Pointer to the peer's public X,Y.
+  @param[in]       PeerPublicSize     Size of peer's public X,Y in bytes.
+  @param[in]       CompressFlag       Flag of PeerPublic is compressed or not.
+  @param[out]      Key                Pointer to the buffer to receive generated key.
+  @param[in, out]  KeySize            On input, the size of Key buffer in bytes.
+                                      On output, the size of data returned in Key buffer in bytes.
+  @retval TRUE   EC exchanged key generation succeeded.
+  @retval FALSE  EC exchanged key generation failed.
+  @retval FALSE  KeySize is not large enough.
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcDhComputeKey (
+  IN OUT  VOID         *EcContext,
+  IN      CONST UINT8  *PeerPublic,
+  IN      UINTN        PeerPublicSize,
+  IN      CONST INT32  *CompressFlag,
+  OUT     UINT8        *Key,
+  IN OUT  UINTN        *KeySize
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.DhComputeKey, EcDhComputeKey, (EcContext, PeerPublic, PeerPublicSize, CompressFlag, Key, KeySize), FALSE);
+}
+
+/**
+  Retrieve the EC Public Key from one DER-encoded X509 certificate.
+
+  @param[in]  Cert         Pointer to the DER-encoded X509 certificate.
+  @param[in]  CertSize     Size of the X509 certificate in bytes.
+  @param[out] EcContext    Pointer to new-generated EC DSA context which contain the retrieved
+                           EC public key component. Use EcFree() function to free the
+                           resource.
+
+  If Cert is NULL, then return FALSE.
+  If EcContext is NULL, then return FALSE.
+
+  @retval  TRUE   EC Public Key was retrieved successfully.
+  @retval  FALSE  Fail to retrieve EC public key from X509 certificate.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcGetPublicKeyFromX509 (
+  IN   CONST UINT8  *Cert,
+  IN   UINTN        CertSize,
+  OUT  VOID         **EcContext
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.GetPublicKeyFromX509, EcGetPublicKeyFromX509, (Cert, CertSize, EcContext), FALSE);
+}
+
+/**
+  Retrieve the EC Private Key from the password-protected PEM key data.
+
+  @param[in]  PemData      Pointer to the PEM-encoded key data to be retrieved.
+  @param[in]  PemSize      Size of the PEM key data in bytes.
+  @param[in]  Password     NULL-terminated passphrase used for encrypted PEM key data.
+  @param[out] EcContext    Pointer to new-generated EC DSA context which contain the retrieved
+                           EC private key component. Use EcFree() function to free the
+                           resource.
+
+  If PemData is NULL, then return FALSE.
+  If EcContext is NULL, then return FALSE.
+
+  @retval  TRUE   EC Private Key was retrieved successfully.
+  @retval  FALSE  Invalid PEM key data or incorrect password.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcGetPrivateKeyFromPem (
+  IN   CONST UINT8  *PemData,
+  IN   UINTN        PemSize,
+  IN   CONST CHAR8  *Password,
+  OUT  VOID         **EcContext
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.GetPrivateKeyFromPem, EcGetPrivateKeyFromPem, (PemData, PemSize, Password, EcContext), FALSE);
+}
+
+/**
+  Carries out the EC-DSA signature.
+
+  This function carries out the EC-DSA signature.
+  If the Signature buffer is too small to hold the contents of signature, FALSE
+  is returned and SigSize is set to the required buffer size to obtain the signature.
+
+  If EcContext is NULL, then return FALSE.
+  If MessageHash is NULL, then return FALSE.
+  If HashSize need match the HashNid. HashNid could be SHA256, SHA384, SHA512, SHA3_256, SHA3_384, SHA3_512.
+  If SigSize is large enough but Signature is NULL, then return FALSE.
+
+  For P-256, the SigSize is 64. First 32-byte is R, Second 32-byte is S.
+  For P-384, the SigSize is 96. First 48-byte is R, Second 48-byte is S.
+  For P-521, the SigSize is 132. First 66-byte is R, Second 66-byte is S.
+
+  @param[in]       EcContext    Pointer to EC context for signature generation.
+  @param[in]       HashNid      hash NID
+  @param[in]       MessageHash  Pointer to octet message hash to be signed.
+  @param[in]       HashSize     Size of the message hash in bytes.
+  @param[out]      Signature    Pointer to buffer to receive EC-DSA signature.
+  @param[in, out]  SigSize      On input, the size of Signature buffer in bytes.
+                                On output, the size of data returned in Signature buffer in bytes.
+
+  @retval  TRUE   Signature successfully generated in EC-DSA.
+  @retval  FALSE  Signature generation failed.
+  @retval  FALSE  SigSize is too small.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcDsaSign (
+  IN      VOID         *EcContext,
+  IN      UINTN        HashNid,
+  IN      CONST UINT8  *MessageHash,
+  IN      UINTN        HashSize,
+  OUT     UINT8        *Signature,
+  IN OUT  UINTN        *SigSize
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.DsaSign, EcDsaSign, (EcContext, HashNid, MessageHash, HashSize, Signature, SigSize), FALSE);
+}
+
+/**
+  Verifies the EC-DSA signature.
+
+  If EcContext is NULL, then return FALSE.
+  If MessageHash is NULL, then return FALSE.
+  If Signature is NULL, then return FALSE.
+  If HashSize need match the HashNid. HashNid could be SHA256, SHA384, SHA512, SHA3_256, SHA3_384, SHA3_512.
+
+  For P-256, the SigSize is 64. First 32-byte is R, Second 32-byte is S.
+  For P-384, the SigSize is 96. First 48-byte is R, Second 48-byte is S.
+  For P-521, the SigSize is 132. First 66-byte is R, Second 66-byte is S.
+
+  @param[in]  EcContext    Pointer to EC context for signature verification.
+  @param[in]  HashNid      hash NID
+  @param[in]  MessageHash  Pointer to octet message hash to be checked.
+  @param[in]  HashSize     Size of the message hash in bytes.
+  @param[in]  Signature    Pointer to EC-DSA signature to be verified.
+  @param[in]  SigSize      Size of signature in bytes.
+
+  @retval  TRUE   Valid signature encoded in EC-DSA.
+  @retval  FALSE  Invalid signature or invalid EC context.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEcDsaVerify (
+  IN  VOID         *EcContext,
+  IN  UINTN        HashNid,
+  IN  CONST UINT8  *MessageHash,
+  IN  UINTN        HashSize,
+  IN  CONST UINT8  *Signature,
+  IN  UINTN        SigSize
+  )
+{
+  return CALL_BASECRYPTLIB (Ec.Services.DsaVerify, EcDsaVerify, (EcContext, HashNid, MessageHash, HashSize, Signature, SigSize), FALSE);
+}
+
+/**
+  Creates a new EdDSA context by Crypto NID.
+
+  This function allocates and initializes a new EdDSA context for the specified
+  curve. The context stores the curve NID and will hold an EVP_PKEY structure
+  after a key is set. The caller must call EdDsaFree() to release the context
+  when done.
+
+  Before keys can be used for signing or verification, they must be set using
+  EdDsaSetPrivKey() or EdDsaSetPubKey().
+
+  If Nid is not a supported EdDSA curve, then return NULL.
+  If memory allocation fails, then return NULL.
+
+  @param[in]  Nid   Crypto NID of the EdDSA curve (e.g., CRYPTO_NID_ED448).
+
+  @retval Pointer to new EdDSA context if successful.
+  @retval NULL if Nid is unsupported or allocation failed.
+
+**/
+VOID *
+EFIAPI
+CryptoServiceEdDsaNewByNid (
+  IN UINTN  Nid
+  )
+{
+  return CALL_BASECRYPTLIB (EdDsa.Services.NewByNid, EdDsaNewByNid, (Nid), NULL);
+}
+
+/**
+  Frees an EdDSA context and all associated resources.
+
+  This function releases all memory associated with the EdDSA context, including
+  the EVP_PKEY structure. After calling this function, the EdDsaContext pointer
+  should not be used.
+
+  If EdDsaContext is NULL, then this function returns immediately without action.
+
+  @param[in]  EdDsaContext  Pointer to the EdDSA context to be released.
+
+**/
+VOID
+EFIAPI
+CryptoServiceEdDsaFree (
+  IN VOID  *EdDsaContext
+  )
+{
+  CALL_VOID_BASECRYPTLIB (EdDsa.Services.Free, EdDsaFree, (EdDsaContext));
+}
+
+/**
+  Sets the EdDSA private key in the EdDSA context.
+
+  This function imports a raw private key into the EdDSA context. The private key
+  must be in raw binary format (not PEM or DER encoded). The key size must match
+  the expected size for the curve type (57 bytes for Ed448).
+
+  OpenSSL automatically derives the public key from the private key, so after
+  calling this function, both signing and verification operations are possible.
+
+  If EdDsaContext is NULL, then return FALSE.
+  If PrivateKey is NULL, then return FALSE.
+  If PrivateKeySize is 0, then return FALSE.
+  If PrivateKeySize does not match the expected size for the curve, then return FALSE.
+
+  @param[in]  EdDsaContext    Pointer to EdDSA context created by EdDsaNewByNid().
+  @param[in]  PrivateKey      Pointer to raw private key bytes.
+  @param[in]  PrivateKeySize  Size of the private key in bytes.
+
+  @retval TRUE   EdDSA private key was set successfully.
+  @retval FALSE  Invalid parameters or key size mismatch.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEdDsaSetPrivKey (
+  IN    VOID   *EdDsaContext,
+  IN    UINT8  *PrivateKey,
+  IN    UINTN  PrivateKeySize
+  )
+{
+  return CALL_BASECRYPTLIB (EdDsa.Services.SetPrivKey, EdDsaSetPrivKey, (EdDsaContext, PrivateKey, PrivateKeySize), FALSE);
+}
+
+/**
+  Generates the EdDSA public key from the private key.
+
+  This function is a placeholder and always returns TRUE. In practice, OpenSSL
+  automatically derives the public key when a private key is set using
+  EdDsaSetPrivKey(), so explicit public key generation is not needed.
+
+  Use EdDsaGetPubKey() to retrieve the public key after setting the private key.
+
+  @param[in]   EdDsaContext    Pointer to EdDSA context.
+  @param[out]  PublicKey       Pointer to buffer for public key (unused).
+  @param[in]   PublicKeySize   Size of public key buffer (unused).
+
+  @retval TRUE   Always returns TRUE.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEdDsaGeneratePubKey (
+  IN   VOID   *EdDsaContext,
+  OUT  UINT8  *PublicKey,
+  IN   UINTN  PublicKeySize
+  )
+{
+  return CALL_BASECRYPTLIB (EdDsa.Services.GeneratePubKey, EdDsaGeneratePubKey, (EdDsaContext, PublicKey, PublicKeySize), TRUE);
+}
+
+/**
+  Sets the EdDSA public key in the EdDSA context.
+
+  This function imports a raw public key into the EdDSA context. The public key
+  must be in raw binary format (not PEM or DER encoded). The key size must match
+  the expected size for the curve type (57 bytes for Ed448).
+
+  After setting the public key, the context can be used for signature verification
+  but not for signing (which requires the private key).
+
+  If EdDsaContext is NULL, then return FALSE.
+  If PublicKey is NULL, then return FALSE.
+  If PublicKeySize is 0, then return FALSE.
+  If PublicKeySize does not match the expected size for the curve, then return FALSE.
+
+  @param[in]  EdDsaContext    Pointer to EdDSA context created by EdDsaNewByNid().
+  @param[in]  PublicKey       Pointer to raw public key bytes.
+  @param[in]  PublicKeySize   Size of the public key in bytes.
+
+  @retval TRUE   EdDSA public key was set successfully.
+  @retval FALSE  Invalid parameters or key size mismatch.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEdDsaSetPubKey (
+  IN  VOID         *EdDsaContext,
+  IN  CONST UINT8  *PublicKey,
+  IN  UINTN        PublicKeySize
+  )
+{
+  return CALL_BASECRYPTLIB (EdDsa.Services.SetPubKey, EdDsaSetPubKey, (EdDsaContext, PublicKey, PublicKeySize), FALSE);
+}
+
+/**
+  Retrieves the EdDSA public key from the EdDSA context.
+
+  This function extracts the public key from the EdDSA context and copies it to
+  the provided buffer. The public key is returned in raw binary format.
+
+  The context must have a key set (either via EdDsaSetPrivKey() or EdDsaSetPubKey())
+  before calling this function.
+
+  If EdDsaContext is NULL, then return FALSE.
+  If PublicKey is NULL, then return FALSE.
+  If PublicKeySize is NULL, then return FALSE.
+  If the context does not contain a valid key, then return FALSE.
+  If PublicKey buffer is too small, PublicKeySize is updated with required size and return FALSE.
+
+  @param[in]      EdDsaContext    Pointer to EdDSA context containing the key.
+  @param[out]     PublicKey       Pointer to buffer to receive the public key.
+  @param[in,out]  PublicKeySize   On input, size of PublicKey buffer in bytes.
+                                  On output, actual size of public key written.
+
+  @retval TRUE   EdDSA public key retrieved successfully.
+  @retval FALSE  Invalid parameters or buffer too small.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEdDsaGetPubKey (
+  IN      VOID   *EdDsaContext,
+  OUT     UINT8  *PublicKey,
+  IN OUT  UINTN  *PublicKeySize
+  )
+{
+  return CALL_BASECRYPTLIB (EdDsa.Services.GetPubKey, EdDsaGetPubKey, (EdDsaContext, PublicKey, PublicKeySize), FALSE);
+}
+
+/**
+  Retrieve the Ed-DSA Public Key from one DER-encoded X509 certificate.
+
+  @param[in]  Cert          Pointer to the DER-encoded X509 certificate.
+  @param[in]  CertSize      Size of the X509 certificate in bytes.
+  @param[out] EdDsaContext  Pointer to new-generated Ed DSA context which contain the retrieved
+                            Ed-Dsa public key component. Use EdDsaFree() function to free the
+                            resource.
+
+  If Cert is NULL, then return FALSE.
+  If EdDsaContext is NULL, then return FALSE.
+
+  @retval  TRUE   EdDsa Public Key was retrieved successfully.
+  @retval  FALSE  Fail to retrieve EdDsa public key from X509 certificate.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEdDsaGetPublicKeyFromX509 (
+  IN   CONST UINT8  *Cert,
+  IN   UINTN        CertSize,
+  OUT  VOID         **EdDsaContext
+  )
+{
+  return CALL_BASECRYPTLIB (EdDsa.Services.GetPublicKeyFromX509, EdDsaGetPublicKeyFromX509, (Cert, CertSize, EdDsaContext), FALSE);
+}
+
+/**
+   Retrieve the EdDSA Private Key from the password-protected PEM key data.
+
+   @param[in]  PemData        Pointer to the PEM-encoded key data to be retrieved.
+   @param[in]  PemSize        Size of the PEM key data in bytes.
+   @param[in]  Password       NULL-terminated passphrase used for encrypted PEM key data.
+   @param[out] EdDsaContext   Pointer to new-generated EdDSA context which contains the retrieved
+                              EdDSA private key component. Use EdDsaFree() function to free the
+                              resource.
+
+   If PemData is NULL, then return FALSE.
+   If EdDsaContext is NULL, then return FALSE.
+
+   @retval  TRUE   EdDSA Private Key was retrieved successfully.
+   @retval  FALSE  Invalid PEM key data or incorrect password.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEdDsaGetPrivateKeyFromPem (
+  IN   CONST UINT8  *PemData,
+  IN   UINTN        PemSize,
+  IN   CONST CHAR8  *Password,
+  OUT  VOID         **EdDsaContext
+  )
+{
+  return CALL_BASECRYPTLIB (EdDsa.Services.GetPrivateKeyFromPem, EdDsaGetPrivateKeyFromPem, (PemData, PemSize, Password, EdDsaContext), FALSE);
+}
+
+/**
+  Generates an EdDSA signature for a given message.
+
+  This function creates an EdDSA signature using the private key stored in the
+  EdDSA context. EdDSA uses a 'pure' signature scheme where the entire message
+  is processed directly without pre-computing a hash digest.
+
+  For Ed448, an optional context string can be provided for domain separation.
+  This allows the same key to be used in different contexts without creating
+  security vulnerabilities.
+
+  The context must contain a private key (set via EdDsaSetPrivKey() or loaded
+  from PEM) before calling this function.
+
+  If EdDsaContext is NULL, then return FALSE.
+  If Message is NULL, then return FALSE.
+  If MessageSize is 0 or exceeds INT_MAX, then return FALSE.
+  If Signature is NULL, then return FALSE.
+  If SigSize is NULL, then return FALSE.
+  For Ed448: Context may be NULL if no context string is used (ContextSize must be 0).
+
+  @param[in]      EdDsaContext    Pointer to EdDSA context containing the private key.
+  @param[in]      Context         Optional context string for Ed448 domain separation.
+                                  May be NULL for default context.
+  @param[in]      ContextSize     Size of context string in bytes. Set to 0 if Context is NULL.
+  @param[in]      Message         Pointer to message data to be signed.
+  @param[in]      MessageSize     Size of message in bytes.
+  @param[out]     Signature       Pointer to buffer to receive the signature.
+  @param[in,out]  SigSize         On input, size of Signature buffer.
+                                  On output, actual size of signature (114 bytes for Ed448).
+
+  @retval TRUE   EdDSA signature generated successfully.
+  @retval FALSE  Invalid parameters or signature generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEdDsaSign (
+  IN      VOID         *EdDsaContext,
+  IN      CONST UINT8  *Context,
+  IN      UINTN        ContextSize,
+  IN      CONST UINT8  *Message,
+  IN      UINTN        MessageSize,
+  OUT     UINT8        *Signature,
+  IN OUT  UINTN        *SigSize
+  )
+{
+  return CALL_BASECRYPTLIB (EdDsa.Services.Sign, EdDsaSign, (EdDsaContext, Context, ContextSize, Message, MessageSize, Signature, SigSize), FALSE);
+}
+
+/**
+  Verifies the EdDSA signature for a given message.
+
+  This function verifies an EdDSA signature against a message using the public key
+  contained in the EdDSA context. EdDSA signatures use a 'pure' implementation,
+  meaning the message digest cannot be computed ahead of time - the raw message
+  data is passed directly to the verification function.
+
+  For Ed448, an optional context string can be provided as additional domain
+  separation.
+
+  If EdDsaContext is NULL, then return FALSE.
+  If Message is NULL, then return FALSE.
+  If MessageSize is 0, then return FALSE.
+  If Signature is NULL, then return FALSE.
+  If SigSize is 0 or exceeds INT_MAX, then return FALSE.
+  If SigSize does not match expected signature size for the key type, then return FALSE.
+  For Ed448: Context may be NULL if no context string is used.
+
+  @param[in]      EdDsaContext    Pointer to EdDSA context containing the public key.
+  @param[in]      Context         Optional context string for Ed448 (domain separation).
+                                  May be NULL for default context.
+  @param[in]      ContextSize     Size of context string in bytes. Set to 0 if Context is NULL.
+  @param[in]      Message         Pointer to the message data to verify.
+  @param[in]      MessageSize     Size of the message in bytes.
+  @param[in]      Signature       Pointer to the EdDSA signature to verify.
+  @param[in]      SigSize         Size of the signature in bytes.
+                                  Must be 2 * key_size (114 bytes for Ed448).
+
+  @retval TRUE   EdDSA signature verification succeeded.
+  @retval FALSE  EdDSA signature verification failed or invalid parameters.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceEdDsaVerify (
+  IN     VOID         *EdDsaContext,
+  IN     CONST UINT8  *Context,
+  IN     UINTN        ContextSize,
+  IN     CONST UINT8  *Message,
+  IN     UINTN        MessageSize,
+  IN     UINT8        *Signature,
+  IN     UINTN        SigSize
+  )
+{
+  return CALL_BASECRYPTLIB (EdDsa.Services.Verify, EdDsaVerify, (EdDsaContext, Context, ContextSize, Message, MessageSize, Signature, SigSize), FALSE);
+}
+
+/**
+  Creates a new ML-DSA context by Crypto NID.
+
+  This function allocates and initializes a new ML-DSA context for the specified
+  ML-DSA variant. The context contains an EVP_PKEY structure initialized with the
+  ML-DSA parameters. The caller must call MlDsaFree() to release the context when done.
+
+  Before keys can be used for signing or verification, they must be set using
+  MlDsaSetPrivKey() or MlDsaSetPubKey().
+
+  @param[in]  Nid   Crypto NID of the ML-DSA variant (e.g., CRYPTO_NID_ML_DSA_87).
+
+  @retval Pointer to new ML-DSA context if successful.
+  @retval NULL if Nid is unsupported or allocation failed.
+
+**/
+VOID *
+EFIAPI
+CryptoServiceMlDsaNewByNid (
+  IN UINTN  Nid
+  )
+{
+  return CALL_BASECRYPTLIB (MlDsa.Services.NewByNid, MlDsaNewByNid, (Nid), NULL);
+}
+
+/**
+  Frees an ML-DSA context and all associated resources.
+
+  This function releases all memory associated with the ML-DSA context, including
+  the EVP_PKEY structure. After calling this function, the MlDsaContext pointer
+  should not be used.
+
+  If MlDsaContext is NULL, then this function returns immediately without action.
+
+  @param[in]  MlDsaContext  Pointer to the ML-DSA context to be released.
+
+**/
+VOID
+EFIAPI
+CryptoServiceMlDsaFree (
+  IN VOID  *MlDsaContext
+  )
+{
+  CALL_VOID_BASECRYPTLIB (MlDsa.Services.Free, MlDsaFree, (MlDsaContext));
+}
+
+/**
+  Sets the ML-DSA private key in the ML-DSA context.
+
+  @param[in]  MlDsaContext     Pointer to ML-DSA context created by MlDsaNewByNid().
+  @param[in]  PrivateKey       Pointer to raw private key bytes.
+  @param[in]  PrivateKeySize   Size of the private key in bytes.
+
+  @retval TRUE   ML-DSA private key was set successfully.
+  @retval FALSE  Invalid parameters or key size mismatch.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceMlDsaSetPrivKey (
+  IN    VOID   *MlDsaContext,
+  IN    UINT8  *PrivateKey,
+  IN    UINTN  PrivateKeySize
+  )
+{
+  return CALL_BASECRYPTLIB (MlDsa.Services.SetPrivKey, MlDsaSetPrivKey, (MlDsaContext, PrivateKey, PrivateKeySize), FALSE);
+}
+
+/**
+  Generates and retrieves the public key from a private key context.
+
+  @param[in]   MlDsaContext    Pointer to ML-DSA context containing the private key.
+  @param[out]  PublicKey       Pointer to buffer to receive the public key.
+  @param[in]   PublicKeySize   Size of the PublicKey buffer in bytes.
+
+  @retval TRUE   Public key generated and retrieved successfully.
+  @retval FALSE  Invalid parameters or public key extraction failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceMlDsaGeneratePubKey (
+  IN  VOID   *MlDsaContext,
+  OUT UINT8  *PublicKey,
+  IN  UINTN  PublicKeySize
+  )
+{
+  return CALL_BASECRYPTLIB (MlDsa.Services.GeneratePubKey, MlDsaGeneratePubKey, (MlDsaContext, PublicKey, PublicKeySize), FALSE);
+}
+
+/**
+  Sets the ML-DSA public key in the ML-DSA context.
+
+  @param[in]  MlDsaContext    Pointer to ML-DSA context created by MlDsaNewByNid().
+  @param[in]  PublicKey       Pointer to raw public key bytes.
+  @param[in]  PublicKeySize   Size of the public key in bytes.
+
+  @retval TRUE   ML-DSA public key was set successfully.
+  @retval FALSE  Invalid parameters or key size mismatch.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceMlDsaSetPubKey (
+  IN  VOID   *MlDsaContext,
+  IN  UINT8  *PublicKey,
+  IN  UINTN  PublicKeySize
+  )
+{
+  return CALL_BASECRYPTLIB (MlDsa.Services.SetPubKey, MlDsaSetPubKey, (MlDsaContext, PublicKey, PublicKeySize), FALSE);
+}
+
+/**
+  Retrieves the ML-DSA public key from the ML-DSA context.
+
+  @param[in]      MlDsaContext    Pointer to ML-DSA context containing the key.
+  @param[out]     PublicKey       Pointer to buffer to receive the public key.
+  @param[in,out]  PublicKeySize   On input, size of PublicKey buffer in bytes.
+                                  On output, actual size of public key written.
+
+  @retval TRUE   ML-DSA public key retrieved successfully.
+  @retval FALSE  Invalid parameters or buffer too small.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceMlDsaGetPubKey (
+  IN      VOID   *MlDsaContext,
+  OUT     UINT8  *PublicKey,
+  IN OUT  UINTN  *PublicKeySize
+  )
+{
+  return CALL_BASECRYPTLIB (MlDsa.Services.GetPubKey, MlDsaGetPubKey, (MlDsaContext, PublicKey, PublicKeySize), FALSE);
+}
+
+/**
+  Retrieve the ML-DSA Public Key from one DER-encoded X509 certificate.
+
+  @param[in]  Cert          Pointer to the DER-encoded X509 certificate.
+  @param[in]  CertSize      Size of the X509 certificate in bytes.
+  @param[out] MlDsaContext  Pointer to new-generated ML-DSA context which contain the retrieved
+                            ML-DSA public key component. Use MlDsaFree() function to free the
+                            resource.
+
+  @retval  TRUE   ML-DSA Public Key was retrieved successfully.
+  @retval  FALSE  Fail to retrieve ML-DSA public key from X509 certificate.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceMlDsaGetPublicKeyFromX509 (
+  IN   CONST UINT8  *Cert,
+  IN   UINTN        CertSize,
+  OUT  VOID         **MlDsaContext
+  )
+{
+  return CALL_BASECRYPTLIB (MlDsa.Services.GetPublicKeyFromX509, MlDsaGetPublicKeyFromX509, (Cert, CertSize, MlDsaContext), FALSE);
+}
+
+/**
+  Retrieve the ML-DSA Private Key from the password-protected PEM key data.
+
+  @param[in]  PemData       Pointer to the PEM-encoded key data to be retrieved.
+  @param[in]  PemSize       Size of the PEM key data in bytes.
+  @param[in]  Password      NULL-terminated passphrase used for encrypted PEM key data.
+  @param[out] MlDsaContext  Pointer to new-generated ML-DSA context which contains
+                            the retrieved ML-DSA private key. Use MlDsaFree() to free.
+
+  @retval  TRUE   ML-DSA Private Key was retrieved successfully.
+  @retval  FALSE  Invalid PEM key data or incorrect password.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceMlDsaGetPrivateKeyFromPem (
+  IN   CONST UINT8  *PemData,
+  IN   UINTN        PemSize,
+  IN   CONST CHAR8  *Password,
+  OUT  VOID         **MlDsaContext
+  )
+{
+  return CALL_BASECRYPTLIB (MlDsa.Services.GetPrivateKeyFromPem, MlDsaGetPrivateKeyFromPem, (PemData, PemSize, Password, MlDsaContext), FALSE);
+}
+
+/**
+  Generates an ML-DSA signature for a given message.
+
+  @param[in]      MlDsaContext   Pointer to ML-DSA context containing the private key.
+  @param[in]      Context        Optional context string for domain separation.
+                                 May be NULL for default context.
+  @param[in]      ContextSize    Size of context string in bytes. Set to 0 if Context is NULL.
+  @param[in]      Message        Pointer to message data to be signed.
+  @param[in]      MessageSize    Size of message in bytes.
+  @param[out]     Signature      Pointer to buffer to receive the signature.
+  @param[in,out]  SigSize        On input, size of Signature buffer.
+                                 On output, actual size of signature.
+
+  @retval TRUE   ML-DSA signature generated successfully.
+  @retval FALSE  Invalid parameters or signature generation failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceMlDsaSign (
+  IN      VOID         *MlDsaContext,
+  IN      UINT8        *Context,
+  IN      UINTN        ContextSize,
+  IN      CONST UINT8  *Message,
+  IN      UINTN        MessageSize,
+  OUT     UINT8        *Signature,
+  IN OUT  UINTN        *SigSize
+  )
+{
+  return CALL_BASECRYPTLIB (MlDsa.Services.Sign, MlDsaSign, (MlDsaContext, Context, ContextSize, Message, MessageSize, Signature, SigSize), FALSE);
+}
+
+/**
+  Verifies the ML-DSA signature for a given message.
+
+  @param[in]  MlDsaContext   Pointer to ML-DSA context containing the public key.
+  @param[in]  Context        Optional context string for domain separation.
+                             May be NULL for default context.
+  @param[in]  ContextSize    Size of context string in bytes. Set to 0 if Context is NULL.
+  @param[in]  Message        Pointer to the message data to verify.
+  @param[in]  MessageSize    Size of the message in bytes.
+  @param[in]  Signature      Pointer to the ML-DSA signature to verify.
+  @param[in]  SigSize        Size of the signature in bytes.
+
+  @retval TRUE   ML-DSA signature verification succeeded.
+  @retval FALSE  ML-DSA signature verification failed or invalid parameters.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceMlDsaVerify (
+  IN  VOID         *MlDsaContext,
+  IN  UINT8        *Context,
+  IN  UINTN        ContextSize,
+  IN  CONST UINT8  *Message,
+  IN  UINTN        MessageSize,
+  IN  UINT8        *Signature,
+  IN  UINTN        SigSize
+  )
+{
+  return CALL_BASECRYPTLIB (MlDsa.Services.Verify, MlDsaVerify, (MlDsaContext, Context, ContextSize, Message, MessageSize, Signature, SigSize), FALSE);
+}
+
+/**
+  Creates a new SLH-DSA context by Crypto NID.
+
+  This function allocates and initializes a new SLH-DSA context for the specified
+  SLH-DSA variant. The context contains an EVP_PKEY structure initialized with the
+  SLH-DSA parameters. The caller must call SlhDsaFree() to release the context when done.
+
+  Before keys can be used for signing or verification, they must be set using
+  SlhDsaSetPrivKey() or SlhDsaSetPubKey().
+
+  @param[in]  Nid   Crypto NID of the SLH-DSA variant (e.g., CRYPTO_NID_SLH_DSA_SHAKE_256S).
+
+  @retval Pointer to new SLH-DSA context if successful.
+  @retval NULL if Nid is unsupported or allocation failed.
+
+**/
+VOID *
+EFIAPI
+CryptoServiceSlhDsaNewByNid (
+  IN UINTN  Nid
+  )
+{
+  return CALL_BASECRYPTLIB (SlhDsa.Services.NewByNid, SlhDsaNewByNid, (Nid), NULL);
+}
+
+/**
+  Frees an SLH-DSA context and all associated resources.
+
+  This function releases all memory associated with the SLH-DSA context, including
+  the EVP_PKEY structure. After calling this function, the SlhDsaContext pointer
+  should not be used.
+
+  If SlhDsaContext is NULL, then this function returns immediately without action.
+
+  @param[in]  SlhDsaContext  Pointer to the SLH-DSA context to be released.
+
+**/
+VOID
+EFIAPI
+CryptoServiceSlhDsaFree (
+  IN VOID  *SlhDsaContext
+  )
+{
+  CALL_VOID_BASECRYPTLIB (SlhDsa.Services.Free, SlhDsaFree, (SlhDsaContext));
+}
+
+/**
+  Sets the SLH-DSA private key in the SLH-DSA context.
+
+  @param[in]  SlhDsaContext    Pointer to SLH-DSA context created by SlhDsaNewByNid().
+  @param[in]  PrivateKey       Pointer to raw private key bytes.
+  @param[in]  PrivateKeySize   Size of the private key in bytes.
+
+  @retval TRUE   SLH-DSA private key was set successfully.
+  @retval FALSE  Invalid parameters or key size mismatch.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceSlhDsaSetPrivKey (
+  IN    VOID   *SlhDsaContext,
+  IN    UINT8  *PrivateKey,
+  IN    UINTN  PrivateKeySize
+  )
+{
+  return CALL_BASECRYPTLIB (SlhDsa.Services.SetPrivKey, SlhDsaSetPrivKey, (SlhDsaContext, PrivateKey, PrivateKeySize), FALSE);
+}
+
+/**
+  Generates and retrieves the public key from a private key context.
+
+  @param[in]   SlhDsaContext   Pointer to SLH-DSA context containing the private key.
+  @param[out]  PublicKey       Pointer to buffer to receive the public key.
+  @param[in]   PublicKeySize   Size of the PublicKey buffer in bytes.
+
+  @retval TRUE   Public key generated and retrieved successfully.
+  @retval FALSE  Invalid parameters or public key extraction failed.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceSlhDsaGeneratePubKey (
+  IN  VOID   *SlhDsaContext,
+  OUT UINT8  *PublicKey,
+  IN  UINTN  PublicKeySize
+  )
+{
+  return CALL_BASECRYPTLIB (SlhDsa.Services.GeneratePubKey, SlhDsaGeneratePubKey, (SlhDsaContext, PublicKey, PublicKeySize), FALSE);
+}
+
+/**
+  Sets the SLH-DSA public key in the SLH-DSA context.
+
+  @param[in]  SlhDsaContext   Pointer to SLH-DSA context created by SlhDsaNewByNid().
+  @param[in]  PublicKey       Pointer to raw public key bytes.
+  @param[in]  PublicKeySize   Size of the public key in bytes.
+
+  @retval TRUE   SLH-DSA public key was set successfully.
+  @retval FALSE  Invalid parameters or key size mismatch.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceSlhDsaSetPubKey (
+  IN  VOID   *SlhDsaContext,
+  IN  UINT8  *PublicKey,
+  IN  UINTN  PublicKeySize
+  )
+{
+  return CALL_BASECRYPTLIB (SlhDsa.Services.SetPubKey, SlhDsaSetPubKey, (SlhDsaContext, PublicKey, PublicKeySize), FALSE);
+}
+
+/**
+  Retrieves the SLH-DSA public key from the SLH-DSA context.
+
+  @param[in]      SlhDsaContext   Pointer to SLH-DSA context containing the key.
+  @param[out]     PublicKey       Pointer to buffer to receive the public key.
+  @param[in,out]  PublicKeySize   On input, size of PublicKey buffer in bytes.
+                                  On output, actual size of public key written.
+
+  @retval TRUE   SLH-DSA public key retrieved successfully.
+  @retval FALSE  Invalid parameters or buffer too small.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceSlhDsaGetPubKey (
+  IN      VOID   *SlhDsaContext,
+  OUT     UINT8  *PublicKey,
+  IN OUT  UINTN  *PublicKeySize
+  )
+{
+  return CALL_BASECRYPTLIB (SlhDsa.Services.GetPubKey, SlhDsaGetPubKey, (SlhDsaContext, PublicKey, PublicKeySize), FALSE);
+}
+
+/**
+  Retrieve the SLH-DSA Public Key from one DER-encoded X509 certificate.
+
+  @param[in]  Cert           Pointer to the DER-encoded X509 certificate.
+  @param[in]  CertSize       Size of the X509 certificate in bytes.
+  @param[out] SlhDsaContext  Pointer to new-generated SLH-DSA context which contain the retrieved
+                             SLH-DSA public key component. Use SlhDsaFree() function to free the
+                             resource.
+
+  @retval  TRUE   SLH-DSA Public Key was retrieved successfully.
+  @retval  FALSE  Fail to retrieve SLH-DSA public key from X509 certificate.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceSlhDsaGetPublicKeyFromX509 (
+  IN   CONST UINT8  *Cert,
+  IN   UINTN        CertSize,
+  OUT  VOID         **SlhDsaContext
+  )
+{
+  return CALL_BASECRYPTLIB (SlhDsa.Services.GetPublicKeyFromX509, SlhDsaGetPublicKeyFromX509, (Cert, CertSize, SlhDsaContext), FALSE);
+}
+
+/**
+  Retrieve the SLH-DSA Private Key from the password-protected PEM key data.
+
+  @param[in]  PemData        Pointer to the PEM-encoded key data to be retrieved.
+  @param[in]  PemSize        Size of the PEM key data in bytes.
+  @param[in]  Password       NULL-terminated passphrase used for encrypted PEM key data.
+  @param[out] SlhDsaContext  Pointer to new-generated SLH-DSA context which contains
+                             the retrieved SLH-DSA private key. Use SlhDsaFree() to free.
+
+  @retval  TRUE   SLH-DSA Private Key was retrieved successfully.
+  @retval  FALSE  Invalid PEM key data or incorrect password.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceSlhDsaGetPrivateKeyFromPem (
+  IN   CONST UINT8  *PemData,
+  IN   UINTN        PemSize,
+  IN   CONST CHAR8  *Password,
+  OUT  VOID         **SlhDsaContext
+  )
+{
+  return CALL_BASECRYPTLIB (SlhDsa.Services.GetPrivateKeyFromPem, SlhDsaGetPrivateKeyFromPem, (PemData, PemSize, Password, SlhDsaContext), FALSE);
+}
+
+/**
+  Generates an SLH-DSA signature for a given message.
+
+  This callback is deprecated and retained only for protocol ABI compatibility.
+  It always returns FALSE.
+
+  @param[in]      SlhDsaContext  Pointer to SLH-DSA context containing the private key.
+  @param[in]      Context        Optional context string for domain separation.
+                                 May be NULL for default context.
+  @param[in]      ContextSize    Size of context string in bytes. Set to 0 if Context is NULL.
+  @param[in]      Message        Pointer to message data to be signed.
+  @param[in]      MessageSize    Size of message in bytes.
+  @param[out]     Signature      Pointer to buffer to receive the signature.
+  @param[in,out]  SigSize        On input, size of Signature buffer.
+                                 On output, actual size of signature.
+
+  @retval FALSE  SLH-DSA signing is deprecated and unsupported.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceSlhDsaSign (
+  IN      VOID         *SlhDsaContext,
+  IN      UINT8        *Context,
+  IN      UINTN        ContextSize,
+  IN      CONST UINT8  *Message,
+  IN      UINTN        MessageSize,
+  OUT     UINT8        *Signature,
+  IN OUT  UINTN        *SigSize
+  )
+{
+  (VOID)SlhDsaContext;
+  (VOID)Context;
+  (VOID)ContextSize;
+  (VOID)Message;
+  (VOID)MessageSize;
+  (VOID)Signature;
+  (VOID)SigSize;
+  return FALSE;
+}
+
+/**
+  Verifies the SLH-DSA signature for a given message.
+
+  @param[in]  SlhDsaContext  Pointer to SLH-DSA context containing the public key.
+  @param[in]  Context        Optional context string for domain separation.
+                             May be NULL for default context.
+  @param[in]  ContextSize    Size of context string in bytes. Set to 0 if Context is NULL.
+  @param[in]  Message        Pointer to the message data to verify.
+  @param[in]  MessageSize    Size of the message in bytes.
+  @param[in]  Signature      Pointer to the SLH-DSA signature to verify.
+  @param[in]  SigSize        Size of the signature in bytes.
+
+  @retval TRUE   SLH-DSA signature verification succeeded.
+  @retval FALSE  SLH-DSA signature verification failed or invalid parameters.
+
+**/
+BOOLEAN
+EFIAPI
+CryptoServiceSlhDsaVerify (
+  IN  VOID         *SlhDsaContext,
+  IN  UINT8        *Context,
+  IN  UINTN        ContextSize,
+  IN  CONST UINT8  *Message,
+  IN  UINTN        MessageSize,
+  IN  UINT8        *Signature,
+  IN  UINTN        SigSize
+  )
+{
+  return CALL_BASECRYPTLIB (SlhDsa.Services.Verify, SlhDsaVerify, (SlhDsaContext, Context, ContextSize, Message, MessageSize, Signature, SigSize), FALSE);
+}
+
 const EDKII_CRYPTO_PROTOCOL  mEdkiiCrypto = {
   /// Version
   CryptoServiceGetCryptoVersion,
@@ -4670,5 +8630,177 @@ const EDKII_CRYPTO_PROTOCOL  mEdkiiCrypto = {
   CryptoServiceTlsGetCaCertificate,
   CryptoServiceTlsGetHostPublicCert,
   CryptoServiceTlsGetHostPrivateKey,
-  CryptoServiceTlsGetCertRevocationList
+  CryptoServiceTlsGetCertRevocationList,
+  /// RSA PSS
+  CryptoServiceRsaPssSign,
+  CryptoServiceRsaPssVerify,
+  /// Parallel hash
+  CryptoServiceParallelHash256HashAll,
+  /// HMAC SHA256 (continued)
+  CryptoServiceHmacSha256All,
+  /// HMAC SHA384
+  CryptoServiceHmacSha384New,
+  CryptoServiceHmacSha384Free,
+  CryptoServiceHmacSha384SetKey,
+  CryptoServiceHmacSha384Duplicate,
+  CryptoServiceHmacSha384Update,
+  CryptoServiceHmacSha384Final,
+  CryptoServiceHmacSha384All,
+  /// HKDF (continued)
+  CryptoServiceHkdfSha256Extract,
+  CryptoServiceHkdfSha256Expand,
+  CryptoServiceHkdfSha384ExtractAndExpand,
+  CryptoServiceHkdfSha384Extract,
+  CryptoServiceHkdfSha384Expand,
+  /// Aead Aes GCM
+  CryptoServiceAeadAesGcmEncrypt,
+  CryptoServiceAeadAesGcmDecrypt,
+  /// Big Numbers
+  CryptoServiceBigNumInit,
+  CryptoServiceBigNumFromBin,
+  CryptoServiceBigNumToBin,
+  CryptoServiceBigNumFree,
+  CryptoServiceBigNumAdd,
+  CryptoServiceBigNumSub,
+  CryptoServiceBigNumMod,
+  CryptoServiceBigNumExpMod,
+  CryptoServiceBigNumInverseMod,
+  CryptoServiceBigNumDiv,
+  CryptoServiceBigNumMulMod,
+  CryptoServiceBigNumCmp,
+  CryptoServiceBigNumBits,
+  CryptoServiceBigNumBytes,
+  CryptoServiceBigNumIsWord,
+  CryptoServiceBigNumIsOdd,
+  CryptoServiceBigNumCopy,
+  CryptoServiceBigNumValueOne,
+  CryptoServiceBigNumRShift,
+  CryptoServiceBigNumConstTime,
+  CryptoServiceBigNumSqrMod,
+  CryptoServiceBigNumNewContext,
+  CryptoServiceBigNumContextFree,
+  CryptoServiceBigNumSetUint,
+  CryptoServiceBigNumAddMod,
+  /// EC
+  CryptoServiceEcGroupInit,
+  CryptoServiceEcGroupGetCurve,
+  CryptoServiceEcGroupGetOrder,
+  CryptoServiceEcGroupFree,
+  CryptoServiceEcPointInit,
+  CryptoServiceEcPointDeInit,
+  CryptoServiceEcPointGetAffineCoordinates,
+  CryptoServiceEcPointSetAffineCoordinates,
+  CryptoServiceEcPointAdd,
+  CryptoServiceEcPointMul,
+  CryptoServiceEcPointInvert,
+  CryptoServiceEcPointIsOnCurve,
+  CryptoServiceEcPointIsAtInfinity,
+  CryptoServiceEcPointEqual,
+  CryptoServiceEcPointSetCompressedCoordinates,
+  CryptoServiceEcNewByNid,
+  CryptoServiceEcFree,
+  CryptoServiceEcGenerateKey,
+  CryptoServiceEcGetPubKey,
+  CryptoServiceEcDhComputeKey,
+  /// TLS (continued)
+  CryptoServiceTlsShutdown,
+  /// TLS Set (continued)
+  CryptoServiceTlsSetHostPrivateKeyEx,
+  CryptoServiceTlsSetSignatureAlgoList,
+  CryptoServiceTlsSetEcCurve,
+  /// TLS Get (continued)
+  CryptoServiceTlsGetExportKey,
+  /// Ec (Continued)
+  CryptoServiceEcGetPublicKeyFromX509,
+  CryptoServiceEcGetPrivateKeyFromPem,
+  CryptoServiceEcDsaSign,
+  CryptoServiceEcDsaVerify,
+  /// X509 (Continued)
+  CryptoServiceX509GetVersion,
+  CryptoServiceX509GetSerialNumber,
+  CryptoServiceX509GetIssuerName,
+  CryptoServiceX509GetSignatureAlgorithm,
+  CryptoServiceX509GetExtensionData,
+  CryptoServiceX509GetExtendedKeyUsage,
+  CryptoServiceX509GetValidity,
+  CryptoServiceX509FormatDateTime,
+  CryptoServiceX509CompareDateTime,
+  CryptoServiceX509GetKeyUsage,
+  CryptoServiceX509VerifyCertChain,
+  CryptoServiceX509GetCertFromCertChain,
+  CryptoServiceAsn1GetTag,
+  CryptoServiceX509GetExtendedBasicConstraints,
+  CryptoServicePkcs1v2Decrypt,
+  CryptoServiceRsaOaepEncrypt,
+  CryptoServiceRsaOaepDecrypt,
+  /// TLS Set (Continued)
+  CryptoServiceTlsSetServerName,
+  CryptoServiceTlsSetSecurityLevel,
+  /// AES (Continued)
+  CryptoServiceAesEncrypt,
+  CryptoServiceAesDecrypt,
+  /// CAMELLIA
+  CryptoServiceCamelliaGetContextSize,
+  CryptoServiceCamelliaInit,
+  CryptoServiceCamelliaEncrypt,
+  CryptoServiceCamelliaDecrypt,
+  /// BIGNUM (Continued)
+  CryptoServiceBigNumContextStart,
+  CryptoServiceBigNumContextEnd,
+  CryptoServiceBigNumContextGet,
+  CryptoServiceBigNumMul,
+  CryptoServiceBigNumGcd,
+  CryptoServiceBigNumDiv2,
+  /// Ec (Continued)
+  CryptoServiceEcGroupInitGFp,
+  CryptoServiceEcGroupSetGenerator,
+  CryptoServiceEcPointMul2,
+  CryptoServiceEcPointsMul,
+  /// RSA PSS (Continued)
+  CryptoServiceRsaPssSignDigest,
+  CryptoServiceRsaPssVerifyDigest,
+  /// EdDSA
+  CryptoServiceEdDsaNewByNid,
+  CryptoServiceEdDsaFree,
+  CryptoServiceEdDsaSetPrivKey,
+  CryptoServiceEdDsaGeneratePubKey,
+  CryptoServiceEdDsaSetPubKey,
+  CryptoServiceEdDsaGetPubKey,
+  CryptoServiceEdDsaGetPublicKeyFromX509,
+  CryptoServiceEdDsaGetPrivateKeyFromPem,
+  CryptoServiceEdDsaSign,
+  CryptoServiceEdDsaVerify,
+  /// ML-DSA
+  CryptoServiceMlDsaNewByNid,
+  CryptoServiceMlDsaFree,
+  CryptoServiceMlDsaSetPrivKey,
+  CryptoServiceMlDsaGeneratePubKey,
+  CryptoServiceMlDsaSetPubKey,
+  CryptoServiceMlDsaGetPubKey,
+  CryptoServiceMlDsaGetPublicKeyFromX509,
+  CryptoServiceMlDsaGetPrivateKeyFromPem,
+  CryptoServiceMlDsaSign,
+  CryptoServiceMlDsaVerify,
+  /// SLH-DSA
+  CryptoServiceSlhDsaNewByNid,
+  CryptoServiceSlhDsaFree,
+  CryptoServiceSlhDsaSetPrivKey,
+  CryptoServiceSlhDsaGeneratePubKey,
+  CryptoServiceSlhDsaSetPubKey,
+  CryptoServiceSlhDsaGetPubKey,
+  CryptoServiceSlhDsaGetPublicKeyFromX509,
+  CryptoServiceSlhDsaGetPrivateKeyFromPem,
+  CryptoServiceSlhDsaSign,
+  CryptoServiceSlhDsaVerify,
+  /// Pkcs (Continued)
+  CryptoServicePkcs7Encrypt,
+  CryptoServicePkcs7Decrypt,
+  /// Ec (Continued)
+  CryptoServiceEcGetPublicKeyFromPem,
+  CryptoServiceEcPublicKeyToPEM,
+  CryptoServiceEcGetCurveNid,
+  /// HKDF (continued)
+  CryptoServiceHkdfSha512ExtractAndExpand,
+  CryptoServiceHkdfSha512Extract,
+  CryptoServiceHkdfSha512Expand,
 };

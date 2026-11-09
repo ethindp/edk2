@@ -1,7 +1,7 @@
 /** @file
   PCCT table parser
 
-  Copyright (c) 2021, Arm Limited.
+  Copyright (c) 2021 - 2024, Arm Limited. All rights reserved.
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
   @par Reference(s):
@@ -28,6 +28,7 @@ STATIC UINT8   *ExtendedPccSubspaceInterruptFlags;
   This function validates the length coded on 4 bytes of a shared memory range
 
   @param [in] Ptr     Pointer to the start of the field data.
+  @param [in] Length  Length of the field.
   @param [in] Context Pointer to context specific information e.g. this
                       could be a pointer to the ACPI table header.
 **/
@@ -35,8 +36,9 @@ STATIC
 VOID
 EFIAPI
 ValidateRangeLength4 (
-  IN UINT8  *Ptr,
-  IN VOID   *Context
+  IN UINT8   *Ptr,
+  IN UINT32  Length,
+  IN VOID    *Context
   )
 {
   if (*(UINT32 *)Ptr < MIN_EXT_PCC_SUBSPACE_MEM_RANGE_LEN) {
@@ -54,6 +56,7 @@ ValidateRangeLength4 (
   This function validates the length coded on 8 bytes of a shared memory range
 
   @param [in] Ptr     Pointer to the start of the field data.
+  @param [in] Length  Length of the field.
   @param [in] Context Pointer to context specific information e.g. this
                       could be a pointer to the ACPI table header.
 **/
@@ -61,8 +64,9 @@ STATIC
 VOID
 EFIAPI
 ValidateRangeLength8 (
-  IN UINT8  *Ptr,
-  IN VOID   *Context
+  IN UINT8   *Ptr,
+  IN UINT32  Length,
+  IN VOID    *Context
   )
 {
   if (*(UINT64 *)Ptr <= MIN_MEMORY_RANGE_LENGTH) {
@@ -80,6 +84,7 @@ ValidateRangeLength8 (
   This function validates address space for Memory/IO GAS.
 
   @param [in] Ptr     Pointer to the start of the field data.
+  @param [in] Length  Length of the field.
   @param [in] Context Pointer to context specific information e.g. this
                       could be a pointer to the ACPI table header.
 **/
@@ -87,14 +92,15 @@ STATIC
 VOID
 EFIAPI
 ValidatePccMemoryIoGas (
-  IN UINT8  *Ptr,
-  IN VOID   *Context
+  IN UINT8   *Ptr,
+  IN UINT32  Length,
+  IN VOID    *Context
   )
 {
   switch (*(UINT8 *)Ptr) {
- #if !(defined (MDE_CPU_ARM) || defined (MDE_CPU_AARCH64))
+ #if !(defined (MDE_CPU_AARCH64))
     case EFI_ACPI_6_4_SYSTEM_IO:
- #endif //if not (defined (MDE_CPU_ARM) || defined (MDE_CPU_AARCH64))
+ #endif //if not (defined (MDE_CPU_AARCH64))
     case EFI_ACPI_6_4_SYSTEM_MEMORY:
       return;
     default:
@@ -107,6 +113,7 @@ ValidatePccMemoryIoGas (
   This function validates address space for structures of types other than 0.
 
   @param [in] Ptr     Pointer to the start of the field data.
+  @param [in] Length  Length of the field.
   @param [in] Context Pointer to context specific information e.g. this
                       could be a pointer to the ACPI table header.
 **/
@@ -114,14 +121,15 @@ STATIC
 VOID
 EFIAPI
 ValidatePccGas (
-  IN UINT8  *Ptr,
-  IN VOID   *Context
+  IN UINT8   *Ptr,
+  IN UINT32  Length,
+  IN VOID    *Context
   )
 {
   switch (*(UINT8 *)Ptr) {
- #if !(defined (MDE_CPU_ARM) || defined (MDE_CPU_AARCH64))
+ #if !(defined (MDE_CPU_AARCH64))
     case EFI_ACPI_6_4_SYSTEM_IO:
- #endif //if not (defined (MDE_CPU_ARM) || defined (MDE_CPU_AARCH64))
+ #endif //if not (defined (MDE_CPU_AARCH64))
     case EFI_ACPI_6_4_FUNCTIONAL_FIXED_HARDWARE:
     case EFI_ACPI_6_4_SYSTEM_MEMORY:
       return;
@@ -135,6 +143,7 @@ ValidatePccGas (
   This function validates doorbell address space for type 4 structure.
 
   @param [in] Ptr     Pointer to the start of the field data.
+  @param [in] Length  Length of the field.
   @param [in] Context Pointer to context specific information e.g. this
                       could be a pointer to the ACPI table header.
 **/
@@ -142,11 +151,12 @@ STATIC
 VOID
 EFIAPI
 ValidatePccDoorbellGas (
-  IN UINT8  *Ptr,
-  IN VOID   *Context
+  IN UINT8   *Ptr,
+  IN UINT32  Length,
+  IN VOID    *Context
   )
 {
-  // For slave subspaces this field is optional, if not present the field
+  // For responder subspaces this field is optional, if not present the field
   // should just contain zeros.
   if (*PccSubspaceType == EFI_ACPI_6_4_PCCT_SUBSPACE_TYPE_4_EXTENDED_PCC) {
     if (IsZeroBuffer (
@@ -158,7 +168,7 @@ ValidatePccDoorbellGas (
     }
   }
 
-  ValidatePccGas (Ptr, Context);
+  ValidatePccGas (Ptr, Length, Context);
 }
 
 /**
@@ -166,6 +176,7 @@ ValidatePccDoorbellGas (
   type 4 structure.
 
   @param [in] Ptr     Pointer to the start of the field data.
+  @param [in] Length  Length of the field.
   @param [in] Context Pointer to context specific information e.g. this
                       could be a pointer to the ACPI table header.
 **/
@@ -173,8 +184,9 @@ STATIC
 VOID
 EFIAPI
 ValidatePccIntAckGas (
-  IN UINT8  *Ptr,
-  IN VOID   *Context
+  IN UINT8   *Ptr,
+  IN UINT32  Length,
+  IN VOID    *Context
   )
 {
   // If the subspace does not support interrupts or the interrupt is
@@ -196,13 +208,14 @@ ValidatePccIntAckGas (
     }
   }
 
-  ValidatePccGas (Ptr, Context);
+  ValidatePccGas (Ptr, Length, Context);
 }
 
 /**
   This function validates error status address space for type 4 structure.
 
   @param [in] Ptr     Pointer to the start of the field data.
+  @param [in] Length  Length of the field.
   @param [in] Context Pointer to context specific information e.g. this
                       could be a pointer to the ACPI table header.
 **/
@@ -210,22 +223,24 @@ STATIC
 VOID
 EFIAPI
 ValidatePccErrStatusGas (
-  IN UINT8  *Ptr,
-  IN VOID   *Context
+  IN UINT8   *Ptr,
+  IN UINT32  Length,
+  IN VOID    *Context
   )
 {
-  // This field is ignored by the OSPM on slave channels.
+  // This field is ignored by the OSPM on responder channels.
   if (*PccSubspaceType == EFI_ACPI_6_4_PCCT_SUBSPACE_TYPE_4_EXTENDED_PCC) {
     return;
   }
 
-  ValidatePccGas (Ptr, Context);
+  ValidatePccGas (Ptr, Length, Context);
 }
 
 /**
   This function validates platform interrupt flags for type 4 structure.
 
   @param [in] Ptr     Pointer to the start of the field data.
+  @param [in] Length  Length of the field.
   @param [in] Context Pointer to context specific information e.g. this
                       could be a pointer to the ACPI table header.
 **/
@@ -233,11 +248,12 @@ STATIC
 VOID
 EFIAPI
 ValidatePlatInterrupt (
-  IN UINT8  *Ptr,
-  IN VOID   *Context
+  IN UINT8   *Ptr,
+  IN UINT32  Length,
+  IN VOID    *Context
   )
 {
-  // If a slave subspace is present in the PCCT, then the global Platform
+  // If a responder subspace is present in the PCCT, then the global Platform
   // Interrupt flag must be set to 1.
   if ((*PccSubspaceType == EFI_ACPI_6_4_PCCT_SUBSPACE_TYPE_4_EXTENDED_PCC) &&
       ((*PccGlobalFlags & EFI_ACPI_6_4_PCCT_FLAGS_PLATFORM_INTERRUPT) !=

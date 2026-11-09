@@ -17,7 +17,7 @@
 #
 # The following information is for reference only and not required by the build tools.
 #
-#  VALID_ARCHITECTURES           = IA32 X64 EBC
+#  VALID_ARCHITECTURES           = X64 EBC
 #
 
 [Sources]
@@ -56,11 +56,14 @@
   PlatformBmPrintScLib
   Tcg2PhysicalPresenceLib
   XenPlatformLib
+  QemuFwCfgSimpleParserLib
+  PlatformBootManagerCommonLib
 
 [Pcd]
   gUefiOvmfPkgTokenSpaceGuid.PcdEmuVariableEvent
   gUefiOvmfPkgTokenSpaceGuid.PcdOvmfFlashVariablesEnable
   gUefiOvmfPkgTokenSpaceGuid.PcdOvmfHostBridgePciDevId
+  gUefiOvmfPkgTokenSpaceGuid.PcdBootRestrictToFirmware
   gEfiMdeModulePkgTokenSpaceGuid.PcdAcpiS3Enable
   gEfiMdePkgTokenSpaceGuid.PcdPlatformBootTimeOut
   gEfiMdePkgTokenSpaceGuid.PcdUartDefaultBaudRate         ## CONSUMES
@@ -68,12 +71,13 @@
   gEfiMdePkgTokenSpaceGuid.PcdUartDefaultParity           ## CONSUMES
   gEfiMdePkgTokenSpaceGuid.PcdUartDefaultStopBits         ## CONSUMES
 
-[Pcd.IA32, Pcd.X64]
+[Pcd.X64]
   gEfiMdePkgTokenSpaceGuid.PcdFSBClock
 
 [Protocols]
   gEfiDecompressProtocolGuid
   gEfiPciRootBridgeIoProtocolGuid
+  gVirtioDeviceProtocolGuid
   gEfiS3SaveStateProtocolGuid                   # PROTOCOL SOMETIMES_CONSUMED
   gEfiDxeSmmReadyToLockProtocolGuid             # PROTOCOL SOMETIMES_PRODUCED
   gEfiLoadedImageProtocolGuid                   # PROTOCOL SOMETIMES_PRODUCED
@@ -84,3 +88,5 @@
   gEfiGlobalVariableGuid
   gRootBridgesConnectedEventGroupGuid
   gUefiShellFileGuid
+  gGrubFileGuid
+  gUiAppFileGuid

@@ -197,6 +197,10 @@ Ip4Config2ReadConfigData (
   UINTN                    Index;
   IP4_CONFIG2_DATA_RECORD  DataRecord;
   CHAR8                    *Data;
+  UINTN                    RecordArraySize;
+  UINTN                    DataOffset;
+
+  Variable = NULL;
 
   //
   // Try to read the configuration variable.
@@ -229,25 +233,58 @@ Ip4Config2ReadConfigData (
     if (EFI_ERROR (Status) || ((UINT16)(~NetblockChecksum ((UINT8 *)Variable, (UINT32)VarSize)) != 0)) {
       //
       // GetVariable still error or the variable is corrupted.
-      // Fall back to the default value.
       //
-      FreePool (Variable);
-
-      //
-      // Remove the problematic variable and return EFI_NOT_FOUND, a new
-      // variable will be set again.
-      //
-      gRT->SetVariable (
-             VarName,
-             &gEfiIp4Config2ProtocolGuid,
-             IP4_CONFIG2_VARIABLE_ATTRIBUTE,
-             0,
-             NULL
-             );
-
-      return EFI_NOT_FOUND;
+      goto Error;
     }
 
+    //
+    // Validate the header and DataRecord array fit in the returned buffer
+    // before using DataRecordCount as a loop bound.
+    //
+    if (VarSize < OFFSET_OF (IP4_CONFIG2_VARIABLE, DataRecord)) {
+      goto Error;
+    }
+
+    RecordArraySize = VarSize - OFFSET_OF (IP4_CONFIG2_VARIABLE, DataRecord);
+    if (Variable->DataRecordCount > RecordArraySize / sizeof (IP4_CONFIG2_DATA_RECORD)) {
+      goto Error;
+    }
+
+    DataOffset = OFFSET_OF (IP4_CONFIG2_VARIABLE, DataRecord) +
+                 Variable->DataRecordCount * sizeof (IP4_CONFIG2_DATA_RECORD);
+
+    for (Index = 0; Index < Variable->DataRecordCount; Index++) {
+      CopyMem (&DataRecord, &Variable->DataRecord[Index], sizeof (DataRecord));
+
+      if ((UINT32)DataRecord.DataType >= Ip4Config2DataTypeMaximum) {
+        goto Error;
+      }
+
+      if ((DataRecord.Offset < DataOffset) ||
+          (DataRecord.Offset > VarSize) ||
+          (DataRecord.DataSize > VarSize - DataRecord.Offset))
+      {
+        goto Error;
+      }
+
+      DataItem = &Instance->DataItem[DataRecord.DataType];
+      if (DATA_ATTRIB_SET (DataItem->Attribute, DATA_ATTRIB_VOLATILE)) {
+        goto Error;
+      }
+
+      if (DATA_ATTRIB_SET (DataItem->Attribute, DATA_ATTRIB_SIZE_FIXED) &&
+          (DataItem->DataSize != DataRecord.DataSize)
+          )
+      {
+        goto Error;
+      }
+    }
+
+    //
+    // Apply records only after the entire variable has been validated so a
+    // later corrupt record cannot leave Instance->DataItem[] half-updated
+    // before Error: deletes the variable and returns EFI_NOT_FOUND.
+    //
     for (Index = 0; Index < Variable->DataRecordCount; Index++) {
       CopyMem (&DataRecord, &Variable->DataRecord[Index], sizeof (DataRecord));
 
@@ -287,6 +324,28 @@ Ip4Config2ReadConfigData (
   }
 
   return Status;
+
+Error:
+  //
+  // Fall back to the default value.
+  //
+  if (Variable != NULL) {
+    FreePool (Variable);
+  }
+
+  //
+  // Remove the problematic variable and return EFI_NOT_FOUND, a new
+  // variable will be set again.
+  //
+  gRT->SetVariable (
+         VarName,
+         &gEfiIp4Config2ProtocolGuid,
+         IP4_CONFIG2_VARIABLE_ATTRIBUTE,
+         0,
+         NULL
+         );
+
+  return EFI_NOT_FOUND;
 }
 
 /**
@@ -935,6 +994,7 @@ Ip4StartAutoConfig (
 
   if (Instance->Dhcp4SbNotifyEvent != NULL) {
     gBS->CloseEvent (Instance->Dhcp4SbNotifyEvent);
+    Instance->Dhcp4SbNotifyEvent = NULL;
   }
 
   Status = gBS->OpenProtocol (
@@ -946,16 +1006,7 @@ Ip4StartAutoConfig (
                   EFI_OPEN_PROTOCOL_BY_DRIVER
                   );
   if (EFI_ERROR (Status)) {
-    NetLibDestroyServiceChild (
-      IpSb->Controller,
-      IpSb->Image,
-      &gEfiDhcp4ServiceBindingProtocolGuid,
-      Instance->Dhcp4Handle
-      );
-
-    Instance->Dhcp4Handle = NULL;
-
-    return Status;
+    goto Error;
   }
 
   //
@@ -964,6 +1015,10 @@ Ip4StartAutoConfig (
   //
   Dhcp4  = Instance->Dhcp4;
   Status = Dhcp4->GetModeData (Dhcp4, &Dhcp4Mode);
+  if (EFI_ERROR (Status)) {
+    goto Error;
+  }
+
   if (Dhcp4Mode.State == Dhcp4Bound) {
     Ip4Config2OnDhcp4Complete (NULL, Instance);
 
@@ -986,25 +1041,7 @@ Ip4StartAutoConfig (
 
   Status = Dhcp4->Configure (Dhcp4, &Dhcp4Mode.ConfigData);
   if (EFI_ERROR (Status)) {
-    gBS->CloseProtocol (
-           Instance->Dhcp4Handle,
-           &gEfiDhcp4ProtocolGuid,
-           IpSb->Image,
-           IpSb->Controller
-           );
-
-    NetLibDestroyServiceChild (
-      IpSb->Controller,
-      IpSb->Image,
-      &gEfiDhcp4ServiceBindingProtocolGuid,
-      Instance->Dhcp4Handle
-      );
-
-    Instance->Dhcp4 = NULL;
-
-    Instance->Dhcp4Handle = NULL;
-
-    return Status;
+    goto Error;
   }
 
   //
@@ -1035,6 +1072,29 @@ Ip4StartAutoConfig (
   DispatchDpc ();
 
   return EFI_SUCCESS;
+
+Error:
+  if (Instance->Dhcp4 != NULL) {
+    gBS->CloseProtocol (
+           Instance->Dhcp4Handle,
+           &gEfiDhcp4ProtocolGuid,
+           IpSb->Image,
+           IpSb->Controller
+           );
+
+    Instance->Dhcp4 = NULL;
+  }
+
+  NetLibDestroyServiceChild (
+    IpSb->Controller,
+    IpSb->Image,
+    &gEfiDhcp4ServiceBindingProtocolGuid,
+    Instance->Dhcp4Handle
+    );
+
+  Instance->Dhcp4Handle = NULL;
+
+  return Status;
 }
 
 /**

@@ -8,8 +8,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _SD_MMC_PCI_HC_DXE_H_
-#define _SD_MMC_PCI_HC_DXE_H_
+#pragma once
 
 #include <Uefi.h>
 
@@ -24,6 +23,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Library/MemoryAllocationLib.h>
 #include <Library/UefiLib.h>
 #include <Library/DevicePathLib.h>
+#include <Library/PcdLib.h>
 
 #include <Protocol/DevicePath.h>
 #include <Protocol/PciIo.h>
@@ -49,7 +49,7 @@ extern EDKII_SD_MMC_OVERRIDE  *mOverride;
 //
 // Generic time out value, 1 microsecond as unit.
 //
-#define SD_MMC_HC_GENERIC_TIMEOUT  1 * 1000 * 1000
+#define SD_MMC_HC_GENERIC_TIMEOUT  (PcdGet32 (PcdSdMmcGenericTimeoutValue))
 
 //
 // SD/MMC async transfer timer interval, set by experience.
@@ -863,5 +863,3 @@ SdMmcHcInitHost (
   IN SD_MMC_HC_PRIVATE_DATA  *Private,
   IN UINT8                   Slot
   );
-
-#endif

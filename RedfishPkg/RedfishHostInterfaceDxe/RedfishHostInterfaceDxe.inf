@@ -19,10 +19,6 @@
   VERSION_STRING                 = 1.0
   ENTRY_POINT                    = RedfishHostInterfaceDxeEntryPoint
 
-#
-#  VALID_ARCHITECTURES           = IA32 X64 ARM AARCH64 RISCV64
-#
-
 [Sources]
   RedfishHostInterfaceDxe.c
 
@@ -43,7 +39,8 @@
   UefiLib
 
 [Protocols]
-  gEfiSmbiosProtocolGuid                ## TO_START
+  gEfiSmbiosProtocolGuid                       ## TO_START
+  gEdkIIRedfishHostInterfaceReadyProtocolGuid  ## PRODUCED
 
 [Depex]
   gEfiSmbiosProtocolGuid

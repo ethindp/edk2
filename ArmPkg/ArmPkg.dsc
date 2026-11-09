@@ -2,10 +2,11 @@
 # ARM processor package.
 #
 # Copyright (c) 2009 - 2010, Apple Inc. All rights reserved.<BR>
-# Copyright (c) 2011 - 2021, Arm Limited. All rights reserved.<BR>
+# Copyright (c) 2011 - 2026, Arm Limited. All rights reserved.<BR>
 # Copyright (c) 2016, Linaro Ltd. All rights reserved.<BR>
 # Copyright (c) Microsoft Corporation.<BR>
 # Copyright (c) 2021, Ampere Computing LLC. All rights reserved.
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.<BR>
 #
 #    SPDX-License-Identifier: BSD-2-Clause-Patent
 #
@@ -22,7 +23,7 @@
   PLATFORM_VERSION               = 0.1
   DSC_SPECIFICATION              = 0x00010005
   OUTPUT_DIRECTORY               = Build/Arm
-  SUPPORTED_ARCHITECTURES        = ARM|AARCH64
+  SUPPORTED_ARCHITECTURES        = AARCH64
   BUILD_TARGETS                  = DEBUG|RELEASE|NOOPT
   SKUID_IDENTIFIER               = DEFAULT
 
@@ -36,6 +37,7 @@
 !include MdePkg/MdeLibs.dsc.inc
 
 [LibraryClasses.common]
+  ArmSmcccSocIdLib|ArmPkg/Library/ArmSmcccSocIdLib/ArmSmcccSocIdLib.inf
   BaseLib|MdePkg/Library/BaseLib/BaseLib.inf
   BaseMemoryLib|MdePkg/Library/BaseMemoryLib/BaseMemoryLib.inf
   BootLogoLib|MdeModulePkg/Library/BootLogoLib/BootLogoLib.inf
@@ -63,22 +65,18 @@
 
   SemihostLib|ArmPkg/Library/SemihostLib/SemihostLib.inf
   DxeServicesTableLib|MdePkg/Library/DxeServicesTableLib/DxeServicesTableLib.inf
-  DefaultExceptionHandlerLib|ArmPkg/Library/DefaultExceptionHandlerLib/DefaultExceptionHandlerLib.inf
-  CpuExceptionHandlerLib|ArmPkg/Library/ArmExceptionLib/ArmExceptionLib.inf
+  CpuExceptionHandlerLib|UefiCpuPkg/Library/CpuExceptionHandlerLib/DxeCpuExceptionHandlerLib.inf
 
   CpuLib|MdePkg/Library/BaseCpuLib/BaseCpuLib.inf
-  ArmGicLib|ArmPkg/Drivers/ArmGic/ArmGicLib.inf
-  ArmGicArchLib|ArmPkg/Library/ArmGicArchLib/ArmGicArchLib.inf
   ArmGenericTimerCounterLib|ArmPkg/Library/ArmGenericTimerPhyCounterLib/ArmGenericTimerPhyCounterLib.inf
-  ArmSmcLib|ArmPkg/Library/ArmSmcLib/ArmSmcLib.inf
-  ArmDisassemblerLib|ArmPkg/Library/ArmDisassemblerLib/ArmDisassemblerLib.inf
+  ArmSvcLib|MdePkg/Library/ArmSvcLib/ArmSvcLib.inf
+  ArmMonitorLib|ArmPkg/Library/ArmMonitorLib/ArmMonitorLib.inf
+  ArmSmcLib|MdePkg/Library/ArmSmcLib/ArmSmcLib.inf
   OpteeLib|ArmPkg/Library/OpteeLib/OpteeLib.inf
 
   UefiApplicationEntryPoint|MdePkg/Library/UefiApplicationEntryPoint/UefiApplicationEntryPoint.inf
   PerformanceLib|MdePkg/Library/BasePerformanceLibNull/BasePerformanceLibNull.inf
   SerialPortLib|MdePkg/Library/BaseSerialPortLibNull/BaseSerialPortLibNull.inf
-
-  FdtLib|EmbeddedPkg/Library/FdtLib/FdtLib.inf
 
   ShellLib|ShellPkg/Library/UefiShellLib/UefiShellLib.inf
   FileHandleLib|MdePkg/Library/UefiFileHandleLib/UefiFileHandleLib.inf
@@ -86,10 +84,12 @@
 
   IoLib|MdePkg/Library/BaseIoLibIntrinsic/BaseIoLibIntrinsic.inf
 
-  ArmLib|ArmPkg/Library/ArmLib/ArmBaseLib.inf
-  ArmMmuLib|ArmPkg/Library/ArmMmuLib/ArmMmuBaseLib.inf
+  ArmLib|MdePkg/Library/ArmLib/ArmBaseLib.inf
+  ArmMmuLib|UefiCpuPkg/Library/ArmMmuLib/ArmMmuBaseLib.inf
+  ArmTransferListLib|MdePkg/Library/ArmTransferListLib/ArmTransferListLib.inf
+  ArmFfaLib|MdeModulePkg/Library/ArmFfaLib/ArmFfaDxeLib.inf
 
-  ArmMtlLib|ArmPkg/Library/ArmMtlNullLib/ArmMtlNullLib.inf
+  ArmMtlLib|ArmPkg/Library/ArmMtlLibNull/ArmMtlLibNull.inf
 
   OemMiscLib|ArmPkg/Universal/Smbios/OemMiscLibNull/OemMiscLibNull.inf
 
@@ -99,70 +99,68 @@
   MemoryAllocationLib|MdePkg/Library/PeiMemoryAllocationLib/PeiMemoryAllocationLib.inf
   PeiServicesLib|MdePkg/Library/PeiServicesLib/PeiServicesLib.inf
   PeiServicesTablePointerLib|MdePkg/Library/PeiServicesTablePointerLib/PeiServicesTablePointerLib.inf
+  ArmFfaLib|MdeModulePkg/Library/ArmFfaLib/ArmFfaPeiLib.inf
 
-[LibraryClasses.ARM, LibraryClasses.AARCH64]
-  NULL|ArmPkg/Library/CompilerIntrinsicsLib/CompilerIntrinsicsLib.inf
+[LibraryClasses.common.MM_CORE_STANDALONE]
+  StandaloneMmCoreEntryPoint|ArmPkg/Library/ArmStandaloneMmCoreEntryPoint/ArmStandaloneMmCoreEntryPoint.inf
+  HobLib|StandaloneMmPkg/Library/StandaloneMmHobLib/StandaloneMmHobLib.inf
 
-  # Add support for GCC stack protector
-  NULL|MdePkg/Library/BaseStackCheckLib/BaseStackCheckLib.inf
+[LibraryClasses.common.MM_STANDALONE]
+  StandaloneMmDriverEntryPoint|MdePkg/Library/StandaloneMmDriverEntryPoint/StandaloneMmDriverEntryPoint.inf
+  HobLib|StandaloneMmPkg/Library/StandaloneMmHobLib/StandaloneMmHobLib.inf
+  MmServicesTableLib|MdePkg/Library/StandaloneMmServicesTableLib/StandaloneMmServicesTableLib.inf
 
 [Components.common]
   ArmPkg/Library/ArmCacheMaintenanceLib/ArmCacheMaintenanceLib.inf
-  ArmPkg/Library/ArmDisassemblerLib/ArmDisassemblerLib.inf
-  ArmPkg/Library/CompilerIntrinsicsLib/CompilerIntrinsicsLib.inf
+  ArmPkg/Library/ArmPsciResetSystemLib/ArmPsciResetSystemLib.inf
+  ArmPkg/Library/ArmSmcccSocIdLib/ArmSmcccSocIdLib.inf
   ArmPkg/Library/DebugAgentSymbolsBaseLib/DebugAgentSymbolsBaseLib.inf
   ArmPkg/Library/DebugPeCoffExtraActionLib/DebugPeCoffExtraActionLib.inf
-  ArmPkg/Library/DefaultExceptionHandlerLib/DefaultExceptionHandlerLib.inf
-  ArmPkg/Library/RvdPeCoffExtraActionLib/RvdPeCoffExtraActionLib.inf
   ArmPkg/Library/SemiHostingDebugLib/SemiHostingDebugLib.inf
   ArmPkg/Library/SemiHostingSerialPortLib/SemiHostingSerialPortLib.inf
   ArmPkg/Library/SemihostLib/SemihostLib.inf
-  ArmPkg/Library/ArmPsciResetSystemLib/ArmPsciResetSystemLib.inf
-  ArmPkg/Library/ArmExceptionLib/ArmExceptionLib.inf
-  ArmPkg/Library/ArmExceptionLib/ArmRelocateExceptionLib.inf
 
   ArmPkg/Drivers/CpuDxe/CpuDxe.inf
   ArmPkg/Drivers/CpuPei/CpuPei.inf
-  ArmPkg/Drivers/ArmGic/ArmGicDxe.inf
-  ArmPkg/Drivers/ArmGic/ArmGicLib.inf
+  ArmPkg/Drivers/ArmGicDxe/ArmGicDxe.inf
+  ArmPkg/Drivers/ArmGicDxe/ArmGicV2Dxe.inf
   ArmPkg/Drivers/GenericWatchdogDxe/GenericWatchdogDxe.inf
   ArmPkg/Drivers/TimerDxe/TimerDxe.inf
 
   ArmPkg/Library/ArmGenericTimerPhyCounterLib/ArmGenericTimerPhyCounterLib.inf
   ArmPkg/Library/ArmGenericTimerVirtCounterLib/ArmGenericTimerVirtCounterLib.inf
 
-  ArmPkg/Library/ArmSmcLib/ArmSmcLib.inf
-  ArmPkg/Library/ArmSmcLibNull/ArmSmcLibNull.inf
+  ArmPkg/Library/ArmTrngLib/ArmTrngLib.inf
   ArmPkg/Library/ArmHvcLib/ArmHvcLib.inf
-  ArmPkg/Library/ArmSvcLib/ArmSvcLib.inf
+  ArmPkg/Library/ArmHvcLibNull/ArmHvcLibNull.inf
+  ArmPkg/Library/ArmMonitorLib/ArmMonitorLib.inf
   ArmPkg/Library/OpteeLib/OpteeLib.inf
-
   ArmPkg/Filesystem/SemihostFs/SemihostFs.inf
-
-  ArmPkg/Library/ArmMmuLib/ArmMmuBaseLib.inf
 
   ArmPkg/Drivers/ArmPciCpuIo2Dxe/ArmPciCpuIo2Dxe.inf
   ArmPkg/Library/ArmArchTimerLib/ArmArchTimerLib.inf
-  ArmPkg/Library/ArmGicArchLib/ArmGicArchLib.inf
-  ArmPkg/Library/ArmGicArchSecLib/ArmGicArchSecLib.inf
-  ArmPkg/Library/ArmLib/ArmBaseLib.inf
-  ArmPkg/Library/ArmMtlNullLib/ArmMtlNullLib.inf
-  ArmPkg/Library/ArmSoftFloatLib/ArmSoftFloatLib.inf
-  ArmPkg/Library/ArmSmcPsciResetSystemLib/ArmSmcPsciResetSystemLib.inf
+  ArmPkg/Library/ArmMtlLibNull/ArmMtlLibNull.inf
   ArmPkg/Library/PeiServicesTablePointerLib/PeiServicesTablePointerLib.inf
   ArmPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
   ArmPkg/Library/LinuxBootBootManagerLib/LinuxBootBootManagerLib.inf
 
-  ArmPkg/Drivers/ArmCrashDumpDxe/ArmCrashDumpDxe.inf
   ArmPkg/Drivers/ArmScmiDxe/ArmScmiDxe.inf
 
   ArmPkg/Universal/Smbios/ProcessorSubClassDxe/ProcessorSubClassDxe.inf
   ArmPkg/Universal/Smbios/SmbiosMiscDxe/SmbiosMiscDxe.inf
   ArmPkg/Universal/Smbios/OemMiscLibNull/OemMiscLibNull.inf
 
-[Components.AARCH64]
-  ArmPkg/Drivers/MmCommunicationDxe/MmCommunication.inf
-  ArmPkg/Library/ArmMmuLib/ArmMmuPeiLib.inf
+  ArmPkg/Drivers/MmCommunicationPei/MmCommunicationPei.inf
 
-[Components.AARCH64, Components.ARM]
+  ArmPkg/Library/FmpDevicePsaFwuLib/FmpDevicePsaFwuLib.inf
+
+  ArmPkg/Library/ArmStandaloneMmCoreEntryPoint/ArmStandaloneMmCoreEntryPoint.inf
+
+  ArmPkg/Drivers/StandaloneMmCpu/StandaloneMmCpu.inf
+
+  ArmPkg/Drivers/ArmCrashDumpDxe/ArmCrashDumpDxe.inf
+  ArmPkg/Drivers/ArmGicDxe/ArmGicV3Dxe.inf
+  ArmPkg/Drivers/ArmPsciMpServicesDxe/ArmPsciMpServicesDxe.inf
+  ArmPkg/Drivers/MmCommunicationDxe/MmCommunication.inf
+
   ArmPkg/Library/StandaloneMmMmuLib/ArmMmuStandaloneMmLib.inf

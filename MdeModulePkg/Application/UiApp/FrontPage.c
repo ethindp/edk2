@@ -17,7 +17,6 @@ EFI_GUID  mFrontPageGuid = FRONT_PAGE_FORMSET_GUID;
 BOOLEAN  mResetRequired = FALSE;
 
 EFI_FORM_BROWSER2_PROTOCOL  *gFormBrowser2;
-CHAR8                       *mLanguageString;
 BOOLEAN                     mModeInitialized = FALSE;
 //
 // Boot video resolution and text mode.
@@ -204,10 +203,17 @@ UpdateFrontPageForm (
   // Allocate space for creation of UpdateData Buffer
   //
   StartOpCodeHandle = HiiAllocateOpCodeHandle ();
-  ASSERT (StartOpCodeHandle != NULL);
+  if (StartOpCodeHandle == NULL) {
+    ASSERT (StartOpCodeHandle != NULL);
+    return;
+  }
 
   EndOpCodeHandle = HiiAllocateOpCodeHandle ();
-  ASSERT (EndOpCodeHandle != NULL);
+  if (EndOpCodeHandle == NULL) {
+    ASSERT (EndOpCodeHandle != NULL);
+    goto Exit;
+  }
+
   //
   // Create Hii Extend Label OpCode as the start opcode
   //
@@ -237,8 +243,10 @@ UpdateFrontPageForm (
     EndOpCodeHandle
     );
 
-  HiiFreeOpCodeHandle (StartOpCodeHandle);
   HiiFreeOpCodeHandle (EndOpCodeHandle);
+Exit:
+  HiiFreeOpCodeHandle (StartOpCodeHandle);
+  return;
 }
 
 /**
@@ -967,7 +975,10 @@ InitializeUserInterface (
   // Install customized fonts needed by Front Page
   //
   HiiHandle = ExportFonts ();
-  ASSERT (HiiHandle != NULL);
+  if (HiiHandle == NULL) {
+    ASSERT (HiiHandle != NULL);
+    return EFI_NOT_FOUND;
+  }
 
   InitializeStringSupport ();
 
@@ -1031,11 +1042,6 @@ UiEntry (
   CallFrontPage ();
 
   FreeFrontPage ();
-
-  if (mLanguageString != NULL) {
-    FreePool (mLanguageString);
-    mLanguageString = NULL;
-  }
 
   //
   // Will leave browser, check any reset required change is applied? if yes, reset system

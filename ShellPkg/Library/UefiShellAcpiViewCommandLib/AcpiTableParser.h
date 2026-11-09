@@ -5,13 +5,12 @@
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#ifndef ACPITABLEPARSER_H_
-#define ACPITABLEPARSER_H_
+#pragma once
 
 /**
   The maximum number of ACPI table parsers.
 */
-#define MAX_ACPI_TABLE_PARSERS  32
+#define MAX_ACPI_TABLE_PARSERS  128
 
 /** An invalid/NULL signature value.
 */
@@ -123,5 +122,3 @@ GetParser (
   IN  UINT32                 Signature,
   OUT PARSE_ACPI_TABLE_PROC  *ParserProc
   );
-
-#endif // ACPITABLEPARSER_H_

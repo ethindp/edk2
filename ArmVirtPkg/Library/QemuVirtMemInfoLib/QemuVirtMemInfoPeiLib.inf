@@ -26,22 +26,29 @@
   EmbeddedPkg/EmbeddedPkg.dec
   MdeModulePkg/MdeModulePkg.dec
   MdePkg/MdePkg.dec
+  OvmfPkg/OvmfPkg.dec
+  UefiCpuPkg/UefiCpuPkg.dec
 
 [LibraryClasses]
   ArmLib
+  ArmMmuLib
+  BaseLib
   BaseMemoryLib
   DebugLib
   FdtLib
-  PcdLib
+  FdtSerialPortAddressLib
   MemoryAllocationLib
 
+[Guids]
+  gArmVirtSystemMemorySizeGuid
+
 [Pcd]
-  gArmTokenSpaceGuid.PcdFdBaseAddress
-  gArmTokenSpaceGuid.PcdFvBaseAddress
-  gArmTokenSpaceGuid.PcdSystemMemoryBase
   gArmTokenSpaceGuid.PcdSystemMemorySize
 
 [FixedPcd]
+  gArmTokenSpaceGuid.PcdFdBaseAddress
+  gArmTokenSpaceGuid.PcdFvBaseAddress
+  gArmTokenSpaceGuid.PcdSystemMemoryBase
   gArmTokenSpaceGuid.PcdFdSize
   gArmTokenSpaceGuid.PcdFvSize
-  gArmVirtTokenSpaceGuid.PcdDeviceTreeInitialBaseAddress
+  gUefiOvmfPkgTokenSpaceGuid.PcdDeviceTreeInitialBaseAddress

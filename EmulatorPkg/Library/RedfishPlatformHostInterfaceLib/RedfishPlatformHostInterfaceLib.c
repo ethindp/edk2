@@ -3,6 +3,8 @@
 
   Copyright (c) 2019, Intel Corporation. All rights reserved.<BR>
   (C) Copyright 2020 Hewlett Packard Enterprise Development LP<BR>
+  Copyright (C) 2022 Advanced Micro Devices, Inc. All rights reserved.<BR>
+  Copyright (c) 2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -23,8 +25,6 @@
 #include <Pcd/RestExServiceDevicePath.h>
 #include <Guid/GlobalVariable.h>
 
-#define VERBOSE_COLUME_SIZE  (16)
-
 REDFISH_OVER_IP_PROTOCOL_DATA  *mRedfishOverIpProtocolData;
 UINT8                          mRedfishProtocolDataSize;
 
@@ -41,12 +41,10 @@ GetMacAddressInformation (
   OUT EFI_MAC_ADDRESS  *MacAddress
   )
 {
-  MAC_ADDR_DEVICE_PATH              *Mac;
   REST_EX_SERVICE_DEVICE_PATH_DATA  *RestExServiceDevicePathData;
   EFI_DEVICE_PATH_PROTOCOL          *RestExServiceDevicePath;
   MAC_ADDR_DEVICE_PATH              *MacAddressDevicePath;
 
-  Mac                         = NULL;
   RestExServiceDevicePathData = NULL;
   RestExServiceDevicePath     = NULL;
 
@@ -228,56 +226,6 @@ InternalDumpIp6Addr (
 }
 
 /**
-  Dump data
-
-  @param[in] Data Pointer to data.
-  @param[in] Size size of data to dump.
-**/
-VOID
-InternalDumpData (
-  IN UINT8  *Data,
-  IN UINTN  Size
-  )
-{
-  UINTN  Index;
-
-  for (Index = 0; Index < Size; Index++) {
-    DEBUG ((DEBUG_VERBOSE, "%02x ", (UINTN)Data[Index]));
-  }
-}
-
-/**
-  Dump hex data
-
-  @param[in] Data Pointer to hex data.
-  @param[in] Size size of hex data to dump.
-**/
-VOID
-InternalDumpHex (
-  IN UINT8  *Data,
-  IN UINTN  Size
-  )
-{
-  UINTN  Index;
-  UINTN  Count;
-  UINTN  Left;
-
-  Count = Size / VERBOSE_COLUME_SIZE;
-  Left  = Size % VERBOSE_COLUME_SIZE;
-  for (Index = 0; Index < Count; Index++) {
-    InternalDumpData (Data + Index * VERBOSE_COLUME_SIZE, VERBOSE_COLUME_SIZE);
-    DEBUG ((DEBUG_VERBOSE, "\n"));
-  }
-
-  if (Left != 0) {
-    InternalDumpData (Data + Index * VERBOSE_COLUME_SIZE, Left);
-    DEBUG ((DEBUG_VERBOSE, "\n"));
-  }
-
-  DEBUG ((DEBUG_VERBOSE, "\n"));
-}
-
-/**
   Dump Redfish over IP protocol data
 
   @param[in] RedfishProtocolData     Pointer to REDFISH_OVER_IP_PROTOCOL_DATA
@@ -292,7 +240,7 @@ DumpRedfishIpProtocolData (
   CHAR16  Hostname[16];
 
   DEBUG ((DEBUG_VERBOSE, "RedfishProtocolData: \n"));
-  InternalDumpHex ((UINT8 *)RedfishProtocolData, RedfishProtocolDataSize);
+  DUMP_HEX (DEBUG_VERBOSE, 0, RedfishProtocolData, RedfishProtocolDataSize, "");
 
   DEBUG ((DEBUG_VERBOSE, "Parsing as below: \n"));
 
@@ -350,7 +298,7 @@ DumpRedfishIpProtocolData (
   @param[out] RedfishProtocolData  Pointer to retrieve REDFISH_OVER_IP_PROTOCOL_DATA.
   @param[out] RedfishProtocolDataSize  Size of REDFISH_OVER_IP_PROTOCOL_DATA.
 
-  @retval EFI_SUCESS   REDFISH_OVER_IP_PROTOCOL_DATA is returned successfully.
+  @retval EFI_SUCCESS  REDFISH_OVER_IP_PROTOCOL_DATA is returned successfully.
 **/
 EFI_STATUS
 GetRedfishRecordFromVariable (
@@ -537,10 +485,50 @@ RedfishPlatformHostInterfaceConstructor (
   EFI_STATUS  Status;
 
   Status = GetRedfishRecordFromVariable (&mRedfishOverIpProtocolData, &mRedfishProtocolDataSize);
-  DEBUG ((DEBUG_INFO, "%a: GetRedfishRecordFromVariable() - %r\n", __FUNCTION__, Status));
+  DEBUG ((DEBUG_INFO, "%a: GetRedfishRecordFromVariable() - %r\n", __func__, Status));
   if (!EFI_ERROR (Status)) {
     DumpRedfishIpProtocolData (mRedfishOverIpProtocolData, mRedfishProtocolDataSize);
   }
 
   return EFI_SUCCESS;
+}
+
+/**
+  Get the EFI protocol GUID installed by platform library which
+  indicates the necessary information is ready for building
+  SMBIOS 42h record.
+
+  @param[out] InformationReadinessGuid  Pointer to retrive the protocol
+                                        GUID.
+
+  @retval EFI_SUCCESS          Notification is required for building up
+                               SMBIOS type 42h record.
+  @retval EFI_UNSUPPORTED      Notification is not required for building up
+                               SMBIOS type 42h record.
+  @retval EFI_ALREADY_STARTED  Platform host information is already ready.
+  @retval Others               Other errors.
+**/
+EFI_STATUS
+RedfishPlatformHostInterfaceNotification (
+  OUT EFI_GUID  **InformationReadinessGuid
+  )
+{
+  return EFI_UNSUPPORTED;
+}
+
+/**
+  Get USB device serial number.
+
+  @param[out] SerialNumber    Pointer to retrieve complete serial number.
+                              It is the responsibility of the caller to free the allocated
+                              memory for serial number.
+  @retval EFI_SUCCESS         Serial number is returned.
+  @retval Others              Failed to get the serial number
+**/
+EFI_STATUS
+RedfishPlatformHostInterfaceSerialNumber (
+  OUT CHAR8  **SerialNumber
+  )
+{
+  return EFI_UNSUPPORTED;
 }

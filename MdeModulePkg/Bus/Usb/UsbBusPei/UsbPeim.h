@@ -2,17 +2,16 @@
 Usb Peim definition.
 
 Copyright (c) 2006 - 2018, Intel Corporation. All rights reserved. <BR>
+Copyright (c) 2026 Dell Inc. All rights reserved.<BR>
 
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _PEI_USB_PEIM_H_
-#define _PEI_USB_PEIM_H_
+#pragma once
 
 #include <PiPei.h>
 
-#include <Ppi/UsbHostController.h>
 #include <Ppi/Usb2HostController.h>
 #include <Ppi/UsbIo.h>
 
@@ -51,9 +50,7 @@ typedef struct {
   UINT8                                 IsHub;
   UINT8                                 DownStreamPortNo;
   UINTN                                 AllocateAddress;
-  PEI_USB_HOST_CONTROLLER_PPI           *UsbHcPpi;
   PEI_USB2_HOST_CONTROLLER_PPI          *Usb2HcPpi;
-  UINT8                                 ConfigurationData[1024];
   EFI_USB_CONFIG_DESCRIPTOR             *ConfigDesc;
   EFI_USB_INTERFACE_DESCRIPTOR          *InterfaceDesc;
   EFI_USB_INTERFACE_DESCRIPTOR          *InterfaceDescList[MAX_INTERFACE];
@@ -61,6 +58,7 @@ typedef struct {
   EFI_USB_ENDPOINT_DESCRIPTOR           *EndpointDescList[MAX_INTERFACE][MAX_ENDPOINT];
   EFI_USB2_HC_TRANSACTION_TRANSLATOR    Translator;
   UINT8                                 Tier;
+  UINT8                                 *ConfigurationData;
 } PEI_USB_DEVICE;
 
 #define PEI_USB_DEVICE_FROM_THIS(a)  CR (a, PEI_USB_DEVICE, UsbIoPpi, PEI_USB_DEVICE_SIGNATURE)
@@ -238,7 +236,6 @@ PeiUsbPortReset (
   Send reset signal over the given root hub port.
 
   @param  PeiServices       Describes the list of possible PEI Services.
-  @param  UsbHcPpi          The pointer of PEI_USB_HOST_CONTROLLER_PPI instance.
   @param  Usb2HcPpi         The pointer of PEI_USB2_HOST_CONTROLLER_PPI instance.
   @param  PortNum           The port to be reset.
   @param  RetryIndex        The retry times.
@@ -247,10 +244,7 @@ PeiUsbPortReset (
 VOID
 ResetRootPort (
   IN EFI_PEI_SERVICES              **PeiServices,
-  IN PEI_USB_HOST_CONTROLLER_PPI   *UsbHcPpi,
   IN PEI_USB2_HOST_CONTROLLER_PPI  *Usb2HcPpi,
   IN UINT8                         PortNum,
   IN UINT8                         RetryIndex
   );
-
-#endif

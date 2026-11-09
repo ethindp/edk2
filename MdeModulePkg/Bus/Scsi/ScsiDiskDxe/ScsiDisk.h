@@ -2,12 +2,12 @@
   Header file for SCSI Disk Driver.
 
 Copyright (c) 2004 - 2019, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 1985 - 2022, American Megatrends International LLC.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _SCSI_DISK_H_
-#define _SCSI_DISK_H_
+#pragma once
 
 #include <Uefi.h>
 
@@ -18,7 +18,6 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Protocol/EraseBlock.h>
 #include <Protocol/DriverBinding.h>
 #include <Protocol/ScsiPassThruExt.h>
-#include <Protocol/ScsiPassThru.h>
 #include <Protocol/DiskInfo.h>
 #include <Protocol/StorageSecurityCommand.h>
 
@@ -30,13 +29,12 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Library/UefiScsiLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/DevicePathLib.h>
+#include <Library/PrintLib.h>
 
 #include <IndustryStandard/Scsi.h>
 #include <IndustryStandard/Atapi.h>
 
 #define IS_DEVICE_FIXED(a)  (a)->FixedDevice ? 1 : 0
-
-#define IS_ALIGNED(addr, size)  (((UINTN) (addr) & (size - 1)) == 0)
 
 #define UFS_WLUN_RPMB  0xC4
 
@@ -94,6 +92,11 @@ typedef struct {
   // The queue for asynchronous task requests
   //
   LIST_ENTRY                               AsyncTaskQueue;
+
+  //
+  // The flag indicates FUA support
+  //
+  BOOLEAN                                  FuaMode;
 } SCSI_DISK_DEV;
 
 #define SCSI_DISK_DEV_FROM_BLKIO(a)     CR (a, SCSI_DISK_DEV, BlkIo, SCSI_DISK_DEV_SIGNATURE)
@@ -179,6 +182,13 @@ extern EFI_COMPONENT_NAME2_PROTOCOL  gScsiDiskComponentName2;
 #define SCSI_COMMAND_VERSION_2  0x02
 #define SCSI_COMMAND_VERSION_3  0x03
 
+// Per SCSI spec, EFI_SCSI_INQUIRY_DATA.Reserved_5_95[3 - 10] has the Vendor identification
+// EFI_SCSI_INQUIRY_DATA.Reserved_5_95[11 - 26] has the product identification
+#define VENDOR_IDENTIFICATION_OFFSET   3
+#define VENDOR_IDENTIFICATION_LENGTH   8
+#define PRODUCT_IDENTIFICATION_OFFSET  11
+#define PRODUCT_IDENTIFICATION_LENGTH  16
+
 //
 // SCSI Disk Timeout Experience Value
 //
@@ -187,6 +197,13 @@ extern EFI_COMPONENT_NAME2_PROTOCOL  gScsiDiskComponentName2;
 // to respond command.
 //
 #define SCSI_DISK_TIMEOUT  EFI_TIMER_PERIOD_SECONDS (30)
+
+//
+// The length of Mode parameter header(10) is 8 bytes. The
+// length of Caching Mode page is 20 bytes. Without block
+// descriptors, the buffer for Caching Mode page is 28.
+//
+#define CACHE_MODE_PAGE_LEN  28
 
 /**
   Test to see if this driver supports ControllerHandle.
@@ -670,7 +687,9 @@ ScsiDiskEraseBlocks (
   function shall return EFI_DEVICE_ERROR.
 
   @param  This                         Indicates a pointer to the calling context.
-  @param  MediaId                      ID of the medium to receive data from.
+  @param  MediaId                      ID of the medium to receive data from. If there is no
+                                       block IO protocol supported by the physical device, the
+                                       value of MediaId is undefined.
   @param  Timeout                      The timeout, in 100ns units, to use for the execution
                                        of the security protocol command. A Timeout value of 0
                                        means that this function will wait indefinitely for the
@@ -744,7 +763,9 @@ ScsiDiskReceiveData (
   shall return EFI_DEVICE_ERROR.
 
   @param  This                         Indicates a pointer to the calling context.
-  @param  MediaId                      ID of the medium to receive data from.
+  @param  MediaId                      ID of the medium to receive data from. If there is no
+                                       block IO protocol supported by the physical device, the
+                                       value of MediaId is undefined.
   @param  Timeout                      The timeout, in 100ns units, to use for the execution
                                        of the security protocol command. A Timeout value of 0
                                        means that this function will wait indefinitely for the
@@ -1582,4 +1603,13 @@ DetermineInstallStorageSecurity (
   IN  EFI_HANDLE     ChildHandle
   );
 
-#endif
+/**
+  Get FUA Mode for the storage.
+
+  @param   ScsiDiskDevice    The pointer of SCSI_DISK_DEV.
+
+**/
+EFI_STATUS
+ScsiDiskFuaMode (
+  IN     SCSI_DISK_DEV  *ScsiDiskDevice
+  );

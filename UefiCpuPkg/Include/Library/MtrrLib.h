@@ -1,13 +1,14 @@
 /** @file
   MTRR setting library
 
-  Copyright (c) 2008 - 2020, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2008 - 2023, Intel Corporation. All rights reserved.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef  _MTRR_LIB_H_
-#define  _MTRR_LIB_H_
+#pragma once
+
+#include <Register/Intel/ArchitecturalMsr.h>
 
 //
 // According to IA32 SDM, MTRRs number and MSR offset are always consistent
@@ -82,20 +83,20 @@ typedef struct _MTRR_SETTINGS_ {
 // Memory cache types
 //
 typedef enum {
-  CacheUncacheable    = 0,
-  CacheWriteCombining = 1,
-  CacheWriteThrough   = 4,
-  CacheWriteProtected = 5,
-  CacheWriteBack      = 6,
-  CacheInvalid        = 7
+  CacheUncacheable    = MSR_IA32_MTRR_CACHE_UNCACHEABLE,
+  CacheWriteCombining = MSR_IA32_MTRR_CACHE_WRITE_COMBINING,
+  CacheWriteThrough   = MSR_IA32_MTRR_CACHE_WRITE_THROUGH,
+  CacheWriteProtected = MSR_IA32_MTRR_CACHE_WRITE_PROTECTED,
+  CacheWriteBack      = MSR_IA32_MTRR_CACHE_WRITE_BACK,
+  CacheInvalid        = MSR_IA32_MTRR_CACHE_INVALID_TYPE,
 } MTRR_MEMORY_CACHE_TYPE;
 
-#define  MTRR_CACHE_UNCACHEABLE      0
-#define  MTRR_CACHE_WRITE_COMBINING  1
-#define  MTRR_CACHE_WRITE_THROUGH    4
-#define  MTRR_CACHE_WRITE_PROTECTED  5
-#define  MTRR_CACHE_WRITE_BACK       6
-#define  MTRR_CACHE_INVALID_TYPE     7
+#define  MTRR_CACHE_UNCACHEABLE      MSR_IA32_MTRR_CACHE_UNCACHEABLE
+#define  MTRR_CACHE_WRITE_COMBINING  MSR_IA32_MTRR_CACHE_WRITE_COMBINING
+#define  MTRR_CACHE_WRITE_THROUGH    MSR_IA32_MTRR_CACHE_WRITE_THROUGH
+#define  MTRR_CACHE_WRITE_PROTECTED  MSR_IA32_MTRR_CACHE_WRITE_PROTECTED
+#define  MTRR_CACHE_WRITE_BACK       MSR_IA32_MTRR_CACHE_WRITE_BACK
+#define  MTRR_CACHE_INVALID_TYPE     MSR_IA32_MTRR_CACHE_INVALID_TYPE
 
 typedef struct {
   UINT64                    BaseAddress;
@@ -214,9 +215,12 @@ MtrrGetAllMtrrs (
 /**
   This function sets all MTRRs (variable and fixed)
 
-  @param[in]  MtrrSetting   A buffer to hold all MTRRs content.
+  Note: The behavior of this function is to program everything in MtrrSetting to hardware.
+        MTRR might not be enabled due to enable bit is clear in MtrrSetting->MtrrDefType.
 
-  @return The pointer of MtrrSetting
+  @param[in]  MtrrSetting  A buffer holding all MTRRs content.
+
+  @retval The pointer of MtrrSetting
 
 **/
 MTRR_SETTINGS *
@@ -356,4 +360,25 @@ MtrrSetMemoryAttributesInMtrrSettings (
   IN     UINTN                    RangeCount
   );
 
-#endif // _MTRR_LIB_H_
+/**
+  This function returns a Ranges array containing the memory cache types
+  of all memory addresses.
+
+  @param[in]      MtrrSetting  MTRR setting buffer to parse.
+  @param[out]     Ranges       Pointer to an array of MTRR_MEMORY_RANGE.
+  @param[in,out]  RangeCount   Count of MTRR_MEMORY_RANGE.
+                               On input, the maximum entries the Ranges can hold.
+                               On output, the actual entries that the function returns.
+
+  @retval RETURN_INVALID_PARAMETER RangeCount is NULL.
+  @retval RETURN_INVALID_PARAMETER *RangeCount is not 0 but Ranges is NULL.
+  @retval RETURN_BUFFER_TOO_SMALL  *RangeCount is too small.
+  @retval RETURN_SUCCESS           Ranges are successfully returned.
+**/
+RETURN_STATUS
+EFIAPI
+MtrrGetMemoryAttributesInMtrrSettings (
+  IN CONST MTRR_SETTINGS      *MtrrSetting OPTIONAL,
+  OUT      MTRR_MEMORY_RANGE  *Ranges,
+  IN OUT   UINTN              *RangeCount
+  );

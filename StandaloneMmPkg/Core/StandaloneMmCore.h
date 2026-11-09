@@ -9,8 +9,7 @@
 
 **/
 
-#ifndef _MM_CORE_H_
-#define _MM_CORE_H_
+#pragma once
 
 #include <PiMm.h>
 #include <StandaloneMm.h>
@@ -30,6 +29,8 @@
 #include <Guid/HobList.h>
 #include <Guid/MmFvDispatch.h>
 #include <Guid/MmramMemoryReserve.h>
+#include <Guid/MmCommBuffer.h>
+#include <Guid/PiSmmMemoryAttributesTable.h>
 
 #include <Library/StandaloneMmCoreEntryPoint.h>
 #include <Library/BaseLib.h>
@@ -40,11 +41,17 @@
 #include <Library/ReportStatusCodeLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PcdLib.h>
-
+#include <Library/HobPrintLib.h>
+#include <Library/ImagePropertiesRecordLib.h>
+#include <Library/PeCoffGetEntryPointLib.h>
 #include <Library/StandaloneMmMemLib.h>
 #include <Library/HobLib.h>
+#include <Library/PerformanceLib.h>
+#include <Library/SafeIntLib.h>
 
 #include "StandaloneMmCorePrivateData.h"
+
+extern EFI_MM_SYSTEM_TABLE  *mMemoryAllocationMmst;
 
 //
 // Used to build a table of MMI Handlers that the MM Core registers
@@ -85,7 +92,7 @@ typedef struct {
   BOOLEAN                       DepexProtocolError;
 
   EFI_HANDLE                    ImageHandle;
-  EFI_LOADED_IMAGE_PROTOCOL     *LoadedImage;
+  EFI_LOADED_IMAGE_PROTOCOL     LoadedImage;
   //
   // Image EntryPoint in MMRAM
   //
@@ -174,10 +181,9 @@ typedef struct {
 //
 // MM Core Global Variables
 //
-extern MM_CORE_PRIVATE_DATA  *gMmCorePrivate;
-extern EFI_MM_SYSTEM_TABLE   gMmCoreMmst;
-extern LIST_ENTRY            gHandleList;
-extern EFI_PHYSICAL_ADDRESS  gLoadModuleAtFixAddressMmramBase;
+extern EFI_MM_SYSTEM_TABLE  gMmCoreMmst;
+extern LIST_ENTRY           gHandleList;
+extern BOOLEAN              mMmEntryPointRegistered;
 
 /**
   Called to initialize the memory service.
@@ -515,6 +521,38 @@ MmLocateHandle (
   );
 
 /**
+  Function returns an array of handles that support the requested protocol
+  in a buffer allocated from pool. This is a version of MmLocateHandle()
+  that allocates a buffer for the caller.
+
+  @param  SearchType             Specifies which handle(s) are to be returned.
+  @param  Protocol               Provides the protocol to search by.    This
+                                 parameter is only valid for SearchType
+                                 ByProtocol.
+  @param  SearchKey              Supplies the search key depending on the
+                                 SearchType.
+  @param  NumberHandles          The number of handles returned in Buffer.
+  @param  Buffer                 A pointer to the buffer to return the requested
+                                 array of  handles that support Protocol.
+
+  @retval EFI_SUCCESS            The result array of handles was returned.
+  @retval EFI_NOT_FOUND          No handles match the search.
+  @retval EFI_OUT_OF_RESOURCES   There is not enough pool memory to store the
+                                 matching results.
+  @retval EFI_INVALID_PARAMETER  One or more parameters are not valid.
+
+**/
+EFI_STATUS
+EFIAPI
+MmLocateHandleBuffer (
+  IN     EFI_LOCATE_SEARCH_TYPE  SearchType,
+  IN     EFI_GUID                *Protocol OPTIONAL,
+  IN     VOID                    *SearchKey OPTIONAL,
+  IN OUT UINTN                   *NumberHandles,
+  OUT    EFI_HANDLE              **Buffer
+  );
+
+/**
   Return the first Protocol Interface that matches the Protocol GUID. If
   Registration is passed in return a Protocol Instance that was just add
   to the system. If Registration is NULL return the first Protocol Interface
@@ -684,6 +722,29 @@ MmReadyToLockHandler (
   );
 
 /**
+  Software MMI handler that is called when the EndOfPei event is signaled.
+  This function installs the MM EndOfPei Protocol so MM Drivers are informed that
+  EndOfPei event is signaled.
+
+  @param  DispatchHandle  The unique handle assigned to this handler by MmiHandlerRegister().
+  @param  Context         Points to an optional handler context which was specified when the handler was registered.
+  @param  CommBuffer      A pointer to a collection of data in memory that will
+                          be conveyed from a non-MM environment into an MM environment.
+  @param  CommBufferSize  The size of the CommBuffer.
+
+  @return Status Code
+
+**/
+EFI_STATUS
+EFIAPI
+MmEndOfPeiHandler (
+  IN     EFI_HANDLE  DispatchHandle,
+  IN     CONST VOID  *Context         OPTIONAL,
+  IN OUT VOID        *CommBuffer      OPTIONAL,
+  IN OUT UINTN       *CommBufferSize  OPTIONAL
+  );
+
+/**
   This function is the main entry point for an MM handler dispatch
   or communicate-based callback.
 
@@ -846,8 +907,121 @@ DumpMmramInfo (
   VOID
   );
 
-extern UINTN                 mMmramRangeCount;
-extern EFI_MMRAM_DESCRIPTOR  *mMmramRanges;
-extern EFI_SYSTEM_TABLE      *mEfiSystemTable;
+/**
+  Given the pointer to the Firmware Volume Header find the
+  MM driver and return its PE32 image.
 
-#endif
+  @param [in] FwVolHeader   Pointer to memory mapped FV
+  @param [in] Depth         Nesting depth of encapsulation sections. Callers
+                            different from MmCoreFfsFindMmDriver() are
+                            responsible for passing in a zero Depth.
+
+  @retval  EFI_SUCCESS            Success.
+  @retval  EFI_INVALID_PARAMETER  Invalid parameter.
+  @retval  EFI_NOT_FOUND          Could not find section data.
+  @retval  EFI_OUT_OF_RESOURCES   Out of resources.
+  @retval  EFI_VOLUME_CORRUPTED   Firmware volume is corrupted.
+  @retval  EFI_UNSUPPORTED        Operation not supported.
+  @retval  EFI_ABORTED            Recursion aborted because Depth has been
+                                  greater than or equal to
+                                  PcdFwVolMmMaxEncapsulationDepth.
+
+**/
+EFI_STATUS
+MmCoreFfsFindMmDriver (
+  IN  EFI_FIRMWARE_VOLUME_HEADER  *FwVolHeader,
+  IN  UINT32                      Depth
+  );
+
+#define NEXT_MEMORY_DESCRIPTOR(MemoryDescriptor, Size) \
+  ((EFI_MEMORY_DESCRIPTOR *)((UINT8 *)(MemoryDescriptor) + (Size)))
+
+/**
+  Initialize MemoryAttributesTable support.
+**/
+VOID
+EFIAPI
+MmCoreInitializeMemoryAttributesTable (
+  VOID
+  );
+
+/**
+  This function returns a copy of the current memory map. The map is an array of
+  memory descriptors, each of which describes a contiguous block of memory.
+
+  @param[in, out]  MemoryMapSize          A pointer to the size, in bytes, of the
+                                          MemoryMap buffer. On input, this is the size of
+                                          the buffer allocated by the caller.  On output,
+                                          it is the size of the buffer returned by the
+                                          firmware  if the buffer was large enough, or the
+                                          size of the buffer needed  to contain the map if
+                                          the buffer was too small.
+  @param[in, out]  MemoryMap              A pointer to the buffer in which firmware places
+                                          the current memory map.
+  @param[out]      MapKey                 A pointer to the location in which firmware
+                                          returns the key for the current memory map.
+  @param[out]      DescriptorSize         A pointer to the location in which firmware
+                                          returns the size, in bytes, of an individual
+                                          EFI_MEMORY_DESCRIPTOR.
+  @param[out]      DescriptorVersion      A pointer to the location in which firmware
+                                          returns the version number associated with the
+                                          EFI_MEMORY_DESCRIPTOR.
+
+  @retval EFI_SUCCESS            The memory map was returned in the MemoryMap
+                                 buffer.
+  @retval EFI_BUFFER_TOO_SMALL   The MemoryMap buffer was too small. The current
+                                 buffer size needed to hold the memory map is
+                                 returned in MemoryMapSize.
+  @retval EFI_INVALID_PARAMETER  One of the parameters has an invalid value.
+
+**/
+EFI_STATUS
+EFIAPI
+MmCoreGetMemoryMap (
+  IN OUT UINTN                  *MemoryMapSize,
+  IN OUT EFI_MEMORY_DESCRIPTOR  *MemoryMap,
+  OUT UINTN                     *MapKey,
+  OUT UINTN                     *DescriptorSize,
+  OUT UINT32                    *DescriptorVersion
+  );
+
+/**
+  This is the main Dispatcher for MM and it exits when there are no more
+  drivers to run. Drain the mScheduledQueue and load and start a PE
+  image for each driver. Search the mDiscoveredList to see if any driver can
+  be placed on the mScheduledQueue. If no drivers are placed on the
+  mScheduledQueue exit the function.
+
+  @retval EFI_SUCCESS           All of the MM Drivers that could be dispatched
+                                have been run and the MM Entry Point has been
+                                registered.
+  @retval EFI_NOT_READY         The MM Driver that registered the MM Entry Point
+                                was just dispatched.
+  @retval EFI_NOT_FOUND         There are no MM Drivers available to be dispatched.
+  @retval EFI_ALREADY_STARTED   The MM Dispatcher is already running
+
+**/
+EFI_STATUS
+MmDispatcher (
+  VOID
+  );
+
+/**
+  Dispatch Standalone MM FVs.
+  The FVs will be shadowed into MMRAM, caller is responsible for calling
+  MmFreeShadowedFvs() to free the shadowed MM FVs.
+
+**/
+VOID
+MmDispatchFvs (
+  VOID
+  );
+
+/**
+  Free the shadowed MM FVs.
+
+**/
+VOID
+MmFreeShadowedFvs (
+  VOID
+  );

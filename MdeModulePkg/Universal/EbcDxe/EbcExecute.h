@@ -8,14 +8,12 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _EBC_EXECUTE_H_
-#define _EBC_EXECUTE_H_
+#pragma once
 
 //
 // Macros to check and set alignment
 //
-#define ASSERT_ALIGNED(addr, size)  ASSERT (!((UINT32) (addr) & (size - 1)))
-#define IS_ALIGNED(addr, size)      !((UINT32) (addr) & (size - 1))
+#define ASSERT_ALIGNED(addr, size)  ASSERT (ADDRESS_IS_ALIGNED (addr, size))
 
 //
 // Debug macro
@@ -128,5 +126,3 @@ EbcExecuteInstructions (
   IN VM_CONTEXT                *VmPtr,
   IN OUT UINTN                 *InstructionCount
   );
-
-#endif // ifndef _EBC_EXECUTE_H_

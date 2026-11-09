@@ -27,5 +27,6 @@ GCC_ASM_EXPORT(CpuBreakpoint)
 #  );
 #
 ASM_PFX(CpuBreakpoint):
-    svc   0xdbdb    // Superviser exception. Takes 16bit arg -> Armv7 had 'swi' here.
+    AARCH64_BTI(c)
+    svc   0xdbdb    // supervisor exception. Takes 16bit arg -> Armv7 had 'swi' here.
     ret

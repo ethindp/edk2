@@ -136,6 +136,7 @@ VirtioRngGetRNG (
   EFI_STATUS            Status;
   EFI_PHYSICAL_ADDRESS  DeviceAddress;
   VOID                  *Mapping;
+  EFI_TPL               CurrentTpl;
 
   if ((This == NULL) || (RNGValueLength == 0) || (RNGValue == NULL)) {
     return EFI_INVALID_PARAMETER;
@@ -156,6 +157,11 @@ VirtioRngGetRNG (
   }
 
   Dev = VIRTIO_ENTROPY_SOURCE_FROM_RNG (This);
+  if (!Dev->Ready) {
+    DEBUG ((DEBUG_INFO, "%a: not ready\n", __func__));
+    return EFI_DEVICE_ERROR;
+  }
+
   //
   // Map Buffer's system physical address to device address
   //
@@ -171,6 +177,8 @@ VirtioRngGetRNG (
     Status = EFI_DEVICE_ERROR;
     goto FreeBuffer;
   }
+
+  CurrentTpl = gBS->RaiseTPL (TPL_NOTIFY);
 
   //
   // The Virtio RNG device may return less data than we asked it to, and can
@@ -193,12 +201,15 @@ VirtioRngGetRNG (
         EFI_SUCCESS)
     {
       Status = EFI_DEVICE_ERROR;
+      gBS->RestoreTPL (CurrentTpl);
       goto UnmapBuffer;
     }
 
     ASSERT (Len > 0);
     ASSERT (Len <= BufferSize);
   }
+
+  gBS->RestoreTPL (CurrentTpl);
 
   //
   // Unmap the device buffer before accessing it.
@@ -382,6 +393,7 @@ VirtioRngInit (
   //
   Dev->Rng.GetInfo = VirtioRngGetInfo;
   Dev->Rng.GetRNG  = VirtioRngGetRNG;
+  Dev->Ready       = TRUE;
 
   return EFI_SUCCESS;
 
@@ -414,8 +426,8 @@ VirtioRngUninit (
   // VIRTIO_CFG_WRITE() returns, the host will have learned to stay away from
   // the old comms area.
   //
+  Dev->Ready = FALSE;
   Dev->VirtIo->SetDeviceStatus (Dev->VirtIo, 0);
-
   Dev->VirtIo->UnmapSharedBuffer (Dev->VirtIo, Dev->RingMap);
 
   VirtioRingUninit (Dev->VirtIo, &Dev->Ring);
@@ -435,7 +447,7 @@ VirtioRngExitBoot (
 {
   VIRTIO_RNG_DEV  *Dev;
 
-  DEBUG ((DEBUG_VERBOSE, "%a: Context=0x%p\n", __FUNCTION__, Context));
+  DEBUG ((DEBUG_INFO, "%a: Context=0x%p\n", __func__, Context));
   //
   // Reset the device. This causes the hypervisor to forget about the virtio
   // ring.
@@ -443,7 +455,8 @@ VirtioRngExitBoot (
   // We allocated said ring in EfiBootServicesData type memory, and code
   // executing after ExitBootServices() is permitted to overwrite it.
   //
-  Dev = Context;
+  Dev        = Context;
+  Dev->Ready = FALSE;
   Dev->VirtIo->SetDeviceStatus (Dev->VirtIo, 0);
 }
 

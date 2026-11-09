@@ -10,7 +10,7 @@
   This library is mainly used by DxeCore to start performance logging to ensure that
   Performance Protocol is installed at the very beginning of DXE phase.
 
-Copyright (c) 2006 - 2021, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2006 - 2023, Intel Corporation. All rights reserved.<BR>
 (C) Copyright 2016 Hewlett Packard Enterprise Development LP<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -21,7 +21,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 //
 // Data for FPDT performance records.
 //
-#define SMM_BOOT_RECORD_COMM_SIZE  (OFFSET_OF (EFI_SMM_COMMUNICATE_HEADER, Data) + sizeof(SMM_BOOT_RECORD_COMMUNICATE))
+#define SMM_BOOT_RECORD_COMM_SIZE  (OFFSET_OF (EFI_MM_COMMUNICATE_HEADER, Data) + sizeof(SMM_BOOT_RECORD_COMMUNICATE))
 #define STRING_SIZE                (FPDT_STRING_EVENT_RECORD_NAME_LENGTH * sizeof (CHAR8))
 #define FIRMWARE_RECORD_BUFFER     0x10000
 #define CACHE_HANDLE_GUID_COUNT    0x800
@@ -73,6 +73,7 @@ UINT8    *mPerformancePointer  = NULL;
 UINT8    *mBootRecordBuffer    = NULL;
 BOOLEAN  mLockInsertRecord     = FALSE;
 CHAR8    *mDevicePathString    = NULL;
+UINTN    mSmmBootRecordOffset  = 0;
 
 EFI_DEVICE_PATH_TO_TEXT_PROTOCOL  *mDevicePathToText = NULL;
 
@@ -226,16 +227,19 @@ InternalGetSmmPerfData (
 {
   EFI_STATUS                               Status;
   UINT8                                    *SmmBootRecordCommBuffer;
-  EFI_SMM_COMMUNICATE_HEADER               *SmmCommBufferHeader;
+  EFI_MM_COMMUNICATE_HEADER                *MmCommBufferHeader;
   SMM_BOOT_RECORD_COMMUNICATE              *SmmCommData;
   UINTN                                    CommSize;
   EFI_SMM_COMMUNICATION_PROTOCOL           *Communication;
   EDKII_PI_SMM_COMMUNICATION_REGION_TABLE  *SmmCommRegionTable;
   EFI_MEMORY_DESCRIPTOR                    *SmmCommMemRegion;
   UINTN                                    Index;
+  VOID                                     *CurrentBootRecordData;
   VOID                                     *SmmBootRecordData;
   UINTN                                    SmmBootRecordDataSize;
   UINTN                                    ReservedMemSize;
+  UINTN                                    BootRecordDataPayloadSize;
+  UINTN                                    SmmBootRecordDataRetrieved;
 
   //
   // Collect boot records from SMM drivers.
@@ -275,13 +279,13 @@ InternalGetSmmPerfData (
       //
       if (ReservedMemSize > SMM_BOOT_RECORD_COMM_SIZE) {
         SmmBootRecordCommBuffer = (VOID *)(UINTN)SmmCommMemRegion->PhysicalStart;
-        SmmCommBufferHeader     = (EFI_SMM_COMMUNICATE_HEADER *)SmmBootRecordCommBuffer;
-        SmmCommData             = (SMM_BOOT_RECORD_COMMUNICATE *)SmmCommBufferHeader->Data;
+        MmCommBufferHeader      = (EFI_MM_COMMUNICATE_HEADER *)SmmBootRecordCommBuffer;
+        SmmCommData             = (SMM_BOOT_RECORD_COMMUNICATE *)MmCommBufferHeader->Data;
         ZeroMem ((UINT8 *)SmmCommData, sizeof (SMM_BOOT_RECORD_COMMUNICATE));
 
-        CopyGuid (&SmmCommBufferHeader->HeaderGuid, &gEfiFirmwarePerformanceGuid);
-        SmmCommBufferHeader->MessageLength = sizeof (SMM_BOOT_RECORD_COMMUNICATE);
-        CommSize                           = SMM_BOOT_RECORD_COMM_SIZE;
+        CopyGuid (&MmCommBufferHeader->HeaderGuid, &gEfiFirmwarePerformanceGuid);
+        MmCommBufferHeader->MessageLength = sizeof (SMM_BOOT_RECORD_COMMUNICATE);
+        CommSize                          = SMM_BOOT_RECORD_COMM_SIZE;
 
         //
         // Get the size of boot records.
@@ -289,6 +293,11 @@ InternalGetSmmPerfData (
         SmmCommData->Function       = SMM_FPDT_FUNCTION_GET_BOOT_RECORD_SIZE;
         SmmCommData->BootRecordData = NULL;
         Status                      = Communication->Communicate (Communication, SmmBootRecordCommBuffer, &CommSize);
+        if (EFI_ERROR (Status)) {
+          DEBUG ((DEBUG_WARN, "Perf handler MMI not found or communicate failed. Status = %r.\n", Status));
+        } else if (EFI_ERROR (SmmCommData->ReturnStatus)) {
+          DEBUG ((DEBUG_ERROR, "Perf handler MMI returned an error. Status = %r.\n", SmmCommData->ReturnStatus));
+        }
 
         if (!EFI_ERROR (Status) && !EFI_ERROR (SmmCommData->ReturnStatus) && (SmmCommData->BootRecordSize != 0)) {
           if (SkipGetPerfData) {
@@ -297,30 +306,48 @@ InternalGetSmmPerfData (
           }
 
           //
-          // Get all boot records
+          // Get boot records starting from mSmmBootRecordOffset
           //
-          SmmCommData->Function = SMM_FPDT_FUNCTION_GET_BOOT_RECORD_DATA_BY_OFFSET;
-          SmmBootRecordDataSize = SmmCommData->BootRecordSize;
-          SmmBootRecordData     = AllocateZeroPool (SmmBootRecordDataSize);
+          SmmCommData->Function         = SMM_FPDT_FUNCTION_GET_BOOT_RECORD_DATA_BY_OFFSET;
+          SmmCommData->BootRecordOffset = mSmmBootRecordOffset;
+          SmmBootRecordDataSize         = SmmCommData->BootRecordSize - mSmmBootRecordOffset;
+          SmmBootRecordData             = AllocateZeroPool (SmmBootRecordDataSize);
+          SmmBootRecordDataRetrieved    = 0;
           ASSERT (SmmBootRecordData  != NULL);
-          SmmCommData->BootRecordOffset = 0;
-          SmmCommData->BootRecordData   = (VOID *)((UINTN)SmmCommMemRegion->PhysicalStart + SMM_BOOT_RECORD_COMM_SIZE);
-          SmmCommData->BootRecordSize   = ReservedMemSize - SMM_BOOT_RECORD_COMM_SIZE;
-          while (SmmCommData->BootRecordOffset < SmmBootRecordDataSize) {
-            Status = Communication->Communicate (Communication, SmmBootRecordCommBuffer, &CommSize);
-            ASSERT_EFI_ERROR (Status);
-            ASSERT_EFI_ERROR (SmmCommData->ReturnStatus);
-            if (SmmCommData->BootRecordOffset + SmmCommData->BootRecordSize > SmmBootRecordDataSize) {
-              CopyMem ((UINT8 *)SmmBootRecordData + SmmCommData->BootRecordOffset, SmmCommData->BootRecordData, SmmBootRecordDataSize - SmmCommData->BootRecordOffset);
-            } else {
-              CopyMem ((UINT8 *)SmmBootRecordData + SmmCommData->BootRecordOffset, SmmCommData->BootRecordData, SmmCommData->BootRecordSize);
+          if (SmmBootRecordData != NULL) {
+            CurrentBootRecordData = (VOID *)((UINTN)SmmCommMemRegion->PhysicalStart + SMM_BOOT_RECORD_COMM_SIZE);
+            while (SmmBootRecordDataRetrieved < SmmBootRecordDataSize) {
+              // Note: Maximum comm buffer data payload size is ReservedMemSize - SMM_BOOT_RECORD_COMM_SIZE
+              BootRecordDataPayloadSize = MIN (
+                                            ReservedMemSize - SMM_BOOT_RECORD_COMM_SIZE,
+                                            SmmBootRecordDataSize - SmmBootRecordDataRetrieved
+                                            );
+              SmmCommData->BootRecordSize = BootRecordDataPayloadSize;
+
+              MmCommBufferHeader->MessageLength = sizeof (SMM_BOOT_RECORD_COMMUNICATE) + BootRecordDataPayloadSize;
+              CommSize                          = OFFSET_OF (EFI_MM_COMMUNICATE_HEADER, Data) + (UINTN)MmCommBufferHeader->MessageLength;
+
+              Status = Communication->Communicate (Communication, SmmBootRecordCommBuffer, &CommSize);
+              ASSERT_EFI_ERROR (Status);
+              if (EFI_ERROR (Status) || EFI_ERROR (SmmCommData->ReturnStatus)) {
+                break;
+              }
+
+              if (SmmBootRecordDataRetrieved + SmmCommData->BootRecordSize > SmmBootRecordDataSize) {
+                CopyMem ((UINT8 *)SmmBootRecordData + SmmBootRecordDataRetrieved, CurrentBootRecordData, SmmBootRecordDataSize - SmmBootRecordDataRetrieved);
+              } else {
+                CopyMem ((UINT8 *)SmmBootRecordData + SmmBootRecordDataRetrieved, CurrentBootRecordData, SmmCommData->BootRecordSize);
+              }
+
+              SmmBootRecordDataRetrieved    += SmmCommData->BootRecordSize;
+              SmmCommData->BootRecordOffset += SmmCommData->BootRecordSize;
             }
 
-            SmmCommData->BootRecordOffset = SmmCommData->BootRecordOffset + SmmCommData->BootRecordSize;
-          }
+            mSmmBootRecordOffset = SmmCommData->BootRecordOffset;
 
-          *SmmPerfData     = SmmBootRecordData;
-          *SmmPerfDataSize = SmmBootRecordDataSize;
+            *SmmPerfData     = SmmBootRecordData;
+            *SmmPerfDataSize = SmmBootRecordDataSize;
+          }
         }
       }
     }
@@ -1403,6 +1430,8 @@ ReportFpdtRecordBuffer (
         &BPDTAddr,
         sizeof (UINT64)
         );
+      Status = gBS->InstallConfigurationTable (&gEdkiiFpdtExtendedFirmwarePerformanceGuid, (VOID *)(UINTN)BPDTAddr);
+      ASSERT_EFI_ERROR (Status);
     }
 
     //

@@ -30,16 +30,28 @@
   QemuFwCfgLibInternal.h
   QemuFwCfgLib.c
   QemuFwCfgPei.c
+  QemuFwCfgCache.c
+  QemuFwCfgCacheInit.c
 
 [Packages]
   MdePkg/MdePkg.dec
   OvmfPkg/OvmfPkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  SecurityPkg/SecurityPkg.dec
 
 [LibraryClasses]
   BaseLib
   BaseMemoryLib
   DebugLib
+  HobLib
   IoLib
   MemoryAllocationLib
-  MemEncryptSevLib
+  SafeIntLib
+  TpmMeasurementLib
 
+[Guids]
+  gUefiOvmfPkgPlatformInfoGuid
+  gOvmfFwCfgInfoHobGuid
+
+[Pcd]
+  gUefiOvmfPkgTokenSpaceGuid.PcdOvmfWorkAreaBase

@@ -2,6 +2,7 @@
   SMI handler profile support.
 
 Copyright (c) 2017, Intel Corporation. All rights reserved.<BR>
+Copyright (c) Microsoft Corporation.
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
@@ -44,6 +45,14 @@ typedef struct {
 **/
 VOID
 RegisterSmiHandlerProfileHandler (
+  VOID
+  );
+
+/**
+  Build SMI handler profile database.
+**/
+VOID
+BuildSmiHandlerProfileDatabase (
   VOID
   );
 
@@ -102,25 +111,6 @@ GLOBAL_REMOVE_IF_UNREFERENCED SMI_HANDLER_PROFILE_PROTOCOL  mSmiHandlerProfile =
   SmiHandlerProfileRegisterHandler,
   SmiHandlerProfileUnregisterHandler,
 };
-
-/**
-  This function dump raw data.
-
-  @param  Data  raw data
-  @param  Size  raw data size
-**/
-VOID
-InternalDumpData (
-  IN UINT8  *Data,
-  IN UINTN  Size
-  )
-{
-  UINTN  Index;
-
-  for (Index = 0; Index < Size; Index++) {
-    DEBUG ((DEBUG_INFO, "%02x ", (UINTN)Data[Index]));
-  }
-}
 
 /**
   Get GUID name for an image.
@@ -335,7 +325,9 @@ GetSmmLoadedImage (
 
     if (RealImageBase != 0) {
       PdbString = PeCoffLoaderGetPdbPointer ((VOID *)(UINTN)RealImageBase);
-      DEBUG ((DEBUG_INFO, "       pdb - %a\n", PdbString));
+      if (PdbString != NULL) {
+        DEBUG ((DEBUG_INFO, "       pdb - %a\n", PdbString));
+      }
     } else {
       PdbString = NULL;
     }
@@ -392,9 +384,7 @@ DumpSmiChildContext (
       FreePool (Str);
     }
   } else {
-    DEBUG ((DEBUG_INFO, "  Context - "));
-    InternalDumpData (Context, ContextSize);
-    DEBUG ((DEBUG_INFO, "\n"));
+    DUMP_HEX (DEBUG_INFO, 0, Context, ContextSize, "  Context - ");
   }
 }
 
@@ -495,6 +485,8 @@ SmmReadyToLockInSmiHandlerProfile (
   IN EFI_HANDLE      Handle
   )
 {
+  RegisterSmiHandlerProfileHandler ();
+
   //
   // Dump all image
   //
@@ -528,7 +520,7 @@ SmmReadyToLockInSmiHandlerProfile (
 
   DEBUG ((DEBUG_INFO, "\n"));
 
-  RegisterSmiHandlerProfileHandler ();
+  BuildSmiHandlerProfileDatabase ();
 
   if (mImageStruct != NULL) {
     FreePool (mImageStruct);
@@ -860,7 +852,7 @@ GetSmiHandlerProfileDatabaseData (
 }
 
 /**
-  build SMI handler profile database.
+  Build SMI handler profile database.
 **/
 VOID
 BuildSmiHandlerProfileDatabase (
@@ -1074,8 +1066,6 @@ RegisterSmiHandlerProfileHandler (
                     &DispatchHandle
                     );
   ASSERT_EFI_ERROR (Status);
-
-  BuildSmiHandlerProfileDatabase ();
 }
 
 /**

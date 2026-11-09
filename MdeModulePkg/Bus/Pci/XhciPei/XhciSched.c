@@ -3,6 +3,7 @@ PEIM to produce gPeiUsb2HostControllerPpiGuid based on gPeiUsbControllerPpiGuid
 which is used to enable recovery function from USB Drivers.
 
 Copyright (c) 2014 - 2017, Intel Corporation. All rights reserved.<BR>
+Copyright (C) 2022 Advanced Micro Devices, Inc. All rights reserved.<BR>
 
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -674,7 +675,10 @@ XhcPeiCheckUrbResult (
     // Need convert pci device address to host address
     //
     PhyAddr = (EFI_PHYSICAL_ADDRESS)(EvtTrb->TRBPtrLo | LShiftU64 ((UINT64)EvtTrb->TRBPtrHi, 32));
-    TRBPtr  = (TRB_TEMPLATE *)(UINTN)UsbHcGetHostAddrForPciAddr (Xhc->MemPool, (VOID *)(UINTN)PhyAddr, sizeof (TRB_TEMPLATE));
+    TRBPtr  = (TRB_TEMPLATE *)(UINTN)UsbHcGetHostAddrForPciAddr (Xhc->MemPool, (VOID *)(UINTN)PhyAddr, sizeof (TRB_TEMPLATE), FALSE);
+    if (TRBPtr == NULL) {
+      return FALSE;
+    }
 
     //
     // Update the status of Urb according to the finished event regardless of whether
@@ -765,7 +769,7 @@ EXIT:
   High       = XhcPeiReadRuntimeReg (Xhc, XHC_ERDP_OFFSET + 4);
   XhcDequeue = (UINT64)(LShiftU64 ((UINT64)High, 32) | Low);
 
-  PhyAddr = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Xhc->EventRing.EventRingDequeue, sizeof (TRB_TEMPLATE));
+  PhyAddr = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Xhc->EventRing.EventRingDequeue, sizeof (TRB_TEMPLATE), FALSE);
 
   if ((XhcDequeue & (~0x0F)) != (PhyAddr & (~0x0F))) {
     //
@@ -1119,7 +1123,11 @@ XhcPeiInitializeDeviceSlot (
   // 1) Allocate an Input Context data structure (6.2.5) and initialize all fields to '0'.
   //
   InputContext = UsbHcAllocateMem (Xhc->MemPool, sizeof (INPUT_CONTEXT));
-  ASSERT (InputContext != NULL);
+  if (InputContext == NULL) {
+    ASSERT (InputContext != NULL);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
   ASSERT (((UINTN)InputContext & 0x3F) == 0);
   ZeroMem (InputContext, sizeof (INPUT_CONTEXT));
 
@@ -1212,7 +1220,8 @@ XhcPeiInitializeDeviceSlot (
   PhyAddr = UsbHcGetPciAddrForHostAddr (
               Xhc->MemPool,
               ((TRANSFER_RING *)(UINTN)Xhc->UsbDevContext[SlotId].EndpointTransferRing[0])->RingSeg0,
-              sizeof (TRB_TEMPLATE) * TR_RING_TRB_NUMBER
+              sizeof (TRB_TEMPLATE) * TR_RING_TRB_NUMBER,
+              TRUE
               );
   InputContext->EP[0].PtrLo = XHC_LOW_32BIT (PhyAddr) | BIT0;
   InputContext->EP[0].PtrHi = XHC_HIGH_32BIT (PhyAddr);
@@ -1221,7 +1230,11 @@ XhcPeiInitializeDeviceSlot (
   // 6) Allocate the Output Device Context data structure (6.2.1) and initialize it to '0'.
   //
   OutputContext = UsbHcAllocateMem (Xhc->MemPool, sizeof (DEVICE_CONTEXT));
-  ASSERT (OutputContext != NULL);
+  if (OutputContext == NULL) {
+    ASSERT (OutputContext != NULL);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
   ASSERT (((UINTN)OutputContext & 0x3F) == 0);
   ZeroMem (OutputContext, sizeof (DEVICE_CONTEXT));
 
@@ -1230,7 +1243,7 @@ XhcPeiInitializeDeviceSlot (
   // 7) Load the appropriate (Device Slot ID) entry in the Device Context Base Address Array (5.4.6) with
   //    a pointer to the Output Device Context data structure (6.2.1).
   //
-  PhyAddr = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, OutputContext, sizeof (DEVICE_CONTEXT));
+  PhyAddr = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, OutputContext, sizeof (DEVICE_CONTEXT), TRUE);
   //
   // Fill DCBAA with PCI device address
   //
@@ -1245,7 +1258,7 @@ XhcPeiInitializeDeviceSlot (
   //
   MicroSecondDelay (XHC_RESET_RECOVERY_DELAY);
   ZeroMem (&CmdTrbAddr, sizeof (CmdTrbAddr));
-  PhyAddr             = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Xhc->UsbDevContext[SlotId].InputContext, sizeof (INPUT_CONTEXT));
+  PhyAddr             = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Xhc->UsbDevContext[SlotId].InputContext, sizeof (INPUT_CONTEXT), TRUE);
   CmdTrbAddr.PtrLo    = XHC_LOW_32BIT (PhyAddr);
   CmdTrbAddr.PtrHi    = XHC_HIGH_32BIT (PhyAddr);
   CmdTrbAddr.CycleBit = 1;
@@ -1333,7 +1346,11 @@ XhcPeiInitializeDeviceSlot64 (
   // 1) Allocate an Input Context data structure (6.2.5) and initialize all fields to '0'.
   //
   InputContext = UsbHcAllocateMem (Xhc->MemPool, sizeof (INPUT_CONTEXT_64));
-  ASSERT (InputContext != NULL);
+  if (InputContext == NULL) {
+    ASSERT (InputContext != NULL);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
   ASSERT (((UINTN)InputContext & 0x3F) == 0);
   ZeroMem (InputContext, sizeof (INPUT_CONTEXT_64));
 
@@ -1426,7 +1443,8 @@ XhcPeiInitializeDeviceSlot64 (
   PhyAddr = UsbHcGetPciAddrForHostAddr (
               Xhc->MemPool,
               ((TRANSFER_RING *)(UINTN)Xhc->UsbDevContext[SlotId].EndpointTransferRing[0])->RingSeg0,
-              sizeof (TRB_TEMPLATE) * TR_RING_TRB_NUMBER
+              sizeof (TRB_TEMPLATE) * TR_RING_TRB_NUMBER,
+              TRUE
               );
   InputContext->EP[0].PtrLo = XHC_LOW_32BIT (PhyAddr) | BIT0;
   InputContext->EP[0].PtrHi = XHC_HIGH_32BIT (PhyAddr);
@@ -1435,7 +1453,11 @@ XhcPeiInitializeDeviceSlot64 (
   // 6) Allocate the Output Device Context data structure (6.2.1) and initialize it to '0'.
   //
   OutputContext = UsbHcAllocateMem (Xhc->MemPool, sizeof (DEVICE_CONTEXT_64));
-  ASSERT (OutputContext != NULL);
+  if (OutputContext == NULL) {
+    ASSERT (OutputContext != NULL);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
   ASSERT (((UINTN)OutputContext & 0x3F) == 0);
   ZeroMem (OutputContext, sizeof (DEVICE_CONTEXT_64));
 
@@ -1444,7 +1466,7 @@ XhcPeiInitializeDeviceSlot64 (
   // 7) Load the appropriate (Device Slot ID) entry in the Device Context Base Address Array (5.4.6) with
   //    a pointer to the Output Device Context data structure (6.2.1).
   //
-  PhyAddr = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, OutputContext, sizeof (DEVICE_CONTEXT_64));
+  PhyAddr = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, OutputContext, sizeof (DEVICE_CONTEXT_64), TRUE);
   //
   // Fill DCBAA with PCI device address
   //
@@ -1459,7 +1481,7 @@ XhcPeiInitializeDeviceSlot64 (
   //
   MicroSecondDelay (XHC_RESET_RECOVERY_DELAY);
   ZeroMem (&CmdTrbAddr, sizeof (CmdTrbAddr));
-  PhyAddr             = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Xhc->UsbDevContext[SlotId].InputContext, sizeof (INPUT_CONTEXT_64));
+  PhyAddr             = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Xhc->UsbDevContext[SlotId].InputContext, sizeof (INPUT_CONTEXT_64), TRUE);
   CmdTrbAddr.PtrLo    = XHC_LOW_32BIT (PhyAddr);
   CmdTrbAddr.PtrHi    = XHC_HIGH_32BIT (PhyAddr);
   CmdTrbAddr.CycleBit = 1;
@@ -1745,15 +1767,18 @@ XhcPeiSetConfigCmd (
 
   MaxDci = 0;
 
-  IfDesc = (USB_INTERFACE_DESCRIPTOR *)(ConfigDesc + 1);
+  IfDesc = (USB_INTERFACE_DESCRIPTOR *)((UINTN)ConfigDesc + ConfigDesc->Length);
   for (Index = 0; Index < ConfigDesc->NumInterfaces; Index++) {
     while ((IfDesc->DescriptorType != USB_DESC_TYPE_INTERFACE) || (IfDesc->AlternateSetting != 0)) {
       IfDesc = (USB_INTERFACE_DESCRIPTOR *)((UINTN)IfDesc + IfDesc->Length);
     }
 
     NumEp = IfDesc->NumEndpoints;
+    if ((NumEp == 0) && (MaxDci == 0)) {
+      MaxDci = 1;
+    }
 
-    EpDesc = (USB_ENDPOINT_DESCRIPTOR *)(IfDesc + 1);
+    EpDesc = (USB_ENDPOINT_DESCRIPTOR *)((UINTN)IfDesc + IfDesc->Length);
     for (EpIndex = 0; EpIndex < NumEp; EpIndex++) {
       while (EpDesc->DescriptorType != USB_DESC_TYPE_ENDPOINT) {
         EpDesc = (USB_ENDPOINT_DESCRIPTOR *)((UINTN)EpDesc + EpDesc->Length);
@@ -1878,7 +1903,8 @@ XhcPeiSetConfigCmd (
       PhyAddr = UsbHcGetPciAddrForHostAddr (
                   Xhc->MemPool,
                   ((TRANSFER_RING *)(UINTN)Xhc->UsbDevContext[SlotId].EndpointTransferRing[Dci-1])->RingSeg0,
-                  sizeof (TRB_TEMPLATE) * TR_RING_TRB_NUMBER
+                  sizeof (TRB_TEMPLATE) * TR_RING_TRB_NUMBER,
+                  TRUE
                   );
       PhyAddr                      &= ~((EFI_PHYSICAL_ADDRESS)0x0F);
       PhyAddr                      |= (EFI_PHYSICAL_ADDRESS)((TRANSFER_RING *)(UINTN)Xhc->UsbDevContext[SlotId].EndpointTransferRing[Dci-1])->RingPCS;
@@ -1897,7 +1923,7 @@ XhcPeiSetConfigCmd (
   // configure endpoint
   //
   ZeroMem (&CmdTrbCfgEP, sizeof (CmdTrbCfgEP));
-  PhyAddr              = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, InputContext, sizeof (INPUT_CONTEXT));
+  PhyAddr              = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, InputContext, sizeof (INPUT_CONTEXT), TRUE);
   CmdTrbCfgEP.PtrLo    = XHC_LOW_32BIT (PhyAddr);
   CmdTrbCfgEP.PtrHi    = XHC_HIGH_32BIT (PhyAddr);
   CmdTrbCfgEP.CycleBit = 1;
@@ -1967,15 +1993,18 @@ XhcPeiSetConfigCmd64 (
 
   MaxDci = 0;
 
-  IfDesc = (USB_INTERFACE_DESCRIPTOR *)(ConfigDesc + 1);
+  IfDesc = (USB_INTERFACE_DESCRIPTOR *)((UINTN)ConfigDesc + ConfigDesc->Length);
   for (Index = 0; Index < ConfigDesc->NumInterfaces; Index++) {
     while ((IfDesc->DescriptorType != USB_DESC_TYPE_INTERFACE) || (IfDesc->AlternateSetting != 0)) {
       IfDesc = (USB_INTERFACE_DESCRIPTOR *)((UINTN)IfDesc + IfDesc->Length);
     }
 
     NumEp = IfDesc->NumEndpoints;
+    if ((NumEp == 0) && (MaxDci == 0)) {
+      MaxDci = 1;
+    }
 
-    EpDesc = (USB_ENDPOINT_DESCRIPTOR *)(IfDesc + 1);
+    EpDesc = (USB_ENDPOINT_DESCRIPTOR *)((UINTN)IfDesc + IfDesc->Length);
     for (EpIndex = 0; EpIndex < NumEp; EpIndex++) {
       while (EpDesc->DescriptorType != USB_DESC_TYPE_ENDPOINT) {
         EpDesc = (USB_ENDPOINT_DESCRIPTOR *)((UINTN)EpDesc + EpDesc->Length);
@@ -2101,7 +2130,8 @@ XhcPeiSetConfigCmd64 (
       PhyAddr = UsbHcGetPciAddrForHostAddr (
                   Xhc->MemPool,
                   ((TRANSFER_RING *)(UINTN)Xhc->UsbDevContext[SlotId].EndpointTransferRing[Dci-1])->RingSeg0,
-                  sizeof (TRB_TEMPLATE) * TR_RING_TRB_NUMBER
+                  sizeof (TRB_TEMPLATE) * TR_RING_TRB_NUMBER,
+                  TRUE
                   );
 
       PhyAddr &= ~((EFI_PHYSICAL_ADDRESS)0x0F);
@@ -2122,7 +2152,7 @@ XhcPeiSetConfigCmd64 (
   // configure endpoint
   //
   ZeroMem (&CmdTrbCfgEP, sizeof (CmdTrbCfgEP));
-  PhyAddr              = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, InputContext, sizeof (INPUT_CONTEXT_64));
+  PhyAddr              = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, InputContext, sizeof (INPUT_CONTEXT_64), TRUE);
   CmdTrbCfgEP.PtrLo    = XHC_LOW_32BIT (PhyAddr);
   CmdTrbCfgEP.PtrHi    = XHC_HIGH_32BIT (PhyAddr);
   CmdTrbCfgEP.CycleBit = 1;
@@ -2177,7 +2207,7 @@ XhcPeiEvaluateContext (
   InputContext->EP[0].MaxPacketSize         = MaxPacketSize;
 
   ZeroMem (&CmdTrbEvalu, sizeof (CmdTrbEvalu));
-  PhyAddr              = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, InputContext, sizeof (INPUT_CONTEXT));
+  PhyAddr              = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, InputContext, sizeof (INPUT_CONTEXT), TRUE);
   CmdTrbEvalu.PtrLo    = XHC_LOW_32BIT (PhyAddr);
   CmdTrbEvalu.PtrHi    = XHC_HIGH_32BIT (PhyAddr);
   CmdTrbEvalu.CycleBit = 1;
@@ -2232,7 +2262,7 @@ XhcPeiEvaluateContext64 (
   InputContext->EP[0].MaxPacketSize         = MaxPacketSize;
 
   ZeroMem (&CmdTrbEvalu, sizeof (CmdTrbEvalu));
-  PhyAddr              = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, InputContext, sizeof (INPUT_CONTEXT_64));
+  PhyAddr              = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, InputContext, sizeof (INPUT_CONTEXT_64), TRUE);
   CmdTrbEvalu.PtrLo    = XHC_LOW_32BIT (PhyAddr);
   CmdTrbEvalu.PtrHi    = XHC_HIGH_32BIT (PhyAddr);
   CmdTrbEvalu.CycleBit = 1;
@@ -2301,7 +2331,7 @@ XhcPeiConfigHubContext (
   InputContext->Slot.MTT     = MTT;
 
   ZeroMem (&CmdTrbCfgEP, sizeof (CmdTrbCfgEP));
-  PhyAddr              = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, InputContext, sizeof (INPUT_CONTEXT));
+  PhyAddr              = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, InputContext, sizeof (INPUT_CONTEXT), TRUE);
   CmdTrbCfgEP.PtrLo    = XHC_LOW_32BIT (PhyAddr);
   CmdTrbCfgEP.PtrHi    = XHC_HIGH_32BIT (PhyAddr);
   CmdTrbCfgEP.CycleBit = 1;
@@ -2370,7 +2400,7 @@ XhcPeiConfigHubContext64 (
   InputContext->Slot.MTT     = MTT;
 
   ZeroMem (&CmdTrbCfgEP, sizeof (CmdTrbCfgEP));
-  PhyAddr              = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, InputContext, sizeof (INPUT_CONTEXT_64));
+  PhyAddr              = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, InputContext, sizeof (INPUT_CONTEXT_64), TRUE);
   CmdTrbCfgEP.PtrLo    = XHC_LOW_32BIT (PhyAddr);
   CmdTrbCfgEP.PtrHi    = XHC_HIGH_32BIT (PhyAddr);
   CmdTrbCfgEP.CycleBit = 1;
@@ -2515,7 +2545,7 @@ XhcPeiSetTrDequeuePointer (
   // Send stop endpoint command to transit Endpoint from running to stop state
   //
   ZeroMem (&CmdSetTRDeq, sizeof (CmdSetTRDeq));
-  PhyAddr              = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Urb->Ring->RingEnqueue, sizeof (CMD_SET_TR_DEQ_POINTER));
+  PhyAddr              = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Urb->Ring->RingEnqueue, sizeof (CMD_SET_TR_DEQ_POINTER), FALSE);
   CmdSetTRDeq.PtrLo    = XHC_LOW_32BIT (PhyAddr) | Urb->Ring->RingPCS;
   CmdSetTRDeq.PtrHi    = XHC_HIGH_32BIT (PhyAddr);
   CmdSetTRDeq.CycleBit = 1;
@@ -2671,11 +2701,15 @@ XhcPeiCreateEventRing (
 
   Size = sizeof (TRB_TEMPLATE) * EVENT_RING_TRB_NUMBER;
   Buf  = UsbHcAllocateMem (Xhc->MemPool, Size);
-  ASSERT (Buf != NULL);
+  if (Buf == NULL ) {
+    ASSERT (Buf != NULL);
+    return;
+  }
+
   ASSERT (((UINTN)Buf & 0x3F) == 0);
   ZeroMem (Buf, Size);
 
-  DequeuePhy = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Buf, Size);
+  DequeuePhy = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Buf, Size, TRUE);
 
   EventRing->EventRingSeg0    = Buf;
   EventRing->TrbNumber        = EVENT_RING_TRB_NUMBER;
@@ -2690,7 +2724,11 @@ XhcPeiCreateEventRing (
 
   Size = sizeof (EVENT_RING_SEG_TABLE_ENTRY) * ERST_NUMBER;
   Buf  = UsbHcAllocateMem (Xhc->MemPool, Size);
-  ASSERT (Buf != NULL);
+  if (Buf == NULL) {
+    ASSERT (Buf != NULL);
+    return;
+  }
+
   ASSERT (((UINTN)Buf & 0x3F) == 0);
   ZeroMem (Buf, Size);
 
@@ -2700,7 +2738,7 @@ XhcPeiCreateEventRing (
   ERSTBase->PtrHi       = XHC_HIGH_32BIT (DequeuePhy);
   ERSTBase->RingTrbSize = EVENT_RING_TRB_NUMBER;
 
-  ERSTPhy = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Buf, Size);
+  ERSTPhy = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Buf, Size, TRUE);
 
   //
   // Program the Interrupter Event Ring Segment Table Size (ERSTSZ) register (5.5.2.3.1)
@@ -2848,7 +2886,7 @@ XhcPeiCreateTransferRing (
   //
   EndTrb        = (LINK_TRB *)((UINTN)Buf + sizeof (TRB_TEMPLATE) * (TrbNum - 1));
   EndTrb->Type  = TRB_TYPE_LINK;
-  PhyAddr       = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Buf, sizeof (TRB_TEMPLATE) * TrbNum);
+  PhyAddr       = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Buf, sizeof (TRB_TEMPLATE) * TrbNum, TRUE);
   EndTrb->PtrLo = XHC_LOW_32BIT (PhyAddr);
   EndTrb->PtrHi = XHC_HIGH_32BIT (PhyAddr);
   //
@@ -2907,7 +2945,10 @@ XhcPeiInitSched (
   //
   Size  = (Xhc->MaxSlotsEn + 1) * sizeof (UINT64);
   Dcbaa = UsbHcAllocateMem (Xhc->MemPool, Size);
-  ASSERT (Dcbaa != NULL);
+  if (Dcbaa == NULL) {
+    ASSERT (Dcbaa != NULL);
+    return;
+  }
 
   //
   // A Scratchpad Buffer is a PAGESIZE block of system memory located on a PAGESIZE boundary.
@@ -2981,7 +3022,7 @@ XhcPeiInitSched (
   // Some 3rd party XHCI external cards don't support single 64-bytes width register access,
   // So divide it to two 32-bytes width register access.
   //
-  DcbaaPhy = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Dcbaa, Size);
+  DcbaaPhy = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Dcbaa, Size, TRUE);
   XhcPeiWriteOpReg (Xhc, XHC_DCBAAP_OFFSET, XHC_LOW_32BIT (DcbaaPhy));
   XhcPeiWriteOpReg (Xhc, XHC_DCBAAP_OFFSET + 4, XHC_HIGH_32BIT (DcbaaPhy));
 
@@ -2999,7 +3040,7 @@ XhcPeiInitSched (
   // Transfer Ring it checks for a Cycle bit transition. If a transition detected, the ring is empty.
   // So we set RCS as inverted PCS init value to let Command Ring empty
   //
-  CmdRingPhy = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Xhc->CmdRing.RingSeg0, sizeof (TRB_TEMPLATE) * CMD_RING_TRB_NUMBER);
+  CmdRingPhy = UsbHcGetPciAddrForHostAddr (Xhc->MemPool, Xhc->CmdRing.RingSeg0, sizeof (TRB_TEMPLATE) * CMD_RING_TRB_NUMBER, TRUE);
   ASSERT ((CmdRingPhy & 0x3F) == 0);
   CmdRingPhy |= XHC_CRCR_RCS;
   //

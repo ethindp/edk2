@@ -2,6 +2,7 @@
   PCI Host Bridge Library instance for pci-ecam-generic DT nodes
 
   Copyright (c) 2016, Linaro Ltd. All rights reserved.<BR>
+  Copyright (c) 2026, Arm Ltd. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -10,7 +11,7 @@
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
 #include <Library/DevicePathLib.h>
-#include <Library/DxeServicesTableLib.h>
+#include <Library/MapMmioLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PcdLib.h>
 #include <Library/PciHostBridgeLib.h>
@@ -41,46 +42,6 @@ typedef struct {
 #define DTB_PCI_HOST_RANGE_MMIO64        (BIT25 | BIT24)
 #define DTB_PCI_HOST_RANGE_IO            BIT24
 #define DTB_PCI_HOST_RANGE_TYPEMASK      (BIT31 | BIT30 | BIT29 | BIT25 | BIT24)
-
-STATIC
-EFI_STATUS
-MapGcdMmioSpace (
-  IN    UINT64  Base,
-  IN    UINT64  Size
-  )
-{
-  EFI_STATUS  Status;
-
-  Status = gDS->AddMemorySpace (
-                  EfiGcdMemoryTypeMemoryMappedIo,
-                  Base,
-                  Size,
-                  EFI_MEMORY_UC
-                  );
-  if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "%a: failed to add GCD memory space for region [0x%Lx+0x%Lx)\n",
-      __FUNCTION__,
-      Base,
-      Size
-      ));
-    return Status;
-  }
-
-  Status = gDS->SetMemorySpaceAttributes (Base, Size, EFI_MEMORY_UC);
-  if (EFI_ERROR (Status)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "%a: failed to set memory space attributes for region [0x%Lx+0x%Lx)\n",
-      __FUNCTION__,
-      Base,
-      Size
-      ));
-  }
-
-  return Status;
-}
 
 STATIC
 EFI_STATUS
@@ -143,7 +104,7 @@ ProcessPciHost (
     DEBUG ((
       DEBUG_INFO,
       "%a: No 'pci-host-ecam-generic' compatible DT node found\n",
-      __FUNCTION__
+      __func__
       ));
     return EFI_NOT_FOUND;
   }
@@ -169,7 +130,7 @@ ProcessPciHost (
     DEBUG ((
       DEBUG_ERROR,
       "%a: 'reg' property not found or invalid\n",
-      __FUNCTION__
+      __func__
       ));
     return EFI_PROTOCOL_ERROR;
   }
@@ -177,8 +138,8 @@ ProcessPciHost (
   //
   // Fetch the ECAM window.
   //
-  ConfigBase = SwapBytes64 (((CONST UINT64 *)Prop)[0]);
-  ConfigSize = SwapBytes64 (((CONST UINT64 *)Prop)[1]);
+  ConfigBase = SwapBytes64 (ReadUnaligned64 (Prop));
+  ConfigSize = SwapBytes64 (ReadUnaligned64 ((CONST UINT64 *)Prop + 1));
 
   //
   // Fetch the bus range (note: inclusive).
@@ -194,7 +155,7 @@ ProcessPciHost (
     DEBUG ((
       DEBUG_ERROR,
       "%a: 'bus-range' not found or invalid\n",
-      __FUNCTION__
+      __func__
       ));
     return EFI_PROTOCOL_ERROR;
   }
@@ -212,7 +173,7 @@ ProcessPciHost (
     DEBUG ((
       DEBUG_ERROR,
       "%a: invalid 'bus-range' and/or 'reg'\n",
-      __FUNCTION__
+      __func__
       ));
     return EFI_PROTOCOL_ERROR;
   }
@@ -224,7 +185,7 @@ ProcessPciHost (
   if (EFI_ERROR (Status) || (Len == 0) ||
       (Len % sizeof (DTB_PCI_HOST_RANGE_RECORD) != 0))
   {
-    DEBUG ((DEBUG_ERROR, "%a: 'ranges' not found or invalid\n", __FUNCTION__));
+    DEBUG ((DEBUG_ERROR, "%a: 'ranges' not found or invalid\n", __func__));
     return EFI_PROTOCOL_ERROR;
   }
 
@@ -251,7 +212,7 @@ ProcessPciHost (
         if ((*Mmio32Base > MAX_UINT32) || (*Mmio32Size > MAX_UINT32) ||
             (*Mmio32Base + *Mmio32Size > SIZE_4GB))
         {
-          DEBUG ((DEBUG_ERROR, "%a: MMIO32 space invalid\n", __FUNCTION__));
+          DEBUG ((DEBUG_ERROR, "%a: MMIO32 space invalid\n", __func__));
           return EFI_PROTOCOL_ERROR;
         }
 
@@ -262,7 +223,7 @@ ProcessPciHost (
             DEBUG_ERROR,
             "%a: unsupported nonzero MMIO32 translation "
             "0x%Lx\n",
-            __FUNCTION__,
+            __func__,
             Mmio32Translation
             ));
           return EFI_UNSUPPORTED;
@@ -282,7 +243,7 @@ ProcessPciHost (
             DEBUG_ERROR,
             "%a: unsupported nonzero MMIO64 translation "
             "0x%Lx\n",
-            __FUNCTION__,
+            __func__,
             Mmio64Translation
             ));
           return EFI_UNSUPPORTED;
@@ -292,13 +253,8 @@ ProcessPciHost (
     }
   }
 
-  if ((*IoSize == 0) || (*Mmio32Size == 0)) {
-    DEBUG ((
-      DEBUG_ERROR,
-      "%a: %a space empty\n",
-      __FUNCTION__,
-      (*IoSize == 0) ? "IO" : "MMIO32"
-      ));
+  if (*Mmio32Size == 0) {
+    DEBUG ((DEBUG_ERROR, "%a: MMIO32 space empty\n", __func__));
     return EFI_PROTOCOL_ERROR;
   }
 
@@ -312,7 +268,7 @@ ProcessPciHost (
     DEBUG_INFO,
     "%a: Config[0x%Lx+0x%Lx) Bus[0x%x..0x%x] "
     "Io[0x%Lx+0x%Lx)@0x%Lx Mem32[0x%Lx+0x%Lx)@0x0 Mem64[0x%Lx+0x%Lx)@0x0\n",
-    __FUNCTION__,
+    __func__,
     ConfigBase,
     ConfigSize,
     *BusMin,
@@ -327,19 +283,37 @@ ProcessPciHost (
     ));
 
   // Map the ECAM space in the GCD memory map
-  Status = MapGcdMmioSpace (ConfigBase, ConfigSize);
+  Status = MapMmioMemory (ConfigBase, ConfigSize, EFI_MEMORY_UC | EFI_MEMORY_XP);
   ASSERT_EFI_ERROR (Status);
   if (EFI_ERROR (Status)) {
     return Status;
   }
 
-  //
-  // Map the MMIO window that provides I/O access - the PCI host bridge code
-  // is not aware of this translation and so it will only map the I/O view
-  // in the GCD I/O map.
-  //
-  Status = MapGcdMmioSpace (*IoBase + IoTranslation, *IoSize);
-  ASSERT_EFI_ERROR (Status);
+  if (*IoSize != 0) {
+    //
+    // Map the MMIO window that provides I/O access - the PCI host bridge code
+    // is not aware of this translation and so it will only map the I/O view
+    // in the GCD I/O map.
+    //
+    Status = MapMmioMemory (*IoBase + IoTranslation, *IoSize, EFI_MEMORY_UC | EFI_MEMORY_XP);
+    ASSERT_EFI_ERROR (Status);
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+  }
+
+  if (*Mmio32Size != 0) {
+    Status = MapMmioMemory (*Mmio32Base, *Mmio32Size, EFI_MEMORY_UC | EFI_MEMORY_XP);
+    ASSERT_EFI_ERROR (Status);
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+  }
+
+  if (*Mmio64Size != 0) {
+    Status = MapMmioMemory (*Mmio64Base, *Mmio64Size, EFI_MEMORY_UC | EFI_MEMORY_XP);
+    ASSERT_EFI_ERROR (Status);
+  }
 
   return Status;
 }
@@ -373,7 +347,7 @@ PciHostBridgeGetRootBridges (
   PCI_ROOT_BRIDGE_APERTURE  PMemAbove4G;
 
   if (PcdGet64 (PcdPciExpressBaseAddress) == 0) {
-    DEBUG ((DEBUG_INFO, "%a: PCI host bridge not present\n", __FUNCTION__));
+    DEBUG ((DEBUG_INFO, "%a: PCI host bridge not present\n", __func__));
 
     *Count = 0;
     return NULL;
@@ -393,7 +367,7 @@ PciHostBridgeGetRootBridges (
     DEBUG ((
       DEBUG_ERROR,
       "%a: failed to discover PCI host bridge: %r\n",
-      __FUNCTION__,
+      __func__,
       Status
       ));
     *Count = 0;
@@ -413,21 +387,25 @@ PciHostBridgeGetRootBridges (
 
   AllocationAttributes = EFI_PCI_HOST_BRIDGE_COMBINE_MEM_PMEM;
 
-  Io.Base   = IoBase;
-  Io.Limit  = IoBase + IoSize - 1;
+  if (IoSize != 0) {
+    Io.Base  = IoBase;
+    Io.Limit = IoBase + IoSize - 1;
+  } else {
+    Io.Base  = MAX_UINT64;
+    Io.Limit = 0;
+  }
+
   Mem.Base  = Mmio32Base;
   Mem.Limit = Mmio32Base + Mmio32Size - 1;
 
-  if (sizeof (UINTN) == sizeof (UINT64)) {
-    MemAbove4G.Base  = Mmio64Base;
-    MemAbove4G.Limit = Mmio64Base + Mmio64Size - 1;
-    if (Mmio64Size > 0) {
-      AllocationAttributes |= EFI_PCI_HOST_BRIDGE_MEM64_DECODE;
-    }
+  if ((sizeof (UINTN) == sizeof (UINT64)) && (Mmio64Size != 0)) {
+    MemAbove4G.Base       = Mmio64Base;
+    MemAbove4G.Limit      = Mmio64Base + Mmio64Size - 1;
+    AllocationAttributes |= EFI_PCI_HOST_BRIDGE_MEM64_DECODE;
   } else {
     //
     // UEFI mandates a 1:1 virtual-to-physical mapping, so on a 32-bit
-    // architecture such as ARM, we will not be able to access 64-bit MMIO
+    // architecture, we will not be able to access 64-bit MMIO
     // BARs unless they are allocated below 4 GB. So ignore the range above
     // 4 GB in this case.
     //

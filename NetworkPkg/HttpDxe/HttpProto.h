@@ -1,14 +1,15 @@
 /** @file
   The header files of miscellaneous routines for HttpDxe driver.
 
-Copyright (c) 2015 - 2021, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2015, Intel Corporation. All rights reserved.<BR>
 (C) Copyright 2016 Hewlett Packard Enterprise Development LP<BR>
+Copyright (C) 2024 Advanced Micro Devices, Inc. All rights reserved.<BR>
+(c) Copyright 2025 HP Development Company, L.P.
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef __EFI_HTTP_PROTO_H__
-#define __EFI_HTTP_PROTO_H__
+#pragma once
 
 #define DEF_BUF_LEN  2048
 
@@ -37,7 +38,6 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 //
 #define HTTP_TOS_DEAULT           8
 #define HTTP_TTL_DEAULT           255
-#define HTTP_BUFFER_SIZE_DEAULT   65535
 #define HTTP_MAX_SYN_BACK_LOG     5
 #define HTTP_CONNECTION_TIMEOUT   60
 #define HTTP_DATA_RETRIES         12
@@ -164,6 +164,15 @@ typedef struct _HTTP_PROTOCOL {
   NET_MAP                           RxTokens;
 
   CHAR8                             *Url;
+  UINTN                             UrlLen;
+
+  //
+  // Proxy support
+  //
+  CHAR8                             *ProxyUrl;
+  UINTN                             ProxyUrlLen;
+  BOOLEAN                           ProxyConnected;
+  CHAR8                             *EndPointHostName;
 
   //
   // Https Support
@@ -171,7 +180,7 @@ typedef struct _HTTP_PROTOCOL {
   BOOLEAN                           UseHttps;
 
   EFI_SERVICE_BINDING_PROTOCOL      *TlsSb;
-  EFI_HANDLE                        TlsChildHandle; /// Tls ChildHandle
+  BOOLEAN                           TlsAlreadyCreated;
   TLS_CONFIG_DATA                   TlsConfigData;
   EFI_TLS_PROTOCOL                  *Tls;
   EFI_TLS_CONFIGURATION_PROTOCOL    *TlsConfiguration;
@@ -194,6 +203,8 @@ typedef struct _HTTP_PROTOCOL {
   EFI_TCP6_IO_TOKEN                 Tcp6TlsRxToken;
   EFI_TCP6_RECEIVE_DATA             Tcp6TlsRxData;
   BOOLEAN                           TlsIsRxDone;
+
+  BOOLEAN                           ConnectionClose;
 } HTTP_PROTOCOL;
 
 typedef struct {
@@ -396,6 +407,7 @@ HttpConfigureTcp6 (
   connect one TLS session if required.
 
   @param[in]  HttpInstance       The HTTP instance private data.
+  @param[in]  TlsConfigure       The Flag indicates whether it's the new Tls session.
 
   @retval EFI_SUCCESS            The TCP connection is established.
   @retval EFI_NOT_READY          TCP4 protocol child is not created or configured.
@@ -404,7 +416,8 @@ HttpConfigureTcp6 (
 **/
 EFI_STATUS
 HttpConnectTcp4 (
-  IN  HTTP_PROTOCOL  *HttpInstance
+  IN  HTTP_PROTOCOL  *HttpInstance,
+  IN  BOOLEAN        TlsConfigure
   );
 
 /**
@@ -412,6 +425,7 @@ HttpConnectTcp4 (
   connect one TLS session if required.
 
   @param[in]  HttpInstance       The HTTP instance private data.
+  @param[in]  TlsConfigure       The Flag indicates whether it's the new Tls session.
 
   @retval EFI_SUCCESS            The TCP connection is established.
   @retval EFI_NOT_READY          TCP6 protocol child is not created or configured.
@@ -420,7 +434,8 @@ HttpConnectTcp4 (
 **/
 EFI_STATUS
 HttpConnectTcp6 (
-  IN  HTTP_PROTOCOL  *HttpInstance
+  IN  HTTP_PROTOCOL  *HttpInstance,
+  IN  BOOLEAN        TlsConfigure
   );
 
 /**
@@ -618,5 +633,3 @@ HttpNotify (
   IN  EDKII_HTTP_CALLBACK_EVENT  Event,
   IN  EFI_STATUS                 EventStatus
   );
-
-#endif

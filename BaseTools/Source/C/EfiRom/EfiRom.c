@@ -44,7 +44,6 @@ Returns:
   FILE_LIST *FList;
   UINT32    TotalSize;
   UINT32    Size;
-  CHAR8     *Ptr0;
 
   SetUtilityName(UTILITY_NAME);
 
@@ -75,7 +74,7 @@ Returns:
   //
   if (mOptions.DumpOption == 1) {
     if (mOptions.FileList != NULL) {
-      if ((Ptr0 = strstr ((CONST CHAR8 *) mOptions.FileList->FileName, DEFAULT_OUTPUT_EXTENSION)) != NULL) {
+      if (strstr ((CONST CHAR8 *) mOptions.FileList->FileName, DEFAULT_OUTPUT_EXTENSION) != NULL) {
         DumpImage (mOptions.FileList);
         goto BailOut;
       } else {
@@ -1112,7 +1111,7 @@ Returns:
           goto Done;
         }
         if (DebugLevel > 9)  {
-          Error (NULL, 0, 2000, "Invalid option value", "Debug Level range is 0-9, current input level is %d", Argv[1]);
+          Error (NULL, 0, 2000, "Invalid option value", "Debug Level range is 0-9, current input level is %llu", DebugLevel);
           ReturnStatus = 1;
           goto Done;
         }

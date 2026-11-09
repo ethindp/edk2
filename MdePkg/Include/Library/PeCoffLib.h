@@ -10,8 +10,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef __BASE_PE_COFF_LIB_H__
-#define __BASE_PE_COFF_LIB_H__
+#pragma once
 
 #include <IndustryStandard/PeImage.h>
 //
@@ -171,6 +170,12 @@ typedef struct {
   ///
   UINT16                      ImageType;
   ///
+  /// Set by PeCoffLoaderGetImageInfo() to the DLL flags stored in the PE/COFF header and
+  /// in the DllCharacteristicsEx debug table.
+  ///
+  UINT16                      DllCharacteristics;
+  UINT32                      DllCharacteristicsEx;
+  ///
   /// Set by PeCoffLoaderGetImageInfo() to TRUE if the PE/COFF image does not contain
   /// relocation information.
   ///
@@ -191,6 +196,14 @@ typedef struct {
   /// Private storage for implementation specific data.
   ///
   UINT64                      Context;
+  ///
+  /// Set by PeCoffLoaderGetImageInfo() to a copy of the image's
+  /// EFI_IMAGE_DIRECTORY_ENTRY_SECURITY data directory entry. If the image
+  /// does not contain a security data directory entry, this field is set to
+  /// zero. The VirtualAddress field represents the offset to the security
+  /// data from the start of the unloaded image.
+  ///
+  EFI_IMAGE_DATA_DIRECTORY    SecurityDataDirectory;
 } PE_COFF_LOADER_IMAGE_CONTEXT;
 
 /**
@@ -381,5 +394,3 @@ EFIAPI
 PeCoffLoaderUnloadImage (
   IN OUT PE_COFF_LOADER_IMAGE_CONTEXT  *ImageContext
   );
-
-#endif

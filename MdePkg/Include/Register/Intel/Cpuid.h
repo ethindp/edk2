@@ -6,17 +6,18 @@
   If a register returned is a single 32-bit value, then a data structure is
   not provided for that register.
 
-  Copyright (c) 2015 - 2021, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2015 - 2023, Intel Corporation. All rights reserved.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
   @par Specification Reference:
   Intel(R) 64 and IA-32 Architectures Software Developer's Manual, Volume 2A,
   November 2018, CPUID instruction.
+  Architecture Specification: Intel(R) Trust Domain Extensions Module, Chap 10.2
+  344425-003US, August 2021
 
 **/
 
-#ifndef __INTEL_CPUID_H__
-#define __INTEL_CPUID_H__
+#pragma once
 
 /**
   CPUID Signature Information
@@ -321,9 +322,9 @@ typedef union {
     ///
     UINT32    RDRAND              : 1;
     ///
-    /// [Bit 31] Always returns 0.
+    /// [Bit 31] A value of 1 indicates that processor is in Para-Virtualized.
     ///
-    UINT32    NotUsed             : 1;
+    UINT32    ParaVirtualized     : 1;
   } Bits;
   ///
   /// All bit fields as a 32-bit value
@@ -1488,7 +1489,12 @@ typedef union {
     /// RDPKRU/WRPKRU instructions).
     ///
     UINT32    OSPKE            : 1;
-    UINT32    Reserved5        : 9;
+    UINT32    Reserved8        : 8;
+    ///
+    /// [Bit 13] If 1, the following MSRs are supported: IA32_TME_CAPABILITY, IA32_TME_ACTIVATE,
+    /// IA32_TME_EXCLUDE_MASK, and IA32_TME_EXCLUDE_BASE.
+    ///
+    UINT32    TME_EN           : 1;
     ///
     /// [Bits 14] AVX512_VPOPCNTDQ. (Intel Xeon Phi only.).
     ///
@@ -1556,7 +1562,7 @@ typedef union {
     UINT32    Reserved5                               : 10;
     ///
     /// [Bit 26] Enumerates support for indirect branch restricted speculation
-    /// (IBRS) and the indirect branch pre-dictor barrier (IBPB). Processors
+    /// (IBRS) and the indirect branch predictor barrier (IBPB). Processors
     /// that set this bit support the IA32_SPEC_CTRL MSR and the IA32_PRED_CMD
     /// MSR. They allow software to set IA32_SPEC_CTRL[0] (IBRS) and
     /// IA32_PRED_CMD[0] (IBPB).
@@ -2919,8 +2925,8 @@ typedef union {
 /**
   CPUID Intel Processor Trace Information Main Leaf
 
-  @param   EAX  CPUID_INTEL_PROCEDSSOR_TRACE (0x14)
-  @param   ECX  CPUID_INTEL_PROCEDSSOR_TRACE_MAIN_LEAF (0x00)
+  @param   EAX  CPUID_INTEL_PROCESSOR_TRACE (0x14)
+  @param   ECX  CPUID_INTEL_PROCESSOR_TRACE_MAIN_LEAF (0x00)
 
   @retval  EAX  Reports the maximum sub-leaf supported in leaf 14H.
   @retval  EBX  Returns Intel processor trace information described by the
@@ -3037,7 +3043,7 @@ typedef union {
 /**
   CPUID Intel Processor Trace Information Sub-leaf
 
-  @param   EAX  CPUID_INTEL_PROCEDSSOR_TRACE (0x14)
+  @param   EAX  CPUID_INTEL_PROCESSOR_TRACE (0x14)
   @param   ECX  CPUID_INTEL_PROCESSOR_TRACE_SUB_LEAF (0x01)
 
   @retval  EAX  Returns Intel processor trace information described by the
@@ -3690,6 +3696,35 @@ typedef union {
 ///
 
 /**
+  CPUID Guest TD Run Time Environment Enumeration Leaf
+
+  @note
+  Guest software can be designed to run either as a TD, as a legacy virtual machine,
+  or directly on the CPU, based on enumeration of its run-time environment.
+  CPUID leaf 21H emulation is done by the Intel TDX module. Sub-leaf 0 returns the values
+  shown below. Other sub-leaves return 0 in EAX/EBX/ECX/EDX.
+    EAX: 0x00000000
+    EBX: 0x65746E49 "Inte"
+    ECX: 0x20202020 "    "
+    EDX: 0x5844546C "lTDX"
+
+  @param   EAX  CPUID_GUESTTD_RUNTIME_ENVIRONMENT                        (0x21)
+  @param   ECX  Level number
+
+**/
+#define CPUID_GUESTTD_RUNTIME_ENVIRONMENT  0x21
+
+///
+/// @{ CPUID Guest TD signature values returned by Intel processors
+///
+#define CPUID_GUESTTD_SIGNATURE_GENUINE_INTEL_EBX  SIGNATURE_32 ('I', 'n', 't', 'e')
+#define CPUID_GUESTTD_SIGNATURE_GENUINE_INTEL_ECX  SIGNATURE_32 (' ', ' ', ' ', ' ')
+#define CPUID_GUESTTD_SIGNATURE_GENUINE_INTEL_EDX  SIGNATURE_32 ('l', 'T', 'D', 'X')
+///
+/// @}
+///
+
+/**
   CPUID Extended Function
 
   @param   EAX  CPUID_EXTENDED_FUNCTION (0x80000000)
@@ -4043,5 +4078,3 @@ typedef union {
   ///
   UINT32    Uint32;
 } CPUID_VIR_PHY_ADDRESS_SIZE_EAX;
-
-#endif

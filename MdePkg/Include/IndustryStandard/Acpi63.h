@@ -1,16 +1,36 @@
 /** @file
   ACPI 6.3 definitions from the ACPI Specification Revision 6.3 Jan, 2019.
 
-  Copyright (c) 2017, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2017 - 2022, Intel Corporation. All rights reserved.<BR>
   Copyright (c) 2019 - 2020, ARM Ltd. All rights reserved.<BR>
+  Copyright (C) 2025, Advanced Micro Devices, Inc. All rights reserved.
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#ifndef _ACPI_6_3_H_
-#define _ACPI_6_3_H_
+#pragma once
 
 #include <IndustryStandard/Acpi62.h>
+
+///
+/// _CSD Revision for ACPI 6.3
+///
+#define EFI_ACPI_6_3_AML_CSD_REVISION  0
+
+///
+/// _CSD NumEntries for ACPI 6.3
+///
+#define EFI_ACPI_6_3_AML_CSD_NUM_ENTRIES  6
+
+///
+/// _PSD Revision for ACPI 6.3
+///
+#define EFI_ACPI_6_3_AML_PSD_REVISION  0
+
+///
+/// _CPC Revision for ACPI 6.3
+///
+#define EFI_ACPI_6_3_AML_CPC_REVISION  3
 
 //
 // Ensure proper structure formats
@@ -1450,6 +1470,7 @@ typedef struct {
 #define EFI_ACPI_6_3_NFIT_NVDIMM_CONTROL_REGION_STRUCTURE_TYPE            4
 #define EFI_ACPI_6_3_NFIT_NVDIMM_BLOCK_DATA_WINDOW_REGION_STRUCTURE_TYPE  5
 #define EFI_ACPI_6_3_NFIT_FLUSH_HINT_ADDRESS_STRUCTURE_TYPE               6
+#define EFI_ACPI_6_3_NFIT_PLATFORM_CAPABILITIES_STRUCTURE_TYPE            7
 
 //
 // Definition for NFIT Structure Header
@@ -1602,6 +1623,22 @@ typedef struct {
   // UINT64                                      FlushHintAddress[NumberOfFlushHintAddresses];
 } EFI_ACPI_6_3_NFIT_FLUSH_HINT_ADDRESS_STRUCTURE;
 
+//
+// Definition for Platform Capabilities Structure
+//
+typedef struct {
+  UINT16    Type;
+  UINT16    Length;
+  UINT8     HighestValidCapability;
+  UINT8     Reserved_5[3];
+  UINT32    Capabilities;
+  UINT8     Reserved_12[4];
+} EFI_ACPI_6_3_NFIT_PLATFORM_CAPABILITIES_STRUCTURE;
+
+#define EFI_ACPI_6_3_NFIT_PLATFORM_CAPABILITY_CPU_CACHE_FLUSH_TO_NVDIMM_DURABILITY_ON_POWER_LOSS          BIT0
+#define EFI_ACPI_6_3_NFIT_PLATFORM_CAPABILITY_MEMORY_CONTROLLER_FLUSH_TO_NVDIMM_DURABILITY_ON_POWER_LOSS  BIT1
+#define EFI_ACPI_6_3_NFIT_PLATFORM_CAPABILITY_BYTE_ADDRESSABLE_PERSISTENT_MEMORY_HARDWARE_MIRRORING       BIT2
+
 ///
 /// Secure DEVices Table (SDEV)
 ///
@@ -1615,13 +1652,13 @@ typedef struct {
 #define EFI_ACPI_6_3_SECURE_DEVICES_TABLE_REVISION  0x01
 
 ///
-/// Secure Devcice types
+/// Secure Device types
 ///
 #define EFI_ACPI_6_3_SDEV_TYPE_PCIE_ENDPOINT_DEVICE   0x01
 #define EFI_ACPI_6_3_SDEV_TYPE_ACPI_NAMESPACE_DEVICE  0x00
 
 ///
-/// Secure Devcice flags
+/// Secure Device flags
 ///
 #define EFI_ACPI_6_3_SDEV_FLAG_ALLOW_HANDOFF  BIT0
 
@@ -1702,10 +1739,16 @@ typedef struct {
 //
 // Boot Error Severity types
 //
-#define EFI_ACPI_6_3_ERROR_SEVERITY_CORRECTABLE  0x00
+#define EFI_ACPI_6_3_ERROR_SEVERITY_RECOVERABLE  0x00
 #define EFI_ACPI_6_3_ERROR_SEVERITY_FATAL        0x01
 #define EFI_ACPI_6_3_ERROR_SEVERITY_CORRECTED    0x02
 #define EFI_ACPI_6_3_ERROR_SEVERITY_NONE         0x03
+//
+// The term 'Correctable' is no longer being used as an error severity of the
+// reported error since ACPI Specification Version 5.1 Errata B.
+// The below macro is considered as deprecated and should no longer be used.
+//
+#define EFI_ACPI_6_3_ERROR_SEVERITY_CORRECTABLE  0x00
 
 ///
 /// Generic Error Data Entry Definition
@@ -2219,6 +2262,8 @@ typedef struct {
 #define EFI_ACPI_6_3_EINJ_EXECUTE_OPERATION               0x05
 #define EFI_ACPI_6_3_EINJ_CHECK_BUSY_STATUS               0x06
 #define EFI_ACPI_6_3_EINJ_GET_COMMAND_STATUS              0x07
+#define EFI_ACPI_6_3_EINJ_SET_ERROR_TYPE_WITH_ADDRESS     0x08
+#define EFI_ACPI_6_3_EINJ_GET_EXECUTE_OPERATION_TIMINGS   0x09
 #define EFI_ACPI_6_3_EINJ_TRIGGER_ERROR                   0xFF
 
 ///
@@ -2956,5 +3001,3 @@ typedef struct {
 #define EFI_ACPI_6_3_XEN_PROJECT_TABLE_SIGNATURE  SIGNATURE_32('X', 'E', 'N', 'V')
 
 #pragma pack()
-
-#endif

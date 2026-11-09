@@ -10,13 +10,13 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 #include <PiDxe.h>
 
-#include <Library/ArmMmuLib.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
 #include <Library/PcdLib.h>
 #include <Library/PeCoffLib.h>
 #include <Library/PeCoffExtraActionLib.h>
+#include <Library/StandaloneMmMmuLib.h>
 
 typedef RETURN_STATUS (*REGION_PERMISSION_UPDATE_FUNC) (
   IN  EFI_PHYSICAL_ADDRESS  BaseAddress,
@@ -28,7 +28,8 @@ RETURN_STATUS
 UpdatePeCoffPermissions (
   IN  CONST PE_COFF_LOADER_IMAGE_CONTEXT  *ImageContext,
   IN  REGION_PERMISSION_UPDATE_FUNC       NoExecUpdater,
-  IN  REGION_PERMISSION_UPDATE_FUNC       ReadOnlyUpdater
+  IN  REGION_PERMISSION_UPDATE_FUNC       ReadOnlyUpdater,
+  IN  REGION_PERMISSION_UPDATE_FUNC       ReadOnlyExecUpdater
   )
 {
   RETURN_STATUS                        Status;
@@ -42,6 +43,7 @@ UpdatePeCoffPermissions (
   EFI_IMAGE_SECTION_HEADER             SectionHeader;
   PE_COFF_LOADER_IMAGE_CONTEXT         TmpContext;
   EFI_PHYSICAL_ADDRESS                 Base;
+  UINT64                               SectionAlignment;
 
   //
   // We need to copy ImageContext since PeCoffLoaderGetImageInfo ()
@@ -55,7 +57,7 @@ UpdatePeCoffPermissions (
       DEBUG ((
         DEBUG_ERROR,
         "%a: PeCoffLoaderGetImageInfo () failed (Status = %r)\n",
-        __FUNCTION__,
+        __func__,
         Status
         ));
       return Status;
@@ -68,11 +70,13 @@ UpdatePeCoffPermissions (
     DEBUG ((
       DEBUG_INFO,
       "%a: ignoring XIP TE image at 0x%lx\n",
-      __FUNCTION__,
+      __func__,
       ImageContext->ImageAddress
       ));
     return RETURN_SUCCESS;
   }
+
+  SectionAlignment = TmpContext.SectionAlignment;
 
   if (TmpContext.SectionAlignment < EFI_PAGE_SIZE) {
     //
@@ -84,7 +88,7 @@ UpdatePeCoffPermissions (
       DEBUG ((
         DEBUG_WARN,
         "%a: non-TE Image at 0x%lx has SectionAlignment < 4 KB (%lu)\n",
-        __FUNCTION__,
+        __func__,
         ImageContext->ImageAddress,
         TmpContext.SectionAlignment
         ));
@@ -114,7 +118,7 @@ UpdatePeCoffPermissions (
     DEBUG ((
       DEBUG_ERROR,
       "%a: TmpContext.ImageRead () failed (Status = %r)\n",
-      __FUNCTION__,
+      __func__,
       Status
       ));
     return Status;
@@ -156,7 +160,7 @@ UpdatePeCoffPermissions (
       DEBUG ((
         DEBUG_ERROR,
         "%a: TmpContext.ImageRead () failed (Status = %r)\n",
-        __FUNCTION__,
+        __func__,
         Status
         ));
       return Status;
@@ -164,22 +168,30 @@ UpdatePeCoffPermissions (
 
     Base = TmpContext.ImageAddress + SectionHeader.VirtualAddress;
 
-    if ((SectionHeader.Characteristics & EFI_IMAGE_SCN_MEM_EXECUTE) == 0) {
+    if (SectionHeader.Misc.VirtualSize == 0) {
+      DEBUG ((
+        DEBUG_INFO,
+        "%a: Skipping section %d of image at 0x%lx with size 0\n",
+        __func__,
+        Index,
+        Base
+        ));
+    } else if ((SectionHeader.Characteristics & EFI_IMAGE_SCN_MEM_EXECUTE) == 0) {
       if ((SectionHeader.Characteristics & EFI_IMAGE_SCN_MEM_WRITE) == 0) {
         DEBUG ((
           DEBUG_INFO,
           "%a: Mapping section %d of image at 0x%lx with RO-XN permissions and size 0x%x\n",
-          __FUNCTION__,
+          __func__,
           Index,
           Base,
           SectionHeader.Misc.VirtualSize
           ));
-        ReadOnlyUpdater (Base, SectionHeader.Misc.VirtualSize);
+        ReadOnlyUpdater (Base, ALIGN_VALUE (SectionHeader.Misc.VirtualSize, SectionAlignment));
       } else {
         DEBUG ((
           DEBUG_WARN,
           "%a: Mapping section %d of image at 0x%lx with RW-XN permissions and size 0x%x\n",
-          __FUNCTION__,
+          __func__,
           Index,
           Base,
           SectionHeader.Misc.VirtualSize
@@ -189,13 +201,12 @@ UpdatePeCoffPermissions (
       DEBUG ((
         DEBUG_INFO,
         "%a: Mapping section %d of image at 0x%lx with RO-X permissions and size 0x%x\n",
-        __FUNCTION__,
+        __func__,
         Index,
         Base,
         SectionHeader.Misc.VirtualSize
         ));
-      ReadOnlyUpdater (Base, SectionHeader.Misc.VirtualSize);
-      NoExecUpdater (Base, SectionHeader.Misc.VirtualSize);
+      ReadOnlyExecUpdater (Base, ALIGN_VALUE (SectionHeader.Misc.VirtualSize, SectionAlignment));
     }
 
     SectionHeaderOffset += sizeof (EFI_IMAGE_SECTION_HEADER);
@@ -222,7 +233,8 @@ PeCoffLoaderRelocateImageExtraAction (
   UpdatePeCoffPermissions (
     ImageContext,
     ArmClearMemoryRegionNoExec,
-    ArmSetMemoryRegionReadOnly
+    ArmSetMemoryRegionReadOnlyPerm,
+    ArmSetMemoryRegionReadOnlyExecPerm
     );
 }
 
@@ -245,6 +257,7 @@ PeCoffLoaderUnloadImageExtraAction (
   UpdatePeCoffPermissions (
     ImageContext,
     ArmSetMemoryRegionNoExec,
-    ArmClearMemoryRegionReadOnly
+    ArmSetMemoryRegionReadWritePerm,
+    ArmSetMemoryRegionReadWritePerm
     );
 }

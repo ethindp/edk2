@@ -3,6 +3,7 @@
     Usb Bus Driver Binding and Bus IO Protocol.
 
 Copyright (c) 2004 - 2018, Intel Corporation. All rights reserved.<BR>
+Copyright (C) 2024 Advanced Micro Devices, Inc. All rights reserved.
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
@@ -738,7 +739,7 @@ UsbIoGetStringDescriptor (
   EFI_USB_STRING_DESCRIPTOR  *StrDesc;
   EFI_TPL                    OldTpl;
   UINT8                      *Buf;
-  UINT8                      Index;
+  UINT16                     Index;
   EFI_STATUS                 Status;
 
   if ((StringIndex == 0) || (LangID == 0)) {
@@ -815,12 +816,14 @@ UsbIoPortReset (
   IN EFI_USB_IO_PROTOCOL  *This
   )
 {
-  USB_INTERFACE  *UsbIf;
-  USB_INTERFACE  *HubIf;
-  USB_DEVICE     *Dev;
-  EFI_TPL        OldTpl;
-  EFI_STATUS     Status;
-  UINT8          DevAddress;
+  USB_INTERFACE    *UsbIf;
+  USB_INTERFACE    *HubIf;
+  USB_DEVICE       *Dev;
+  EFI_TPL          OldTpl;
+  EFI_STATUS       Status;
+  UINT8            DevAddress;
+  UINT8            Config;
+  USB_DEVICE_DESC  *DevDesc;
 
   OldTpl = gBS->RaiseTPL (USB_BUS_TPL);
 
@@ -838,7 +841,7 @@ UsbIoPortReset (
   if (EFI_ERROR (Status)) {
     DEBUG ((
       DEBUG_ERROR,
-      "UsbIoPortReset: failed to reset hub port %d@hub  %d, %r \n",
+      "UsbIoPortReset: failed to reset hub port %d@hub  %d - %r\n",
       Dev->ParentPort,
       Dev->ParentAddr,
       Status
@@ -882,8 +885,35 @@ UsbIoPortReset (
   // is in CONFIGURED state.
   //
   if (Dev->ActiveConfig != NULL) {
-    Status = UsbSetConfig (Dev, Dev->ActiveConfig->Desc.ConfigurationValue);
+    Status = UsbGetMaxPacketSize0 (Dev);
+    if (EFI_ERROR (Status)) {
+      DEBUG ((DEBUG_ERROR, "UsbIoPortReset: Failed to get max packet size - %r\n", Status));
+    }
 
+    // Expect the Device Descriptor should not be changed.
+    // UEFI spec 2.11 Ch. 17.2.18 EFI_USB_IO_PROTOCOL.UsbPortReset
+    // This Reset function does not change the bus topology.
+
+    // Save the device descriptor before resetting and then restore it after build descriptor table
+    DevDesc      = Dev->DevDesc;
+    Dev->DevDesc = NULL;
+
+    Status = UsbBuildDescTable (Dev);
+
+    if (Dev->DevDesc != NULL) {
+      UsbFreeDevDesc (Dev->DevDesc);
+    }
+
+    Dev->DevDesc = DevDesc;
+
+    if (EFI_ERROR (Status)) {
+      DEBUG ((DEBUG_ERROR, "UsbIoPortReset: Failed to build descriptor table - %r\n", Status));
+      goto ON_EXIT;
+    }
+
+    Config = Dev->DevDesc->Configs[0]->Desc.ConfigurationValue;
+
+    Status = UsbSetConfig (Dev, Config);
     if (EFI_ERROR (Status)) {
       DEBUG ((
         DEBUG_ERROR,
@@ -923,7 +953,6 @@ UsbBusBuildProtocol (
   USB_DEVICE     *RootHub;
   USB_INTERFACE  *RootIf;
   EFI_STATUS     Status;
-  EFI_STATUS     Status2;
 
   UsbBus = AllocateZeroPool (sizeof (USB_BUS));
 
@@ -945,7 +974,7 @@ UsbBusBuildProtocol (
                   );
 
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "UsbBusStart: Failed to open device path %r\n", Status));
+    DEBUG ((DEBUG_ERROR, "UsbBusStart: Failed to open device path - %r\n", Status));
 
     FreePool (UsbBus);
     return Status;
@@ -968,17 +997,8 @@ UsbBusBuildProtocol (
                   EFI_OPEN_PROTOCOL_BY_DRIVER
                   );
 
-  Status2 = gBS->OpenProtocol (
-                   Controller,
-                   &gEfiUsbHcProtocolGuid,
-                   (VOID **)&(UsbBus->UsbHc),
-                   This->DriverBindingHandle,
-                   Controller,
-                   EFI_OPEN_PROTOCOL_BY_DRIVER
-                   );
-
-  if (EFI_ERROR (Status) && EFI_ERROR (Status2)) {
-    DEBUG ((DEBUG_ERROR, "UsbBusStart: Failed to open USB_HC/USB2_HC %r\n", Status));
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "UsbBusStart: Failed to open USB2_HC - %r\n", Status));
 
     Status = EFI_DEVICE_ERROR;
     goto CLOSE_HC;
@@ -1006,7 +1026,7 @@ UsbBusBuildProtocol (
                   );
 
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "UsbBusStart: Failed to install bus protocol %r\n", Status));
+    DEBUG ((DEBUG_ERROR, "UsbBusStart: Failed to install bus protocol - %r\n", Status));
     goto CLOSE_HC;
   }
 
@@ -1054,7 +1074,7 @@ UsbBusBuildProtocol (
   Status = mUsbRootHubApi.Init (RootIf);
 
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "UsbBusStart: Failed to init root hub %r\n", Status));
+    DEBUG ((DEBUG_ERROR, "UsbBusStart: Failed to init root hub - %r\n", Status));
     goto FREE_ROOTHUB;
   }
 
@@ -1085,15 +1105,6 @@ CLOSE_HC:
            );
   }
 
-  if (UsbBus->UsbHc != NULL) {
-    gBS->CloseProtocol (
-           Controller,
-           &gEfiUsbHcProtocolGuid,
-           This->DriverBindingHandle,
-           Controller
-           );
-  }
-
   gBS->CloseProtocol (
          Controller,
          &gEfiDevicePathProtocolGuid,
@@ -1102,7 +1113,7 @@ CLOSE_HC:
          );
   FreePool (UsbBus);
 
-  DEBUG ((DEBUG_ERROR, "UsbBusStart: Failed to start bus driver %r\n", Status));
+  DEBUG ((DEBUG_ERROR, "UsbBusStart: Failed to start bus driver - %r\n", Status));
   return Status;
 }
 
@@ -1155,7 +1166,6 @@ UsbBusControllerDriverSupported (
   EFI_DEV_PATH_PTR          DevicePathNode;
   EFI_DEVICE_PATH_PROTOCOL  *ParentDevicePath;
   EFI_USB2_HC_PROTOCOL      *Usb2Hc;
-  EFI_USB_HC_PROTOCOL       *UsbHc;
   EFI_STATUS                Status;
 
   //
@@ -1200,45 +1210,18 @@ UsbBusControllerDriverSupported (
   }
 
   if (EFI_ERROR (Status)) {
-    //
-    // If failed to open USB_HC2, fall back to USB_HC
-    //
-    Status = gBS->OpenProtocol (
-                    Controller,
-                    &gEfiUsbHcProtocolGuid,
-                    (VOID **)&UsbHc,
-                    This->DriverBindingHandle,
-                    Controller,
-                    EFI_OPEN_PROTOCOL_BY_DRIVER
-                    );
-    if (Status == EFI_ALREADY_STARTED) {
-      return EFI_SUCCESS;
-    }
-
-    if (EFI_ERROR (Status)) {
-      return Status;
-    }
-
-    //
-    // Close the USB_HC used to perform the supported test
-    //
-    gBS->CloseProtocol (
-           Controller,
-           &gEfiUsbHcProtocolGuid,
-           This->DriverBindingHandle,
-           Controller
-           );
-  } else {
-    //
-    // Close the USB_HC2 used to perform the supported test
-    //
-    gBS->CloseProtocol (
-           Controller,
-           &gEfiUsb2HcProtocolGuid,
-           This->DriverBindingHandle,
-           Controller
-           );
+    return Status;
   }
+
+  //
+  // Close the USB_HC2 used to perform the supported test
+  //
+  gBS->CloseProtocol (
+         Controller,
+         &gEfiUsb2HcProtocolGuid,
+         This->DriverBindingHandle,
+         Controller
+         );
 
   //
   // Open the EFI Device Path protocol needed to perform the supported test
@@ -1516,15 +1499,6 @@ UsbBusControllerDriverStop (
       Status = gBS->CloseProtocol (
                       Controller,
                       &gEfiUsb2HcProtocolGuid,
-                      This->DriverBindingHandle,
-                      Controller
-                      );
-    }
-
-    if (Bus->UsbHc != NULL) {
-      Status = gBS->CloseProtocol (
-                      Controller,
-                      &gEfiUsbHcProtocolGuid,
                       This->DriverBindingHandle,
                       Controller
                       );

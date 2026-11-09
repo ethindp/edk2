@@ -1,7 +1,7 @@
 /** @file
   Source file for FSP notify phase PEI module
 
-  Copyright (c) 2016 - 2018, Intel Corporation. All rights reserved.
+  Copyright (c) 2016 - 2022, Intel Corporation. All rights reserved.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
@@ -84,19 +84,28 @@ WaitForNotify (
   FspSiliconInitDone2 (EFI_SUCCESS);
 
   //
+  // Fsp notify phase check
+  //
+  DEBUG ((DEBUG_INFO | DEBUG_INIT, "Fsp Notify Phase called ...\n"));
+  ASSERT (GetFspApiCallingIndex () == NotifyPhaseApiIndex);
+
+  while (GetFspApiCallingIndex () != NotifyPhaseApiIndex) {
+    SetFspApiReturnStatus (EFI_UNSUPPORTED);
+    Pei2LoaderSwitchStack ();
+  }
+
+  //
   // BootLoader called FSP again through NotifyPhase
   //
   FspWaitForNotify ();
 
-  if (GetFspGlobalDataPointer ()->FspMode == FSP_IN_API_MODE) {
-    //
-    // Should not come here
-    //
-    while (TRUE) {
-      DEBUG ((DEBUG_ERROR, "No FSP API should be called after FSP is DONE!\n"));
-      SetFspApiReturnStatus (EFI_UNSUPPORTED);
-      Pei2LoaderSwitchStack ();
-    }
+  //
+  // Should not come here
+  //
+  while (TRUE) {
+    DEBUG ((DEBUG_ERROR, "No FSP API should be called after FSP is DONE!\n"));
+    SetFspApiReturnStatus (EFI_UNSUPPORTED);
+    Pei2LoaderSwitchStack ();
   }
 
   return EFI_SUCCESS;
@@ -112,6 +121,7 @@ WaitForNotify (
   @retval     EFI_OUT_OF_RESOURCES Insufficient resources to create database
 **/
 EFI_STATUS
+EFIAPI
 FspNotifyPhasePeimEntryPoint (
   IN       EFI_PEI_FILE_HANDLE  FileHandle,
   IN CONST EFI_PEI_SERVICES     **PeiServices

@@ -13,8 +13,7 @@
 
 **/
 
-#ifndef MM_UNBLOCK_MEMORY_LIB_H_
-#define MM_UNBLOCK_MEMORY_LIB_H_
+#pragma once
 
 /**
   This API provides a way to unblock certain data pages to be accessible inside MM environment.
@@ -30,6 +29,7 @@
   @retval RETURN_SECURITY_VIOLATION   The requested address failed to pass security check for
                                       unblocking.
   @retval RETURN_INVALID_PARAMETER    Input address either NULL pointer or not page aligned.
+  @retval RETURN_OUT_OF_RESOURCES     No enough resource to handle the unblock request.
   @retval RETURN_ACCESS_DENIED        The request is rejected due to system has passed certain boot
                                       phase.
 
@@ -40,5 +40,3 @@ MmUnblockMemoryRequest (
   IN PHYSICAL_ADDRESS  UnblockAddress,
   IN UINT64            NumberOfPages
   );
-
-#endif // MM_UNBLOCK_MEMORY_LIB_H_

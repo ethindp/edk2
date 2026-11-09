@@ -6,8 +6,7 @@
 
 **/
 
-#ifndef _DEBUG_AGENT_H_
-#define _DEBUG_AGENT_H_
+#pragma once
 
 #include <Register/LocalApic.h>
 #include <Guid/DebugAgentGuid.h>
@@ -452,7 +451,7 @@ DebugAgentDataMsgPrint (
   );
 
 /**
-  Read remaing debug packet except for the start symbol
+  Read remaining debug packet except for the start symbol
 
   @param[in]      Handle        Pointer to Debug Port handle.
   @param[in, out] DebugHeader   Debug header buffer including start symbol.
@@ -492,5 +491,3 @@ DebugAgentReadBuffer (
   IN     UINTN              NumberOfBytes,
   IN     UINTN              Timeout
   );
-
-#endif

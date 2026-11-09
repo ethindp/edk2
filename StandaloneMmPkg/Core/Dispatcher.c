@@ -49,14 +49,36 @@ typedef struct {
   EFI_FIRMWARE_VOLUME_HEADER    *FwVolHeader;
 } KNOWN_FWVOL;
 
+typedef struct {
+  MEDIA_FW_VOL_FILEPATH_DEVICE_PATH    VendorDevicePath;
+  EFI_DEVICE_PATH_PROTOCOL             End;
+} FV_FILEPATH_DEVICE_PATH;
+
+FV_FILEPATH_DEVICE_PATH  gMmDriverFilePathTemplate = {
+  {
+    {
+      MEDIA_DEVICE_PATH,
+      MEDIA_PIWG_FW_FILE_DP,
+      {
+        (UINT8)(sizeof (MEDIA_FW_VOL_FILEPATH_DEVICE_PATH)),
+        (UINT8)(sizeof (MEDIA_FW_VOL_FILEPATH_DEVICE_PATH) >> 8)
+      }
+    },
+    { 0 }
+  },
+  {
+    END_DEVICE_PATH_TYPE,
+    END_ENTIRE_DEVICE_PATH_SUBTYPE,
+    {
+      sizeof (EFI_DEVICE_PATH_PROTOCOL),
+      0
+    }
+  }
+};
+
 //
 // Function Prototypes
 //
-
-EFI_STATUS
-MmCoreFfsFindMmDriver (
-  IN  EFI_FIRMWARE_VOLUME_HEADER  *FwVolHeader
-  );
 
 /**
   Insert InsertedDriverEntry onto the mScheduledQueue. To do this you
@@ -102,193 +124,11 @@ BOOLEAN  gDispatcherRunning = FALSE;
 //
 BOOLEAN  gRequestDispatch = FALSE;
 
-//
-// The global variable is defined for Loading modules at fixed address feature to track the MM code
-// memory range usage. It is a bit mapped array in which every bit indicates the correspoding
-// memory page available or not.
-//
-GLOBAL_REMOVE_IF_UNREFERENCED    UINT64  *mMmCodeMemoryRangeUsageBitMap = NULL;
-
 /**
-  To check memory usage bit map array to figure out if the memory range in which the image will be loaded
-  is available or not. If memory range is avaliable, the function will mark the corresponding bits to 1
-  which indicates the memory range is used. The function is only invoked when load modules at fixed address
-  feature is enabled.
-
-  @param  ImageBase                The base addres the image will be loaded at.
-  @param  ImageSize                The size of the image
-
-  @retval EFI_SUCCESS              The memory range the image will be loaded in is available
-  @retval EFI_NOT_FOUND            The memory range the image will be loaded in is not available
-**/
-EFI_STATUS
-CheckAndMarkFixLoadingMemoryUsageBitMap (
-  IN  EFI_PHYSICAL_ADDRESS  ImageBase,
-  IN  UINTN                 ImageSize
-  )
-{
-  UINT32                MmCodePageNumber;
-  UINT64                MmCodeSize;
-  EFI_PHYSICAL_ADDRESS  MmCodeBase;
-  UINTN                 BaseOffsetPageNumber;
-  UINTN                 TopOffsetPageNumber;
-  UINTN                 Index;
-
-  //
-  // Build tool will calculate the smm code size and then patch the PcdLoadFixAddressMmCodePageNumber
-  //
-  MmCodePageNumber = 0;
-  MmCodeSize       = EFI_PAGES_TO_SIZE (MmCodePageNumber);
-  MmCodeBase       = gLoadModuleAtFixAddressMmramBase;
-
-  //
-  // If the memory usage bit map is not initialized,  do it. Every bit in the array
-  // indicate the status of the corresponding memory page, available or not
-  //
-  if (mMmCodeMemoryRangeUsageBitMap == NULL) {
-    mMmCodeMemoryRangeUsageBitMap = AllocateZeroPool (((MmCodePageNumber / 64) + 1) * sizeof (UINT64));
-  }
-
-  //
-  // If the Dxe code memory range is not allocated or the bit map array allocation failed, return EFI_NOT_FOUND
-  //
-  if (mMmCodeMemoryRangeUsageBitMap == NULL) {
-    return EFI_NOT_FOUND;
-  }
-
-  //
-  // see if the memory range for loading the image is in the MM code range.
-  //
-  if ((MmCodeBase + MmCodeSize <  ImageBase + ImageSize) || (MmCodeBase >  ImageBase)) {
-    return EFI_NOT_FOUND;
-  }
-
-  //
-  // Test if the memory is available or not.
-  //
-  BaseOffsetPageNumber = (UINTN)EFI_SIZE_TO_PAGES ((UINT32)(ImageBase - MmCodeBase));
-  TopOffsetPageNumber  = (UINTN)EFI_SIZE_TO_PAGES ((UINT32)(ImageBase + ImageSize - MmCodeBase));
-  for (Index = BaseOffsetPageNumber; Index < TopOffsetPageNumber; Index++) {
-    if ((mMmCodeMemoryRangeUsageBitMap[Index / 64] & LShiftU64 (1, (Index % 64))) != 0) {
-      //
-      // This page is already used.
-      //
-      return EFI_NOT_FOUND;
-    }
-  }
-
-  //
-  // Being here means the memory range is available.  So mark the bits for the memory range
-  //
-  for (Index = BaseOffsetPageNumber; Index < TopOffsetPageNumber; Index++) {
-    mMmCodeMemoryRangeUsageBitMap[Index / 64] |= LShiftU64 (1, (Index % 64));
-  }
-
-  return EFI_SUCCESS;
-}
-
-/**
-  Get the fixed loading address from image header assigned by build tool. This function only be called
-  when Loading module at Fixed address feature enabled.
-
-  @param  ImageContext              Pointer to the image context structure that describes the PE/COFF
-                                    image that needs to be examined by this function.
-  @retval EFI_SUCCESS               An fixed loading address is assigned to this image by build tools .
-  @retval EFI_NOT_FOUND             The image has no assigned fixed loadding address.
-
-**/
-EFI_STATUS
-GetPeCoffImageFixLoadingAssignedAddress (
-  IN OUT PE_COFF_LOADER_IMAGE_CONTEXT  *ImageContext
-  )
-{
-  UINTN                            SectionHeaderOffset;
-  EFI_STATUS                       Status;
-  EFI_IMAGE_SECTION_HEADER         SectionHeader;
-  EFI_IMAGE_OPTIONAL_HEADER_UNION  *ImgHdr;
-  EFI_PHYSICAL_ADDRESS             FixLoadingAddress;
-  UINT16                           Index;
-  UINTN                            Size;
-  UINT16                           NumberOfSections;
-  UINT64                           ValueInSectionHeader;
-
-  FixLoadingAddress = 0;
-  Status            = EFI_NOT_FOUND;
-
-  //
-  // Get PeHeader pointer
-  //
-  ImgHdr              = (EFI_IMAGE_OPTIONAL_HEADER_UNION *)((CHAR8 *)ImageContext->Handle + ImageContext->PeCoffHeaderOffset);
-  SectionHeaderOffset = ImageContext->PeCoffHeaderOffset + sizeof (UINT32) + sizeof (EFI_IMAGE_FILE_HEADER) +
-                        ImgHdr->Pe32.FileHeader.SizeOfOptionalHeader;
-  NumberOfSections = ImgHdr->Pe32.FileHeader.NumberOfSections;
-
-  //
-  // Get base address from the first section header that doesn't point to code section.
-  //
-  for (Index = 0; Index < NumberOfSections; Index++) {
-    //
-    // Read section header from file
-    //
-    Size   = sizeof (EFI_IMAGE_SECTION_HEADER);
-    Status = ImageContext->ImageRead (
-                             ImageContext->Handle,
-                             SectionHeaderOffset,
-                             &Size,
-                             &SectionHeader
-                             );
-    if (EFI_ERROR (Status)) {
-      return Status;
-    }
-
-    Status = EFI_NOT_FOUND;
-
-    if ((SectionHeader.Characteristics & EFI_IMAGE_SCN_CNT_CODE) == 0) {
-      //
-      // Build tool will save the address in PointerToRelocations & PointerToLineNumbers fields
-      // in the first section header that doesn't point to code section in image header. So there
-      // is an assumption that when the feature is enabled, if a module with a loading address
-      // assigned by tools, the PointerToRelocations & PointerToLineNumbers fields should not be
-      // Zero, or else, these 2 fields should be set to Zero
-      //
-      ValueInSectionHeader = ReadUnaligned64 ((UINT64 *)&SectionHeader.PointerToRelocations);
-      if (ValueInSectionHeader != 0) {
-        //
-        // Found first section header that doesn't point to code section in which build tool saves the
-        // offset to SMRAM base as image base in PointerToRelocations & PointerToLineNumbers fields
-        //
-        FixLoadingAddress = (EFI_PHYSICAL_ADDRESS)(gLoadModuleAtFixAddressMmramBase + (INT64)ValueInSectionHeader);
-        //
-        // Check if the memory range is available.
-        //
-        Status = CheckAndMarkFixLoadingMemoryUsageBitMap (FixLoadingAddress, (UINTN)(ImageContext->ImageSize + ImageContext->SectionAlignment));
-        if (!EFI_ERROR (Status)) {
-          //
-          // The assigned address is valid. Return the specified loading address
-          //
-          ImageContext->ImageAddress = FixLoadingAddress;
-        }
-      }
-
-      break;
-    }
-
-    SectionHeaderOffset += sizeof (EFI_IMAGE_SECTION_HEADER);
-  }
-
-  DEBUG ((
-    DEBUG_INFO|DEBUG_LOAD,
-    "LOADING MODULE FIXED INFO: Loading module at fixed address %x, Status = %r\n",
-    FixLoadingAddress,
-    Status
-    ));
-  return Status;
-}
-
-/**
-  Loads an EFI image into SMRAM.
+  Loads an EFI image into MMRAM.
 
   @param  DriverEntry             EFI_MM_DRIVER_ENTRY instance
+  @param  ImageContext            Allocated ImageContext to be filled out by this function
 
   @return EFI_STATUS
 
@@ -296,33 +136,40 @@ GetPeCoffImageFixLoadingAssignedAddress (
 EFI_STATUS
 EFIAPI
 MmLoadImage (
-  IN OUT EFI_MM_DRIVER_ENTRY  *DriverEntry
+  IN OUT EFI_MM_DRIVER_ENTRY           *DriverEntry,
+  IN OUT PE_COFF_LOADER_IMAGE_CONTEXT  *ImageContext
   )
 {
-  UINTN                         PageCount;
-  EFI_STATUS                    Status;
-  EFI_PHYSICAL_ADDRESS          DstBuffer;
-  PE_COFF_LOADER_IMAGE_CONTEXT  ImageContext;
+  UINTN                 PageCount;
+  EFI_STATUS            Status;
+  EFI_PHYSICAL_ADDRESS  DstBuffer;
+  UINTN                 Index;
+  UINTN                 StartIndex;
+  CHAR8                 EfiFileName[512];
 
   DEBUG ((DEBUG_INFO, "MmLoadImage - %g\n", &DriverEntry->FileName));
+
+  if (ImageContext == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
 
   Status = EFI_SUCCESS;
 
   //
   // Initialize ImageContext
   //
-  ImageContext.Handle    = DriverEntry->Pe32Data;
-  ImageContext.ImageRead = PeCoffLoaderImageReadFromMemory;
+  ImageContext->Handle    = DriverEntry->Pe32Data;
+  ImageContext->ImageRead = PeCoffLoaderImageReadFromMemory;
 
   //
   // Get information about the image being loaded
   //
-  Status = PeCoffLoaderGetImageInfo (&ImageContext);
+  Status = PeCoffLoaderGetImageInfo (ImageContext);
   if (EFI_ERROR (Status)) {
     return Status;
   }
 
-  PageCount = (UINTN)EFI_SIZE_TO_PAGES ((UINTN)ImageContext.ImageSize + ImageContext.SectionAlignment);
+  PageCount = (UINTN)EFI_SIZE_TO_PAGES ((UINTN)ImageContext->ImageSize + ImageContext->SectionAlignment);
   DstBuffer = (UINTN)(-1);
 
   Status = MmAllocatePages (
@@ -332,21 +179,22 @@ MmLoadImage (
              &DstBuffer
              );
   if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
     return Status;
   }
 
-  ImageContext.ImageAddress = (EFI_PHYSICAL_ADDRESS)DstBuffer;
+  ImageContext->ImageAddress = (EFI_PHYSICAL_ADDRESS)DstBuffer;
 
   //
   // Align buffer on section boundary
   //
-  ImageContext.ImageAddress += ImageContext.SectionAlignment - 1;
-  ImageContext.ImageAddress &= ~((EFI_PHYSICAL_ADDRESS)(ImageContext.SectionAlignment - 1));
+  ImageContext->ImageAddress += ImageContext->SectionAlignment - 1;
+  ImageContext->ImageAddress &= ~((EFI_PHYSICAL_ADDRESS)(ImageContext->SectionAlignment - 1));
 
   //
   // Load the image to our new buffer
   //
-  Status = PeCoffLoaderLoadImage (&ImageContext);
+  Status = PeCoffLoaderLoadImage (ImageContext);
   if (EFI_ERROR (Status)) {
     MmFreePages (DstBuffer, PageCount);
     return Status;
@@ -355,8 +203,10 @@ MmLoadImage (
   //
   // Relocate the image in our new buffer
   //
-  Status = PeCoffLoaderRelocateImage (&ImageContext);
+  Status = PeCoffLoaderRelocateImage (ImageContext);
   if (EFI_ERROR (Status)) {
+    // if relocate fails, we don't need to call unload image here, as the extra action that may change page attributes
+    // only is called on a successful return
     MmFreePages (DstBuffer, PageCount);
     return Status;
   }
@@ -364,78 +214,65 @@ MmLoadImage (
   //
   // Flush the instruction cache so the image data are written before we execute it
   //
-  InvalidateInstructionCacheRange ((VOID *)(UINTN)ImageContext.ImageAddress, (UINTN)ImageContext.ImageSize);
+  InvalidateInstructionCacheRange ((VOID *)(UINTN)ImageContext->ImageAddress, (UINTN)ImageContext->ImageSize);
 
   //
   // Save Image EntryPoint in DriverEntry
   //
-  DriverEntry->ImageEntryPoint = ImageContext.EntryPoint;
+  DriverEntry->ImageEntryPoint = ImageContext->EntryPoint;
   DriverEntry->ImageBuffer     = DstBuffer;
   DriverEntry->NumberOfPage    = PageCount;
 
-  if (mEfiSystemTable != NULL) {
-    Status = mEfiSystemTable->BootServices->AllocatePool (
-                                              EfiBootServicesData,
-                                              sizeof (EFI_LOADED_IMAGE_PROTOCOL),
-                                              (VOID **)&DriverEntry->LoadedImage
-                                              );
-    if (EFI_ERROR (Status)) {
-      MmFreePages (DstBuffer, PageCount);
-      return Status;
-    }
-
-    ZeroMem (DriverEntry->LoadedImage, sizeof (EFI_LOADED_IMAGE_PROTOCOL));
-    //
-    // Fill in the remaining fields of the Loaded Image Protocol instance.
-    // Note: ImageBase is an SMRAM address that can not be accessed outside of SMRAM if SMRAM window is closed.
-    //
-    DriverEntry->LoadedImage->Revision     = EFI_LOADED_IMAGE_PROTOCOL_REVISION;
-    DriverEntry->LoadedImage->ParentHandle = NULL;
-    DriverEntry->LoadedImage->SystemTable  = mEfiSystemTable;
-    DriverEntry->LoadedImage->DeviceHandle = NULL;
-    DriverEntry->LoadedImage->FilePath     = NULL;
-
-    DriverEntry->LoadedImage->ImageBase     = (VOID *)(UINTN)DriverEntry->ImageBuffer;
-    DriverEntry->LoadedImage->ImageSize     = ImageContext.ImageSize;
-    DriverEntry->LoadedImage->ImageCodeType = EfiRuntimeServicesCode;
-    DriverEntry->LoadedImage->ImageDataType = EfiRuntimeServicesData;
-
-    //
-    // Create a new image handle in the UEFI handle database for the MM Driver
-    //
-    DriverEntry->ImageHandle = NULL;
-    Status                   = mEfiSystemTable->BootServices->InstallMultipleProtocolInterfaces (
-                                                                &DriverEntry->ImageHandle,
-                                                                &gEfiLoadedImageProtocolGuid,
-                                                                DriverEntry->LoadedImage,
-                                                                NULL
-                                                                );
+  //
+  // Fill in the remaining fields of the Loaded Image Protocol instance.
+  // Note: ImageBase is an MMRAM address that can not be accessed outside of MMRAM if MMRAM window is closed.
+  //
+  DriverEntry->LoadedImage.Revision     = EFI_LOADED_IMAGE_PROTOCOL_REVISION;
+  DriverEntry->LoadedImage.ParentHandle = NULL;
+  DriverEntry->LoadedImage.SystemTable  = NULL;
+  DriverEntry->LoadedImage.DeviceHandle = NULL;
+  DriverEntry->LoadedImage.FilePath     = AllocateCopyPool (sizeof (FV_FILEPATH_DEVICE_PATH), &gMmDriverFilePathTemplate);
+  if (DriverEntry->LoadedImage.FilePath != NULL) {
+    CopyGuid (
+      &((MEDIA_FW_VOL_FILEPATH_DEVICE_PATH *)DriverEntry->LoadedImage.FilePath)->FvFileName,
+      &DriverEntry->FileName
+      );
   }
+
+  DriverEntry->LoadedImage.ImageBase     = (VOID *)(UINTN)DriverEntry->ImageBuffer;
+  DriverEntry->LoadedImage.ImageSize     = ImageContext->ImageSize;
+  DriverEntry->LoadedImage.ImageCodeType = EfiRuntimeServicesCode;
+  DriverEntry->LoadedImage.ImageDataType = EfiRuntimeServicesData;
+
+  //
+  // Install Loaded Image protocol into MM handle database for the MM Driver
+  //
+  MmInstallProtocolInterface (
+    &DriverEntry->ImageHandle,
+    &gEfiLoadedImageProtocolGuid,
+    EFI_NATIVE_INTERFACE,
+    &DriverEntry->LoadedImage
+    );
 
   //
   // Print the load address and the PDB file name if it is available
   //
-  DEBUG_CODE_BEGIN ();
-
-  UINTN  Index;
-  UINTN  StartIndex;
-  CHAR8  EfiFileName[256];
 
   DEBUG ((
     DEBUG_INFO | DEBUG_LOAD,
     "Loading MM driver at 0x%11p EntryPoint=0x%11p ",
-    (VOID *)(UINTN)ImageContext.ImageAddress,
-    FUNCTION_ENTRY_POINT (ImageContext.EntryPoint)
+    (VOID *)(UINTN)ImageContext->ImageAddress,
+    FUNCTION_ENTRY_POINT (ImageContext->EntryPoint)
     ));
 
   //
   // Print Module Name by Pdb file path.
   // Windows and Unix style file path are all trimmed correctly.
   //
-  if (ImageContext.PdbPointer != NULL) {
+  if (ImageContext->PdbPointer != NULL) {
     StartIndex = 0;
-    for (Index = 0; ImageContext.PdbPointer[Index] != 0; Index++) {
-      if ((ImageContext.PdbPointer[Index] == '\\') || (ImageContext.PdbPointer[Index] == '/')) {
+    for (Index = 0; ImageContext->PdbPointer[Index] != 0; Index++) {
+      if ((ImageContext->PdbPointer[Index] == '\\') || (ImageContext->PdbPointer[Index] == '/')) {
         StartIndex = Index + 1;
       }
     }
@@ -446,7 +283,7 @@ MmLoadImage (
     // If the length is bigger than 255, trim the redundant characters to avoid overflow in array boundary.
     //
     for (Index = 0; Index < sizeof (EfiFileName) - 4; Index++) {
-      EfiFileName[Index] = ImageContext.PdbPointer[Index + StartIndex];
+      EfiFileName[Index] = ImageContext->PdbPointer[Index + StartIndex];
       if (EfiFileName[Index] == 0) {
         EfiFileName[Index] = '.';
       }
@@ -468,8 +305,6 @@ MmLoadImage (
   }
 
   DEBUG ((DEBUG_INFO | DEBUG_LOAD, "\n"));
-
-  DEBUG_CODE_END ();
 
   return Status;
 }
@@ -542,9 +377,6 @@ MmGetDepexSectionAndPreProccess (
       //
       DriverEntry->DepexProtocolError = TRUE;
     } else {
-      //
-      // If no Depex assume depend on all architectural protocols
-      //
       DriverEntry->Depex              = NULL;
       DriverEntry->Dependent          = TRUE;
       DriverEntry->DepexProtocolError = FALSE;
@@ -582,10 +414,12 @@ MmDispatcher (
   VOID
   )
 {
-  EFI_STATUS           Status;
-  LIST_ENTRY           *Link;
-  EFI_MM_DRIVER_ENTRY  *DriverEntry;
-  BOOLEAN              ReadyToRun;
+  EFI_STATUS                    Status;
+  LIST_ENTRY                    *Link;
+  EFI_MM_DRIVER_ENTRY           *DriverEntry;
+  BOOLEAN                       ReadyToRun;
+  BOOLEAN                       PreviousMmEntryPointRegistered;
+  PE_COFF_LOADER_IMAGE_CONTEXT  ImageContext;
 
   DEBUG ((DEBUG_INFO, "MmDispatcher\n"));
 
@@ -624,7 +458,9 @@ MmDispatcher (
       // skip the LoadImage
       //
       if (DriverEntry->ImageHandle == NULL) {
-        Status = MmLoadImage (DriverEntry);
+        PERF_LOAD_IMAGE_BEGIN (NULL);
+        Status = MmLoadImage (DriverEntry, &ImageContext);
+        PERF_LOAD_IMAGE_END (DriverEntry->ImageHandle);
 
         //
         // Update the driver state to reflect that it's been loaded
@@ -650,22 +486,48 @@ MmDispatcher (
       RemoveEntryList (&DriverEntry->ScheduledLink);
 
       //
+      // Cache state of MmEntryPointRegistered before calling entry point
+      //
+      PreviousMmEntryPointRegistered = mMmEntryPointRegistered;
+
+      //
       // For each MM driver, pass NULL as ImageHandle
       //
-      if (mEfiSystemTable == NULL) {
-        DEBUG ((DEBUG_INFO, "StartImage - 0x%x (Standalone Mode)\n", DriverEntry->ImageEntryPoint));
-        Status = ((MM_IMAGE_ENTRY_POINT)(UINTN)DriverEntry->ImageEntryPoint)(DriverEntry->ImageHandle, &gMmCoreMmst);
-      } else {
-        DEBUG ((DEBUG_INFO, "StartImage - 0x%x (Tradition Mode)\n", DriverEntry->ImageEntryPoint));
-        Status = ((EFI_IMAGE_ENTRY_POINT)(UINTN)DriverEntry->ImageEntryPoint)(
-  DriverEntry->ImageHandle,
-  mEfiSystemTable
-  );
-      }
-
+      DEBUG ((DEBUG_INFO, "StartImage - 0x%x (Standalone Mode)\n", DriverEntry->ImageEntryPoint));
+      PERF_START_IMAGE_BEGIN (DriverEntry->ImageHandle);
+      Status = ((MM_IMAGE_ENTRY_POINT)(UINTN)DriverEntry->ImageEntryPoint)(DriverEntry->ImageHandle, &gMmCoreMmst);
+      PERF_START_IMAGE_END (DriverEntry->ImageHandle);
       if (EFI_ERROR (Status)) {
         DEBUG ((DEBUG_INFO, "StartImage Status - %r\n", Status));
+
+        // we need to unload the image before we free the pages. On some architectures (e.g. x86), this is a no-op, but
+        // on others (e.g. AARCH64) this will remove the image memory protections set on the region so that when the
+        // memory is freed, it has the default attributes set and can be used generically
+        PeCoffLoaderUnloadImage (&ImageContext);
         MmFreePages (DriverEntry->ImageBuffer, DriverEntry->NumberOfPage);
+        if (DriverEntry->ImageHandle != NULL) {
+          MmUninstallProtocolInterface (
+            DriverEntry->ImageHandle,
+            &gEfiLoadedImageProtocolGuid,
+            &DriverEntry->LoadedImage
+            );
+        }
+      }
+
+      if (!PreviousMmEntryPointRegistered && mMmEntryPointRegistered) {
+        if (FeaturePcdGet (PcdRestartMmDispatcherOnceMmEntryRegistered)) {
+          //
+          // Return immediately if the MM Entry Point was registered by the MM
+          // Driver that was just dispatched. The MM IPL will reinvoke the MM
+          // Core Dispatcher. This is required so MM Mode may be enabled as soon
+          // as all the dependent MM Drivers for MM Mode have been dispatched.
+          // Once the MM Entry Point has been registered, then MM Mode will be
+          // used.
+          //
+          gRequestDispatch   = TRUE;
+          gDispatcherRunning = FALSE;
+          return EFI_NOT_READY;
+        }
       }
     }
 
@@ -837,7 +699,10 @@ FvIsBeingProcessed (
   DEBUG ((DEBUG_INFO, "FvIsBeingProcessed - 0x%08x\n", FwVolHeader));
 
   KnownFwVol = AllocatePool (sizeof (KNOWN_FWVOL));
-  ASSERT (KnownFwVol != NULL);
+  if (KnownFwVol == NULL) {
+    ASSERT (FALSE);
+    return;
+  }
 
   KnownFwVol->Signature   = KNOWN_FWVOL_SIGNATURE;
   KnownFwVol->FwVolHeader = FwVolHeader;
@@ -893,6 +758,62 @@ MmAddToDriverList (
 
   InsertTailList (&mDiscoveredList, &DriverEntry->Link);
   gRequestDispatch = TRUE;
+
+  return EFI_SUCCESS;
+}
+
+/**
+  Event notification that is fired MM IPL to dispatch the previously discovered MM drivers.
+
+  @param[in]       DispatchHandle  The unique handle assigned to this handler by MmiHandlerRegister().
+  @param[in]       Context         Points to an optional handler context which was specified when the
+                                   handler was registered.
+  @param[in, out]  CommBuffer      A pointer to a collection of data in memory that will
+                                   be conveyed from a non-MM environment into an MM environment.
+  @param[in, out]  CommBufferSize  The size of the CommBuffer.
+
+  @return EFI_SUCCESS              Dispatcher is executed.
+
+**/
+EFI_STATUS
+EFIAPI
+MmDriverDispatchHandler (
+  IN     EFI_HANDLE  DispatchHandle,
+  IN     CONST VOID  *Context         OPTIONAL,
+  IN OUT VOID        *CommBuffer      OPTIONAL,
+  IN OUT UINTN       *CommBufferSize  OPTIONAL
+  )
+{
+  EFI_STATUS  Status;
+
+  DEBUG ((DEBUG_INFO, "MmDriverDispatchHandler\n"));
+
+  //
+  // Execute the MM Dispatcher on MM drivers that have been discovered
+  // previously but not dispatched.
+  //
+  Status = MmDispatcher ();
+
+  //
+  // Check to see if CommBuffer and CommBufferSize are valid
+  //
+  if ((CommBuffer != NULL) && (CommBufferSize != NULL)) {
+    if (*CommBufferSize > sizeof (EFI_STATUS)) {
+      //
+      // Set the status of MmDispatcher to CommBuffer
+      //
+      *(EFI_STATUS *)CommBuffer = Status;
+    }
+  }
+
+  MmCoreInitializeMemoryAttributesTable ();
+
+  MmiHandlerUnRegister (DispatchHandle);
+
+  //
+  // Free shadowed MM Fvs
+  //
+  MmFreeShadowedFvs ();
 
   return EFI_SUCCESS;
 }

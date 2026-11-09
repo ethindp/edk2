@@ -664,52 +664,63 @@ HttpBootFreeCache (
   IN  HTTP_BOOT_CACHE_CONTENT  *Cache
   )
 {
-  UINTN                  Index;
-  LIST_ENTRY             *Entry;
-  LIST_ENTRY             *NextEntry;
-  HTTP_BOOT_ENTITY_DATA  *EntityData;
+  UINTN                          Index;
+  LIST_ENTRY                     *Entry;
+  LIST_ENTRY                     *NextEntry;
+  HTTP_BOOT_ENTITY_DATA          *EntityData;
+  EFI_HTTP_CONNECT_REQUEST_DATA  *ConnRequestData;
 
-  if (Cache != NULL) {
-    //
-    // Free the request data
-    //
-    if (Cache->RequestData != NULL) {
-      if (Cache->RequestData->Url != NULL) {
-        FreePool (Cache->RequestData->Url);
-      }
-
-      FreePool (Cache->RequestData);
-    }
-
-    //
-    // Free the response header
-    //
-    if (Cache->ResponseData != NULL) {
-      if (Cache->ResponseData->Headers != NULL) {
-        for (Index = 0; Index < Cache->ResponseData->HeaderCount; Index++) {
-          FreePool (Cache->ResponseData->Headers[Index].FieldName);
-          FreePool (Cache->ResponseData->Headers[Index].FieldValue);
-        }
-
-        FreePool (Cache->ResponseData->Headers);
-      }
-    }
-
-    //
-    // Free the response body
-    //
-    NET_LIST_FOR_EACH_SAFE (Entry, NextEntry, &Cache->EntityDataList) {
-      EntityData = NET_LIST_USER_STRUCT (Entry, HTTP_BOOT_ENTITY_DATA, Link);
-      if (EntityData->Block != NULL) {
-        FreePool (EntityData->Block);
-      }
-
-      RemoveEntryList (&EntityData->Link);
-      FreePool (EntityData);
-    }
-
-    FreePool (Cache);
+  if (Cache == NULL) {
+    return;
   }
+
+  //
+  // Free the request data
+  //
+  if (Cache->RequestData != NULL) {
+    if (Cache->RequestData->Url != NULL) {
+      FreePool (Cache->RequestData->Url);
+    }
+
+    if (Cache->RequestData->Method == HttpMethodConnect) {
+      ConnRequestData = (EFI_HTTP_CONNECT_REQUEST_DATA *)Cache->RequestData;
+
+      if (ConnRequestData->ProxyUrl != NULL) {
+        FreePool (ConnRequestData->ProxyUrl);
+      }
+    }
+
+    FreePool (Cache->RequestData);
+  }
+
+  //
+  // Free the response header
+  //
+  if (Cache->ResponseData != NULL) {
+    if (Cache->ResponseData->Headers != NULL) {
+      for (Index = 0; Index < Cache->ResponseData->HeaderCount; Index++) {
+        FreePool (Cache->ResponseData->Headers[Index].FieldName);
+        FreePool (Cache->ResponseData->Headers[Index].FieldValue);
+      }
+
+      FreePool (Cache->ResponseData->Headers);
+    }
+  }
+
+  //
+  // Free the response body
+  //
+  NET_LIST_FOR_EACH_SAFE (Entry, NextEntry, &Cache->EntityDataList) {
+    EntityData = NET_LIST_USER_STRUCT (Entry, HTTP_BOOT_ENTITY_DATA, Link);
+    if (EntityData->Block != NULL) {
+      FreePool (EntityData->Block);
+    }
+
+    RemoveEntryList (&EntityData->Link);
+    FreePool (EntityData);
+  }
+
+  FreePool (Cache);
 }
 
 /**
@@ -902,6 +913,182 @@ HttpBootGetBootFileCallback (
 }
 
 /**
+  This function establishes a connection through a proxy server
+
+  @param[in]       Private         The pointer to the driver's private data.
+
+  @retval EFI_SUCCESS              Connection successful.
+  @retval EFI_OUT_OF_RESOURCES     Could not allocate needed resources
+  @retval Others                   Unexpected error happened.
+
+**/
+EFI_STATUS
+HttpBootConnectProxy (
+  IN     HTTP_BOOT_PRIVATE_DATA  *Private
+  )
+{
+  EFI_STATUS                     Status;
+  EFI_HTTP_STATUS_CODE           StatusCode;
+  CHAR8                          *HostName;
+  EFI_HTTP_CONNECT_REQUEST_DATA  *RequestData;
+  HTTP_IO_RESPONSE_DATA          *ResponseData;
+  HTTP_IO                        *HttpIo;
+  HTTP_IO_HEADER                 *HttpIoHeader;
+  CHAR16                         *Url;
+  CHAR16                         *ProxyUrl;
+  UINTN                          UrlSize;
+
+  Url          = NULL;
+  ProxyUrl     = NULL;
+  RequestData  = NULL;
+  ResponseData = NULL;
+  HttpIoHeader = NULL;
+
+  UrlSize = AsciiStrSize (Private->BootFileUri);
+  Url     = AllocatePool (UrlSize * sizeof (CHAR16));
+  if (Url == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  AsciiStrToUnicodeStrS (Private->BootFileUri, Url, UrlSize);
+
+  UrlSize  = AsciiStrSize (Private->ProxyUri);
+  ProxyUrl = AllocatePool (UrlSize * (sizeof (CHAR16)));
+  if (ProxyUrl == NULL) {
+    Status = EFI_OUT_OF_RESOURCES;
+    goto EXIT;
+  }
+
+  AsciiStrToUnicodeStrS (Private->ProxyUri, ProxyUrl, UrlSize);
+
+  //
+  // Send HTTP request message.
+  //
+
+  //
+  // Build HTTP header for the request, 2 headers are needed to send a CONNECT method:
+  //   Host
+  //   User
+  //
+  HttpIoHeader = HttpIoCreateHeader (2);
+  if (HttpIoHeader == NULL) {
+    Status = EFI_OUT_OF_RESOURCES;
+    goto EXIT;
+  }
+
+  //
+  // Add HTTP header field 1: Host (EndPoint URI)
+  //
+  HostName = NULL;
+  Status   = HttpUrlGetHostName (
+               Private->BootFileUri,
+               Private->BootFileUriParser,
+               &HostName
+               );
+  if (EFI_ERROR (Status)) {
+    goto EXIT;
+  }
+
+  Status = HttpIoSetHeader (
+             HttpIoHeader,
+             HTTP_HEADER_HOST,
+             HostName
+             );
+  if (EFI_ERROR (Status)) {
+    goto EXIT;
+  }
+
+  //
+  // Add HTTP header field 2: User-Agent
+  //
+  Status = HttpIoSetHeader (
+             HttpIoHeader,
+             HTTP_HEADER_USER_AGENT,
+             HTTP_USER_AGENT_EFI_HTTP_BOOT
+             );
+  if (EFI_ERROR (Status)) {
+    goto EXIT;
+  }
+
+  //
+  // Build the rest of HTTP request info.
+  //
+  RequestData = AllocatePool (sizeof (EFI_HTTP_CONNECT_REQUEST_DATA));
+  if (RequestData == NULL) {
+    Status = EFI_OUT_OF_RESOURCES;
+    goto EXIT;
+  }
+
+  RequestData->Base.Method = HttpMethodConnect;
+  RequestData->Base.Url    = Url;
+  RequestData->ProxyUrl    = ProxyUrl;
+
+  //
+  // Send out the request to HTTP server.
+  //
+  HttpIo = &Private->HttpIo;
+  Status = HttpIoSendRequest (
+             HttpIo,
+             &RequestData->Base,
+             HttpIoHeader->HeaderCount,
+             HttpIoHeader->Headers,
+             0,
+             NULL
+             );
+  if (EFI_ERROR (Status)) {
+    goto EXIT;
+  }
+
+  //
+  // Receive HTTP response message.
+  //
+
+  //
+  // Use zero BodyLength to only receive the response headers.
+  //
+  ResponseData = AllocateZeroPool (sizeof (HTTP_IO_RESPONSE_DATA));
+  if (ResponseData == NULL) {
+    Status = EFI_OUT_OF_RESOURCES;
+    goto EXIT;
+  }
+
+  Status = HttpIoRecvResponse (
+             &Private->HttpIo,
+             TRUE,
+             ResponseData
+             );
+
+  if (EFI_ERROR (Status) || EFI_ERROR (ResponseData->Status)) {
+    if (EFI_ERROR (ResponseData->Status)) {
+      StatusCode = HttpIo->RspToken.Message->Data.Response->StatusCode;
+      HttpBootPrintErrorMessage (StatusCode);
+      Status = ResponseData->Status;
+    }
+  }
+
+EXIT:
+  if (ResponseData != NULL) {
+    FreePool (ResponseData);
+  }
+
+  if (RequestData != NULL) {
+    FreePool (RequestData);
+  }
+
+  HttpIoFreeHeader (HttpIoHeader);
+
+  if (ProxyUrl != NULL) {
+    FreePool (ProxyUrl);
+  }
+
+  if (Url != NULL) {
+    FreePool (Url);
+  }
+
+  return Status;
+}
+
+/**
   This function download the boot file by using UEFI HTTP protocol.
 
   @param[in]       Private         The pointer to the driver's private data.
@@ -922,6 +1109,10 @@ HttpBootGetBootFileCallback (
   @retval EFI_BUFFER_TOO_SMALL     The BufferSize is too small to read the current directory entry.
                                    BufferSize has been updated with the size needed to complete
                                    the request.
+  @retval EFI_ACCESS_DENIED        The server needs to authenticate the client.
+  @retval EFI_NOT_READY            Data transfer has timed-out, call HttpBootGetBootFile again to resume
+                                   the download operation using HTTP Range headers.
+  @retval EFI_UNSUPPORTED          Some HTTP response header is not supported.
   @retval Others                   Unexpected error happened.
 
 **/
@@ -951,6 +1142,13 @@ HttpBootGetBootFile (
   CHAR16                   *Url;
   BOOLEAN                  IdentityMode;
   UINTN                    ReceivedSize;
+  CHAR8                    BaseAuthValue[80];
+  EFI_HTTP_HEADER          *HttpHeader;
+  CHAR8                    *Data;
+  UINTN                    HeadersCount;
+  BOOLEAN                  ResumingOperation;
+  CHAR8                    *ContentRangeResponseValue;
+  CHAR8                    RangeValue[64];
 
   ASSERT (Private != NULL);
   ASSERT (Private->HttpCreated);
@@ -981,6 +1179,16 @@ HttpBootGetBootFile (
     }
   }
 
+  // Check if this is a previous download that has failed and need to be resumed
+  if ((!HeaderOnly) &&
+      (Private->PartialTransferredSize > 0) &&
+      (Private->BootFileSize == *BufferSize))
+  {
+    ResumingOperation = TRUE;
+  } else {
+    ResumingOperation = FALSE;
+  }
+
   //
   // Not found in cache, try to download it through HTTP.
   //
@@ -1009,8 +1217,24 @@ HttpBootGetBootFile (
   //       Host
   //       Accept
   //       User-Agent
+  //       [Authorization]
+  //       [Range]
+  //       [If-Match]|[If-Unmodified-Since]
   //
-  HttpIoHeader = HttpIoCreateHeader (3);
+  HeadersCount = 3;
+  if (Private->AuthData != NULL) {
+    HeadersCount++;
+  }
+
+  if (ResumingOperation) {
+    HeadersCount++;
+    if (Private->LastModifiedOrEtag) {
+      HeadersCount++;
+    }
+  }
+
+  HttpIoHeader = HttpIoCreateHeader (HeadersCount);
+
   if (HttpIoHeader == NULL) {
     Status = EFI_OUT_OF_RESOURCES;
     goto ERROR_2;
@@ -1064,6 +1288,91 @@ HttpBootGetBootFile (
   }
 
   //
+  // Add HTTP header field 4: Authorization
+  //
+  if (Private->AuthData != NULL) {
+    ASSERT (HttpIoHeader->MaxHeaderCount == 4);
+
+    if ((Private->AuthScheme != NULL) && (CompareMem (Private->AuthScheme, "Basic", 5) != 0)) {
+      Status = EFI_UNSUPPORTED;
+      goto ERROR_3;
+    }
+
+    AsciiSPrint (
+      BaseAuthValue,
+      sizeof (BaseAuthValue),
+      "%a %a",
+      "Basic",
+      Private->AuthData
+      );
+
+    Status = HttpIoSetHeader (
+               HttpIoHeader,
+               HTTP_HEADER_AUTHORIZATION,
+               BaseAuthValue
+               );
+    if (EFI_ERROR (Status)) {
+      goto ERROR_3;
+    }
+  }
+
+  //
+  // Add HTTP header field 5 (optional): Range
+  //
+  if (ResumingOperation) {
+    // Resuming a failed download. Prepare the HTTP Range Header
+    Status = AsciiSPrint (
+               RangeValue,
+               sizeof (RangeValue),
+               "bytes=%lu-%lu",
+               Private->PartialTransferredSize,
+               Private->BootFileSize - 1
+               );
+    if (EFI_ERROR (Status)) {
+      goto ERROR_3;
+    }
+
+    Status = HttpIoSetHeader (HttpIoHeader, "Range", RangeValue);
+    if (EFI_ERROR (Status)) {
+      goto ERROR_3;
+    }
+
+    DEBUG (
+      (DEBUG_WARN | DEBUG_INFO,
+       "HttpBootGetBootFile: Resuming failed download. Range: %a\n",
+       RangeValue)
+      );
+
+    //
+    // Add HTTP header field 6 (optional): If-Match or If-Unmodified-Since
+    //
+    if (Private->LastModifiedOrEtag) {
+      if (Private->LastModifiedOrEtag[0] == '"') {
+        // An ETag value starts with "
+        DEBUG (
+          (DEBUG_WARN | DEBUG_INFO,
+           "HttpBootGetBootFile: If-Match=%a\n",
+           Private->LastModifiedOrEtag)
+          );
+        // Add If-Match header with the ETag value got from the first request.
+        Status = HttpIoSetHeader (HttpIoHeader, HTTP_HEADER_IF_MATCH, Private->LastModifiedOrEtag);
+      } else {
+        DEBUG (
+          (DEBUG_WARN | DEBUG_INFO,
+           "HttpBootGetBootFile: If-Unmodified-Since=%a\n",
+           Private->LastModifiedOrEtag)
+          );
+        // Add If-Unmodified-Since header with the timestamp value (Last-Modified) got from the first request.
+        Status = HttpIoSetHeader (HttpIoHeader, HTTP_HEADER_IF_UNMODIFIED_SINCE, Private->LastModifiedOrEtag);
+      }
+
+      if (EFI_ERROR (Status)) {
+        goto ERROR_3;
+      }
+    }
+  }
+
+  //
   // 2.2 Build the rest of HTTP request info.
   //
   RequestData = AllocatePool (sizeof (EFI_HTTP_REQUEST_DATA));
@@ -1111,6 +1420,7 @@ HttpBootGetBootFile (
     goto ERROR_4;
   }
 
+  Data   = NULL;
   Status = HttpIoRecvResponse (
              &Private->HttpIo,
              TRUE,
@@ -1121,6 +1431,68 @@ HttpBootGetBootFile (
       StatusCode = HttpIo->RspToken.Message->Data.Response->StatusCode;
       HttpBootPrintErrorMessage (StatusCode);
       Status = ResponseData->Status;
+      if ((StatusCode == HTTP_STATUS_401_UNAUTHORIZED) || \
+          (StatusCode == HTTP_STATUS_407_PROXY_AUTHENTICATION_REQUIRED))
+      {
+        if ((Private->AuthData != NULL) || (Private->AuthScheme != NULL)) {
+          if (Private->AuthData != NULL) {
+            FreePool (Private->AuthData);
+            Private->AuthData = NULL;
+          }
+
+          if (Private->AuthScheme != NULL) {
+            FreePool (Private->AuthScheme);
+            Private->AuthScheme = NULL;
+          }
+
+          Status = EFI_ACCESS_DENIED;
+          goto ERROR_4;
+        }
+
+        //
+        // Server indicates the user has to provide a user-id and password as a means of identification.
+        //
+        if (Private->HttpBootCallback != NULL) {
+          Data = AllocateZeroPool (sizeof (CHAR8) * HTTP_BOOT_AUTHENTICATION_INFO_MAX_LEN);
+          if (Data == NULL) {
+            Status = EFI_OUT_OF_RESOURCES;
+            goto ERROR_4;
+          }
+
+          Status = Private->HttpBootCallback->Callback (
+                                                Private->HttpBootCallback,
+                                                HttpBootHttpAuthInfo,
+                                                TRUE,
+                                                HTTP_BOOT_AUTHENTICATION_INFO_MAX_LEN,
+                                                Data
+                                                );
+          if (EFI_ERROR (Status)) {
+            if (Data != NULL) {
+              FreePool (Data);
+            }
+
+            goto ERROR_5;
+          }
+
+          Private->AuthData = (CHAR8 *)Data;
+        }
+
+        HttpHeader = HttpFindHeader (
+                       ResponseData->HeaderCount,
+                       ResponseData->Headers,
+                       HTTP_HEADER_WWW_AUTHENTICATE
+                       );
+        if (HttpHeader != NULL) {
+          Private->AuthScheme = AllocateZeroPool (AsciiStrLen (HttpHeader->FieldValue) + 1);
+          if (Private->AuthScheme == NULL) {
+            return EFI_OUT_OF_RESOURCES;
+          }
+
+          CopyMem (Private->AuthScheme, HttpHeader->FieldValue, AsciiStrLen (HttpHeader->FieldValue));
+        }
+
+        Status = EFI_ACCESS_DENIED;
+      }
     }
 
     goto ERROR_5;
@@ -1146,6 +1518,62 @@ HttpBootGetBootFile (
   if (Cache != NULL) {
     Cache->ResponseData = ResponseData;
     Cache->ImageType    = *ImageType;
+  }
+
+  // Cache ETag or Last-Modified response header value to
+  // be used when resuming an interrupted download.
+  HttpHeader = HttpFindHeader (
+                 ResponseData->HeaderCount,
+                 ResponseData->Headers,
+                 HTTP_HEADER_ETAG
+                 );
+  if (HttpHeader == NULL) {
+    HttpHeader = HttpFindHeader (
+                   ResponseData->HeaderCount,
+                   ResponseData->Headers,
+                   HTTP_HEADER_LAST_MODIFIED
+                   );
+  }
+
+  if (HttpHeader) {
+    if (Private->LastModifiedOrEtag) {
+      FreePool (Private->LastModifiedOrEtag);
+    }
+
+    Private->LastModifiedOrEtag = AllocateCopyPool (AsciiStrSize (HttpHeader->FieldValue), HttpHeader->FieldValue);
+  }
+
+  //
+  // 3.2.2 Validate the range response. If operation is being resumed,
+  // server must respond with Content-Range.
+  //
+  if (ResumingOperation) {
+    HttpHeader = HttpFindHeader (
+                   ResponseData->HeaderCount,
+                   ResponseData->Headers,
+                   HTTP_HEADER_CONTENT_RANGE
+                   );
+    if ((HttpHeader == NULL) ||
+        (AsciiStrnCmp (HttpHeader->FieldValue, "bytes", 5) != 0))
+    {
+      Status = EFI_UNSUPPORTED;
+      goto ERROR_5;
+    }
+
+    // Gets the total size of ranged data (Content-Range: <unit> <range-start>-<range-end>/<size>)
+    // and check if it remains the same
+    ContentRangeResponseValue = AsciiStrStr (HttpHeader->FieldValue, "/");
+    if (ContentRangeResponseValue == NULL) {
+      Status = EFI_INVALID_PARAMETER;
+      goto ERROR_5;
+    }
+
+    ContentRangeResponseValue++;
+    ContentLength = AsciiStrDecimalToUintn (ContentRangeResponseValue);
+    if (ContentLength != *BufferSize) {
+      Status = EFI_INVALID_PARAMETER;
+      goto ERROR_5;
+    }
   }
 
   //
@@ -1198,10 +1626,15 @@ HttpBootGetBootFile (
       // In identity transfer-coding there is no need to parse the message body,
       // just download the message body to the user provided buffer directly.
       //
+      if (ResumingOperation && ((ContentLength + Private->PartialTransferredSize) > *BufferSize)) {
+        Status = EFI_INVALID_PARAMETER;
+        goto ERROR_6;
+      }
+
       ReceivedSize = 0;
       while (ReceivedSize < ContentLength) {
-        ResponseBody.Body       = (CHAR8 *)Buffer + ReceivedSize;
-        ResponseBody.BodyLength = *BufferSize - ReceivedSize;
+        ResponseBody.Body       = (CHAR8 *)Buffer + (ReceivedSize + Private->PartialTransferredSize);
+        ResponseBody.BodyLength = *BufferSize - (ReceivedSize + Private->PartialTransferredSize);
         Status                  = HttpIoRecvResponse (
                                     &Private->HttpIo,
                                     FALSE,
@@ -1210,6 +1643,20 @@ HttpBootGetBootFile (
         if (EFI_ERROR (Status) || EFI_ERROR (ResponseBody.Status)) {
           if (EFI_ERROR (ResponseBody.Status)) {
             Status = ResponseBody.Status;
+          }
+
+          if ((Status == EFI_TIMEOUT) || (Status == EFI_DEVICE_ERROR)) {
+            // For EFI_TIMEOUT and EFI_DEVICE_ERROR errors, we may resume the operation.
+            // We will not check if server sent Accept-Ranges header, because some back-ends
+            // do not report this header, even when supporting it. Know example: CloudFlare CDN Cache.
+            Private->PartialTransferredSize += ReceivedSize;
+            DEBUG (
+              (
+               DEBUG_WARN | DEBUG_INFO,
+               "HttpBootGetBootFile: Transfer error. Bytes transferred so far: %lu.\n",
+               ReceivedSize
+              )
+              );
           }
 
           goto ERROR_6;
@@ -1229,6 +1676,9 @@ HttpBootGetBootFile (
           }
         }
       }
+
+      // download completed, there is no more partial data
+      Private->PartialTransferredSize = 0;
     } else {
       //
       // In "chunked" transfer-coding mode, so we need to parse the received
@@ -1288,9 +1738,13 @@ HttpBootGetBootFile (
   //
   // 3.5 Message-body receive & parse is completed, we should be able to get the file size now.
   //
-  Status = HttpGetEntityLength (Parser, &ContentLength);
-  if (EFI_ERROR (Status)) {
-    goto ERROR_6;
+  if (!ResumingOperation) {
+    Status = HttpGetEntityLength (Parser, &ContentLength);
+    if (EFI_ERROR (Status)) {
+      goto ERROR_6;
+    }
+  } else {
+    ContentLength = Private->BootFileSize;
   }
 
   if (*BufferSize < ContentLength) {

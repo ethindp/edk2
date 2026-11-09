@@ -14,6 +14,8 @@
 #include <Library/PcdLib.h>
 #include <Library/IoLib.h>
 #include <Library/BlParseLib.h>
+#include <Library/PrintLib.h>
+#include <Library/SmmStoreParseLib.h>
 #include <IndustryStandard/Acpi.h>
 #include <Coreboot.h>
 
@@ -282,7 +284,7 @@ FindCbMemTable (
   for (Idx = 0; Idx < Root->num_entries; Idx++) {
     if (Entries[Idx].id == TableId) {
       if (IsImdEntry) {
-        *MemTable = (VOID *)((UINTN)Entries[Idx].start + (UINTN)Root);
+        *MemTable = (VOID *)((INTN)(INT32)Entries[Idx].start + (UINTN)Root);
       } else {
         *MemTable = (VOID *)(UINTN)Entries[Idx].start;
       }
@@ -400,16 +402,49 @@ ParseMemoryInfo (
     MemoryMap.Size = cb_unpack64 (Range->size);
     MemoryMap.Type = (UINT8)Range->type;
     MemoryMap.Flag = 0;
-    DEBUG ((
-      DEBUG_INFO,
-      "%d. %016lx - %016lx [%02x]\n",
-      Index,
-      MemoryMap.Base,
-      MemoryMap.Base + MemoryMap.Size - 1,
-      MemoryMap.Type
-      ));
-
     MemInfoCallback (&MemoryMap, Params);
+  }
+
+  return RETURN_SUCCESS;
+}
+
+/**
+  Parse the boot mode from the coreboot table in memory.
+
+  @param  Mode              Pointer to the boot mode variable
+
+  @retval RETURN_SUCCESS     Successfully find out the boot information.
+  @retval RETURN_NOT_FOUND   Failed to find the boot information.
+  @retval RETURN_UNSUPPORTED  Feature is not supported by the bootloader.
+
+**/
+RETURN_STATUS
+EFIAPI
+ParseBootMode (
+  OUT EFI_BOOT_MODE  *Mode
+  )
+{
+  struct cb_boot_mode  *CbBootMode;
+
+  //
+  // Get the coreboot boot mode table
+  //
+  CbBootMode = (struct cb_boot_mode *)FindCbTag (CB_TAG_BOOT_MODE);
+  if (CbBootMode == NULL) {
+    return RETURN_NOT_FOUND;
+  }
+
+  switch (CbBootMode->boot_mode) {
+    case LB_BOOT_MODE_NORMAL:
+      *Mode = BOOT_WITH_FULL_CONFIGURATION;
+      break;
+
+    case LB_BOOT_MODE_FLASH_UPDATE:
+      *Mode = BOOT_ON_FLASH_UPDATE;
+      break;
+
+    default:
+      return RETURN_UNSUPPORTED;
   }
 
   return RETURN_SUCCESS;
@@ -418,7 +453,7 @@ ParseMemoryInfo (
 /**
   Acquire SMBIOS table from coreboot.
 
-  @param  SmbiosTable               Pointer to the SMBIOS table info.
+  @param  SmBiosEntryPoint          Pointer to the SMBIOS structure.
 
   @retval RETURN_SUCCESS            Successfully find out the tables.
   @retval RETURN_NOT_FOUND          Failed to find the tables.
@@ -427,19 +462,23 @@ ParseMemoryInfo (
 RETURN_STATUS
 EFIAPI
 ParseSmbiosTable (
-  OUT UNIVERSAL_PAYLOAD_SMBIOS_TABLE  *SmbiosTable
+  OUT UINT64  *SmBiosEntryPoint
   )
 {
   EFI_STATUS  Status;
   VOID        *MemTable;
   UINT32      MemTableSize;
 
+  if (SmBiosEntryPoint == NULL) {
+    return RETURN_INVALID_PARAMETER;
+  }
+
   Status = ParseCbMemTable (SIGNATURE_32 ('T', 'B', 'M', 'S'), &MemTable, &MemTableSize);
   if (EFI_ERROR (Status)) {
     return EFI_NOT_FOUND;
   }
 
-  SmbiosTable->SmBiosEntryPoint = (UINT64)(UINTN)MemTable;
+  *SmBiosEntryPoint = (UINT64)(UINTN)MemTable;
 
   return RETURN_SUCCESS;
 }
@@ -602,5 +641,158 @@ ParseMiscInfo (
   VOID
   )
 {
+  return RETURN_SUCCESS;
+}
+
+/**
+  Find the SmmStore HOB.
+
+  @param  SmmStoreInfo       Pointer to the SMMSTORE_INFO structure
+
+  @retval RETURN_SUCCESS     Successfully found the Smm store buffer information.
+  @retval RETURN_NOT_FOUND   Failed to find the Smm store buffer information.
+**/
+RETURN_STATUS
+EFIAPI
+ParseSmmStoreInfo (
+  OUT SMMSTORE_INFO  *SmmStoreInfo
+  )
+{
+  struct cb_smmstorev2  *CbSSRec;
+
+  if (SmmStoreInfo == NULL) {
+    return RETURN_INVALID_PARAMETER;
+  }
+
+  CbSSRec = FindCbTag (CB_TAG_SMMSTOREV2);
+  if (CbSSRec == NULL) {
+    return RETURN_NOT_FOUND;
+  }
+
+  DEBUG ((DEBUG_INFO, "Found Smm Store information\n"));
+  DEBUG ((DEBUG_INFO, "block size: 0x%x\n", CbSSRec->block_size));
+  DEBUG ((DEBUG_INFO, "number of blocks: 0x%x\n", CbSSRec->num_blocks));
+  DEBUG ((DEBUG_INFO, "communication buffer: 0x%x\n", CbSSRec->com_buffer));
+  DEBUG ((DEBUG_INFO, "communication buffer size: 0x%x\n", CbSSRec->com_buffer_size));
+  DEBUG ((DEBUG_INFO, "MMIO address of store: 0x%x\n", CbSSRec->mmap_addr));
+
+  SmmStoreInfo->ComBuffer     = CbSSRec->com_buffer;
+  SmmStoreInfo->ComBufferSize = CbSSRec->com_buffer_size;
+  SmmStoreInfo->BlockSize     = CbSSRec->block_size;
+  SmmStoreInfo->NumBlocks     = CbSSRec->num_blocks;
+  SmmStoreInfo->MmioAddress   = CbSSRec->mmap_addr;
+  SmmStoreInfo->ApmCmd        = CbSSRec->apm_cmd;
+
+  return RETURN_SUCCESS;
+}
+
+/**
+  Parse information in a string form identified by a number
+
+  @param  Id  String identifier.
+
+  @retval NULL       The requested information wasn't found.
+  @retval Otherwise  A pointer to a static string.
+**/
+STATIC
+CONST CHAR8 *
+EFIAPI
+ParseInfoString (
+  IN UINTN  Id
+  )
+{
+  struct cb_string  *CbString;
+
+  CbString = FindCbTag (Id);
+  if (CbString == NULL) {
+    return NULL;
+  }
+
+  return (CONST CHAR8 *)CbString->string;
+}
+
+/**
+  Parse firmware information passed in by bootloader
+
+  @param  FwInfo   Information about current firmware.
+
+  @retval RETURN_INVALID_PARAMETER  The parameter is NULL.
+  @retval RETURN_SUCCESS            Successfully parsed information.
+  @retval RETURN_NOT_FOUND          The information is missing.
+**/
+RETURN_STATUS
+EFIAPI
+ParseFirmwareInfo (
+  OUT FIRMWARE_INFO  *FwInfo
+  )
+{
+  CONST CHAR8            *Version;
+  CONST CHAR8            *ExtraVersion;
+  struct lb_efi_fw_info  *Info;
+
+  if (FwInfo == NULL) {
+    return RETURN_INVALID_PARAMETER;
+  }
+
+  Info = FindCbTag (CB_TAG_FW_INFO);
+  if (Info == NULL) {
+    return RETURN_NOT_FOUND;
+  }
+
+  Version      = ParseInfoString (CB_TAG_VERSION);
+  ExtraVersion = ParseInfoString (CB_TAG_EXTRA_VERSION);
+
+  /* No big deal if these aren't available. */
+  if ((Version == NULL) && (ExtraVersion == NULL)) {
+    Version      = "coreboot+EDK2 (unknown version)";
+    ExtraVersion = "";
+  } else if (Version == NULL) {
+    Version = "";
+  } else if (ExtraVersion == NULL) {
+    ExtraVersion = "";
+  }
+
+  CopyMem (&FwInfo->Type, &Info->guid, sizeof (FwInfo->Type));
+  FwInfo->Version                = Info->version;
+  FwInfo->LowestSupportedVersion = Info->lowest_supported_version;
+  FwInfo->ImageSize              = Info->fw_size;
+  AsciiSPrint (FwInfo->VersionStr, sizeof (FwInfo->VersionStr), "%a%a", Version, ExtraVersion);
+  return RETURN_SUCCESS;
+}
+
+/**
+  Parse update capsules passed in by bootloader
+
+  @param  CapsuleCallback   The callback routine invoked for each capsule.
+
+  @retval RETURN_SUCCESS    Successfully parsed capsules.
+  @retval RETURN_NOT_FOUND  Failed to look up the information.
+**/
+RETURN_STATUS
+EFIAPI
+ParseCapsules (
+  IN BL_CAPSULE_CALLBACK  CapsuleCallback
+  )
+{
+  struct cb_header  *Header;
+  struct cb_range   *Range;
+  UINT8             *TmpPtr;
+  UINTN             Idx;
+
+  Header = GetParameterBase ();
+  if (Header == NULL) {
+    return RETURN_NOT_FOUND;
+  }
+
+  TmpPtr = (UINT8 *)Header + Header->header_bytes;
+  for (Idx = 0; Idx < Header->table_entries; Idx++) {
+    Range = (struct cb_range *)TmpPtr;
+    if (Range->tag == CB_TAG_CAPSULE) {
+      CapsuleCallback (Range->range_start, Range->range_size);
+    }
+
+    TmpPtr += Range->size;
+  }
+
   return RETURN_SUCCESS;
 }

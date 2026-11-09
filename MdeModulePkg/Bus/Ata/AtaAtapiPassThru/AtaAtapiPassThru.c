@@ -712,7 +712,7 @@ AtaAtapiPassThruStart (
                   EFI_OPEN_PROTOCOL_GET_PROTOCOL
                   );
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "Get Pci_Io Protocol Error, Status=%r", Status));
+    DEBUG ((DEBUG_ERROR, "Get Pci_Io Protocol Error, Status=%r\n", Status));
     goto ErrorExit;
   }
 
@@ -1299,15 +1299,15 @@ AtaPassThruPassThru (
 
   Instance = ATA_PASS_THRU_PRIVATE_DATA_FROM_THIS (This);
 
-  if ((This->Mode->IoAlign > 1) && !IS_ALIGNED (Packet->InDataBuffer, This->Mode->IoAlign)) {
+  if ((This->Mode->IoAlign > 1) && !ADDRESS_IS_ALIGNED (Packet->InDataBuffer, This->Mode->IoAlign)) {
     return EFI_INVALID_PARAMETER;
   }
 
-  if ((This->Mode->IoAlign > 1) && !IS_ALIGNED (Packet->OutDataBuffer, This->Mode->IoAlign)) {
+  if ((This->Mode->IoAlign > 1) && !ADDRESS_IS_ALIGNED (Packet->OutDataBuffer, This->Mode->IoAlign)) {
     return EFI_INVALID_PARAMETER;
   }
 
-  if ((This->Mode->IoAlign > 1) && !IS_ALIGNED (Packet->Asb, This->Mode->IoAlign)) {
+  if ((This->Mode->IoAlign > 1) && !ADDRESS_IS_ALIGNED (Packet->Asb, This->Mode->IoAlign)) {
     return EFI_INVALID_PARAMETER;
   }
 
@@ -1345,7 +1345,7 @@ AtaPassThruPassThru (
     // Check logical block size
     //
     if ((IdentifyData->AtaData.phy_logic_sector_support & BIT12) != 0) {
-      BlockSize = (UINT32)(((IdentifyData->AtaData.logic_sector_size_hi << 16) | IdentifyData->AtaData.logic_sector_size_lo) * sizeof (UINT16));
+      BlockSize = (UINT32)(((UINT32)(IdentifyData->AtaData.logic_sector_size_hi << 16) | IdentifyData->AtaData.logic_sector_size_lo) * sizeof (UINT16));
     }
   }
 
@@ -1540,6 +1540,10 @@ Exit:
 
   If PortMultiplierPort is the port multiplier port number of the last ATA device on the port of
   the ATA controller, then EFI_NOT_FOUND is returned.
+
+  When port multiplier is not connected to the Port, GetNextDevice() may either return
+  EFI_SUCCESS and set PortMultiplierPort to 0xFFFF or return EFI_NOT_FOUND (in which case the
+  PortMultiplierPort value is undefined).
 
   @param[in]      This               A pointer to the EFI_ATA_PASS_THRU_PROTOCOL instance.
   @param[in]      Port               The port number present on the ATA controller.
@@ -2039,15 +2043,15 @@ ExtScsiPassThruPassThru (
     return EFI_INVALID_PARAMETER;
   }
 
-  if ((This->Mode->IoAlign > 1) && !IS_ALIGNED (Packet->InDataBuffer, This->Mode->IoAlign)) {
+  if ((This->Mode->IoAlign > 1) && !ADDRESS_IS_ALIGNED (Packet->InDataBuffer, This->Mode->IoAlign)) {
     return EFI_INVALID_PARAMETER;
   }
 
-  if ((This->Mode->IoAlign > 1) && !IS_ALIGNED (Packet->OutDataBuffer, This->Mode->IoAlign)) {
+  if ((This->Mode->IoAlign > 1) && !ADDRESS_IS_ALIGNED (Packet->OutDataBuffer, This->Mode->IoAlign)) {
     return EFI_INVALID_PARAMETER;
   }
 
-  if ((This->Mode->IoAlign > 1) && !IS_ALIGNED (Packet->SenseData, This->Mode->IoAlign)) {
+  if ((This->Mode->IoAlign > 1) && !ADDRESS_IS_ALIGNED (Packet->SenseData, This->Mode->IoAlign)) {
     return EFI_INVALID_PARAMETER;
   }
 

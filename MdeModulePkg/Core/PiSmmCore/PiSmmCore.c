@@ -1,7 +1,7 @@
 /** @file
   SMM Core Main Entry Point
 
-  Copyright (c) 2009 - 2019, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2009 - 2023, Intel Corporation. All rights reserved.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
@@ -10,6 +10,14 @@
 
 //
 // Physical pointer to private structure shared between SMM IPL and the SMM Core
+//
+// WARNING: The mailbox is exposed to the normal world. Its contents must be
+// carefully validated before use.
+//
+SMM_CORE_PRIVATE_DATA  *gSmmCoreMailbox;
+//
+// Pointer to the SMM Core's private copy of the mailbox in MMRAM. The SMM Core
+// uses this copy for internal operations.
 //
 SMM_CORE_PRIVATE_DATA  *gSmmCorePrivate;
 
@@ -305,6 +313,8 @@ SmmReadyToBootHandler (
   EFI_STATUS  Status;
   EFI_HANDLE  SmmHandle;
 
+  PERF_CALLBACK_BEGIN (&gEfiEventReadyToBootGuid);
+
   //
   // Install SMM Ready To Boot protocol.
   //
@@ -318,6 +328,7 @@ SmmReadyToBootHandler (
 
   SmiHandlerUnRegister (DispatchHandle);
 
+  PERF_CALLBACK_END (&gEfiEventReadyToBootGuid);
   return Status;
 }
 
@@ -351,6 +362,8 @@ SmmReadyToLockHandler (
   UINTN       Index;
   EFI_HANDLE  SmmHandle;
   VOID        *Interface;
+
+  PERF_CALLBACK_BEGIN (&gEfiDxeSmmReadyToLockProtocolGuid);
 
   //
   // Unregister SMI Handlers that are no required after the SMM driver dispatch is stopped
@@ -408,6 +421,7 @@ SmmReadyToLockHandler (
 
   SmramProfileReadyToLock ();
 
+  PERF_CALLBACK_END (&gEfiDxeSmmReadyToLockProtocolGuid);
   return Status;
 }
 
@@ -441,6 +455,8 @@ SmmEndOfDxeHandler (
   EFI_HANDLE                     S3EntryHandle;
 
   DEBUG ((DEBUG_INFO, "SmmEndOfDxeHandler\n"));
+
+  PERF_CALLBACK_BEGIN (&gEfiEndOfDxeEventGroupGuid);
 
   //
   // Install SMM EndOfDxe protocol
@@ -479,6 +495,7 @@ SmmEndOfDxeHandler (
     }
   }
 
+  PERF_CALLBACK_END (&gEfiEndOfDxeEventGroupGuid);
   return EFI_SUCCESS;
 }
 
@@ -610,6 +627,7 @@ SmmEndOfS3ResumeHandler (
   @param[in] Size2  Size of Buff2
 
   @retval TRUE      Buffers overlap in memory.
+  @retval TRUE      Math error.     Prevents potential math over and underflows.
   @retval FALSE     Buffer doesn't overlap.
 
 **/
@@ -621,11 +639,24 @@ InternalIsBufferOverlapped (
   IN UINTN  Size2
   )
 {
+  UINTN    End1;
+  UINTN    End2;
+  BOOLEAN  IsOverUnderflow1;
+  BOOLEAN  IsOverUnderflow2;
+
+  // Check for over or underflow
+  IsOverUnderflow1 = EFI_ERROR (SafeUintnAdd ((UINTN)Buff1, Size1, &End1));
+  IsOverUnderflow2 = EFI_ERROR (SafeUintnAdd ((UINTN)Buff2, Size2, &End2));
+
+  if (IsOverUnderflow1 || IsOverUnderflow2) {
+    return TRUE;
+  }
+
   //
   // If buff1's end is less than the start of buff2, then it's ok.
   // Also, if buff1's start is beyond buff2's end, then it's ok.
   //
-  if (((Buff1 + Size1) <= Buff2) || (Buff1 >= (Buff2 + Size2))) {
+  if ((End1 <= (UINTN)Buff2) || ((UINTN)Buff1 >= End2)) {
     return FALSE;
   }
 
@@ -647,12 +678,18 @@ SmmEntryPoint (
   IN CONST EFI_SMM_ENTRY_CONTEXT  *SmmEntryContext
   )
 {
-  EFI_STATUS                  Status;
-  EFI_SMM_COMMUNICATE_HEADER  *CommunicateHeader;
-  BOOLEAN                     InLegacyBoot;
-  BOOLEAN                     IsOverlapped;
-  VOID                        *CommunicationBuffer;
-  UINTN                       BufferSize;
+  EFI_STATUS                    Status;
+  EFI_MM_COMMUNICATE_HEADER_V3  *CommunicateHeader;
+  EFI_SMM_COMMUNICATE_HEADER    *LegacyCommunicateHeader;
+  BOOLEAN                       InLegacyBoot;
+  BOOLEAN                       IsOverlapped;
+  VOID                          *CommunicationBuffer;
+  UINTN                         BufferSize;
+  EFI_GUID                      *CommGuid;
+  VOID                          *CommData;
+  UINTN                         CommHeaderSize;
+
+  PERF_FUNCTION_BEGIN ();
 
   //
   // Update SMST with contents of the SmmEntryContext structure
@@ -666,7 +703,9 @@ SmmEntryPoint (
   //
   // Call platform hook before Smm Dispatch
   //
+  PERF_START (NULL, "PlatformHookBeforeSmmDispatch", NULL, 0);
   PlatformHookBeforeSmmDispatch ();
+  PERF_END (NULL, "PlatformHookBeforeSmmDispatch", NULL, 0);
 
   //
   // Call memory management hook function
@@ -681,7 +720,15 @@ SmmEntryPoint (
     //
     // Mark the InSmm flag as TRUE, it will be used by SmmBase2 protocol
     //
-    gSmmCorePrivate->InSmm = TRUE;
+    gSmmCoreMailbox->InSmm = TRUE;
+
+    if (gSmmCorePrivate == NULL) {
+      DEBUG ((DEBUG_ERROR, "%a Internal Core private data is not allocated. No communication allowed!!!\n", __func__));
+      ASSERT (FALSE);
+      goto AsyncSmi;
+    }
+
+    CopyMem (gSmmCorePrivate, gSmmCoreMailbox, sizeof (*gSmmCoreMailbox));
 
     //
     // Check to see if this is a Synchronous SMI sent through the SMM Communication
@@ -696,37 +743,68 @@ SmmEntryPoint (
       IsOverlapped = InternalIsBufferOverlapped (
                        (UINT8 *)CommunicationBuffer,
                        BufferSize,
-                       (UINT8 *)gSmmCorePrivate,
-                       sizeof (*gSmmCorePrivate)
+                       (UINT8 *)gSmmCoreMailbox,
+                       sizeof (*gSmmCoreMailbox)
                        );
-      if (!SmmIsBufferOutsideSmmValid ((UINTN)CommunicationBuffer, BufferSize) || IsOverlapped) {
+      //
+      // Check for over or underflows
+      //
+      if (!SmmIsBufferOutsideSmmValid ((UINTN)CommunicationBuffer, BufferSize) ||
+          IsOverlapped || (BufferSize < OFFSET_OF (EFI_SMM_COMMUNICATE_HEADER, Data)))
+      {
         //
         // If CommunicationBuffer is not in valid address scope,
         // or there is overlap between gSmmCorePrivate and CommunicationBuffer,
+        // or there is over or underflow,
         // return EFI_INVALID_PARAMETER
         //
         gSmmCorePrivate->CommunicationBuffer = NULL;
         gSmmCorePrivate->ReturnStatus        = EFI_ACCESS_DENIED;
       } else {
-        CommunicateHeader = (EFI_SMM_COMMUNICATE_HEADER *)CommunicationBuffer;
-        BufferSize       -= OFFSET_OF (EFI_SMM_COMMUNICATE_HEADER, Data);
-        Status            = SmiManage (
-                              &CommunicateHeader->HeaderGuid,
-                              NULL,
-                              CommunicateHeader->Data,
-                              &BufferSize
-                              );
+        CommGuid = &((EFI_MM_COMMUNICATE_HEADER_V3 *)CommunicationBuffer)->HeaderGuid;
+        //
+        // Check if the signature matches EFI_MM_COMMUNICATE_HEADER_V3 definition
+        //
+        if (CompareGuid (CommGuid, &gEfiMmCommunicateHeaderV3Guid)) {
+          //
+          // If so, need to make sure the size is at least the size of the header
+          //
+          if (BufferSize < sizeof (EFI_MM_COMMUNICATE_HEADER_V3)) {
+            gSmmCorePrivate->CommunicationBuffer = NULL;
+            gSmmCorePrivate->ReturnStatus        = EFI_ACCESS_DENIED;
+            goto AsyncSmi;
+          }
+
+          CommunicateHeader = (EFI_MM_COMMUNICATE_HEADER_V3 *)CommunicationBuffer;
+          CommGuid          = &CommunicateHeader->MessageGuid;
+          CommData          = CommunicateHeader->MessageData;
+          CommHeaderSize    = sizeof (EFI_MM_COMMUNICATE_HEADER_V3);
+        } else {
+          LegacyCommunicateHeader = (EFI_SMM_COMMUNICATE_HEADER *)CommunicationBuffer;
+          CommGuid                = &LegacyCommunicateHeader->HeaderGuid;
+          CommData                = LegacyCommunicateHeader->Data;
+          CommHeaderSize          = OFFSET_OF (EFI_SMM_COMMUNICATE_HEADER, Data);
+        }
+
+        BufferSize -= CommHeaderSize;
+        Status      = SmiManage (
+                        CommGuid,
+                        NULL,
+                        CommData,
+                        &BufferSize
+                        );
         //
         // Update CommunicationBuffer, BufferSize and ReturnStatus
         // Communicate service finished, reset the pointer to CommBuffer to NULL
         //
-        gSmmCorePrivate->BufferSize          = BufferSize + OFFSET_OF (EFI_SMM_COMMUNICATE_HEADER, Data);
+        gSmmCorePrivate->BufferSize          = BufferSize + CommHeaderSize;
         gSmmCorePrivate->CommunicationBuffer = NULL;
         gSmmCorePrivate->ReturnStatus        = (Status == EFI_SUCCESS) ? EFI_SUCCESS : EFI_NOT_FOUND;
       }
     }
   }
 
+AsyncSmi:
   //
   // Process Asynchronous SMI sources
   //
@@ -735,17 +813,25 @@ SmmEntryPoint (
   //
   // Call platform hook after Smm Dispatch
   //
+  PERF_START (NULL, "PlatformHookAfterSmmDispatch", NULL, 0);
   PlatformHookAfterSmmDispatch ();
+  PERF_END (NULL, "PlatformHookAfterSmmDispatch", NULL, 0);
 
   //
   // If a legacy boot has occurred, then make sure gSmmCorePrivate is not accessed
   //
   if (!InLegacyBoot) {
+    if (gSmmCorePrivate != NULL) {
+      CopyMem (gSmmCoreMailbox, gSmmCorePrivate, sizeof (*gSmmCoreMailbox));
+    }
+
     //
     // Clear the InSmm flag as we are going to leave SMM
     //
-    gSmmCorePrivate->InSmm = FALSE;
+    gSmmCoreMailbox->InSmm = FALSE;
   }
+
+  PERF_FUNCTION_END ();
 }
 
 /**
@@ -858,7 +944,12 @@ SmmMain (
   //
   // Get SMM Core Private context passed in from SMM IPL in ImageHandle.
   //
-  gSmmCorePrivate = (SMM_CORE_PRIVATE_DATA *)ImageHandle;
+  gSmmCoreMailbox = (SMM_CORE_PRIVATE_DATA *)ImageHandle;
+  gSmmCorePrivate = AllocateCopyPool (sizeof (*gSmmCoreMailbox), gSmmCoreMailbox);
+  ASSERT (gSmmCorePrivate != NULL);
+  if (gSmmCorePrivate == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
 
   //
   // Fill in SMRAM physical address for the SMM Services Table and the SMM Entry Point.
@@ -917,6 +1008,9 @@ SmmMain (
   SmmCoreInitializeMemoryAttributesTable ();
 
   SmmCoreInitializeSmiHandlerProfile ();
+
+  gSmmCoreMailbox->Smst          = gSmmCorePrivate->Smst;
+  gSmmCoreMailbox->SmmEntryPoint = gSmmCorePrivate->SmmEntryPoint;
 
   return EFI_SUCCESS;
 }

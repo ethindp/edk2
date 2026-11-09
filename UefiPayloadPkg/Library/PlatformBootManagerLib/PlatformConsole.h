@@ -5,8 +5,7 @@ Copyright (c) 2016, Intel Corporation. All rights reserved.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#ifndef PLATFORM_CONSOLE_H_
-#define PLATFORM_CONSOLE_H_
+#pragma once
 
 #include <PiDxe.h>
 #include <IndustryStandard/Pci.h>
@@ -21,7 +20,6 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Protocol/PciIo.h>
 
 #define IS_PCI_ISA_PDECODE(_p)  IS_CLASS3 (_p, PCI_CLASS_BRIDGE, PCI_CLASS_BRIDGE_ISA_PDECODE, 0)
-#define IS_PCI_16550SERIAL(_p)  IS_CLASS3 (_p, PCI_CLASS_SCC, PCI_SUBCLASS_SERIAL, PCI_IF_16550)
 
 //
 // Type definitions
@@ -37,10 +35,9 @@ typedef struct {
 
 typedef
 EFI_STATUS
-(EFIAPI *PROTOCOL_INSTANCE_CALLBACK)(
+(EFIAPI *SIMPLE_PROTOCOL_INSTANCE_CALLBACK)(
   IN EFI_HANDLE            Handle,
-  IN VOID                 *Instance,
-  IN VOID                 *Context
+  IN VOID                 *Instance
   );
 
 /**
@@ -66,5 +63,3 @@ EFIAPI
 PlatformConsoleInit (
   VOID
   );
-
-#endif

@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 ##
 import os
+import shutil
 import logging
 import io
 
@@ -15,7 +16,7 @@ from edk2toolext.invocables.edk2_setup import SetupSettingsManager, RequiredSubm
 from edk2toolext.invocables.edk2_update import UpdateSettingsManager
 from edk2toolext.invocables.edk2_pr_eval import PrEvalSettingsManager
 from edk2toollib.utility_functions import RunCmd
-
+from pathlib import Path
 
     # ####################################################################################### #
     #                         Configuration for Update & Setup                                #
@@ -53,7 +54,6 @@ class SettingsManager(UpdateSettingsManager, SetupSettingsManager, PrEvalSetting
         ret = RunCmd("git", "config --file .gitmodules --get-regexp path", workingdir=self.GetWorkspaceRoot(), outstream=result)
         # Cmd output is expected to look like:
         # submodule.CryptoPkg/Library/OpensslLib/openssl.path CryptoPkg/Library/OpensslLib/openssl
-        # submodule.SoftFloat.path ArmPkg/Library/ArmSoftFloatLib/berkeley-softfloat-3
         if ret == 0:
             for line in result.getvalue().splitlines():
                 _, _, path = line.partition(" ")
@@ -122,10 +122,10 @@ class PlatformBuilder( UefiBuilder, BuildSettingsManager):
 
     def AddCommandLineOptions(self, parserObj):
         ''' Add command line options to the argparser '''
-        parserObj.add_argument('-a', "--arch", dest="build_arch", type=str, default="IA32,X64",
-            help="Optional - CSV of architecture to build.  IA32 will use IA32 for Pei & Dxe. "
+        parserObj.add_argument('-a', "--arch", dest="build_arch", type=str, default="X64",
+            help="Optional - CSV of architecture to build. "
             "X64 will use X64 for both PEI and DXE.  IA32,X64 will use IA32 for PEI and "
-            "X64 for DXE. default is IA32,X64")
+            "X64 for DXE. Default is X64")
 
     def RetrieveCommandLineOptions(self, args):
         '''  Retrieve command line options from the argparser '''
@@ -170,6 +170,7 @@ class PlatformBuilder( UefiBuilder, BuildSettingsManager):
         self.env.SetValue("PRODUCT_NAME", "OVMF", "Platform Hardcoded")
         self.env.SetValue("MAKE_STARTUP_NSH", "FALSE", "Default to false")
         self.env.SetValue("QEMU_HEADLESS", "FALSE", "Default to false")
+        self.env.SetValue("DISABLE_DEBUG_MACRO_CHECK", "TRUE", "Disable by default")
         return 0
 
     def PlatformPreBuild(self):
@@ -180,13 +181,22 @@ class PlatformBuilder( UefiBuilder, BuildSettingsManager):
 
     def FlashRomImage(self):
         VirtualDrive = os.path.join(self.env.GetValue("BUILD_OUTPUT_BASE"), "VirtualDrive")
-        os.makedirs(VirtualDrive, exist_ok=True)
+        VirtualDriveBoot = os.path.join(VirtualDrive, "EFI", "BOOT")
+        os.makedirs(VirtualDriveBoot, exist_ok=True)
         OutputPath_FV = os.path.join(self.env.GetValue("BUILD_OUTPUT_BASE"), "FV")
 
         if (self.env.GetValue("QEMU_SKIP") and
             self.env.GetValue("QEMU_SKIP").upper() == "TRUE"):
             logging.info("skipping qemu boot test")
             return 0
+
+        # copy shell to VirtualDrive
+        for arch in self.env.GetValue("TARGET_ARCH").split():
+            src = os.path.join(self.env.GetValue("BUILD_OUTPUT_BASE"), arch, "Shell.efi")
+            dst = os.path.join(VirtualDriveBoot, f'BOOT{arch}.EFI')
+            if os.path.exists(src):
+                logging.info("copy %s -> %s", src, dst)
+                shutil.copyfile(src, dst)
 
         #
         # QEMU must be on the path
@@ -195,26 +205,64 @@ class PlatformBuilder( UefiBuilder, BuildSettingsManager):
         args  = "-debugcon stdio"                                           # write messages to stdio
         args += " -global isa-debugcon.iobase=0x402"                        # debug messages out thru virtual io port
         args += " -net none"                                                # turn off network
+        args += " -smp 4"
+        args += " -cpu IvyBridge,+rdrand"                                   # IvyBridge is the first CPU that supported
+                                                                            # RDRAND, which is required for dynamic
+                                                                            # stack cookies
+
+        path_to_os = self.env.GetValue("PATH_TO_OS")
+        if path_to_os is not None:
+            args += f" -m 8192"                                             # 8gb memory for OS
+            file_extension = Path(path_to_os).suffix.lower().replace('"', '')
+
+            storage_format = {
+                ".vhd": "raw",
+                ".qcow2": "qcow2",
+                ".iso": "iso",
+            }.get(file_extension, None)
+
+            if storage_format is None:
+                raise Exception(f"Unknown OS storage type: {path_to_os}")
+
+            if storage_format == "iso":
+                args += f" -cdrom \"{path_to_os}\""
+            else:
+                args += f" -drive file=\"{path_to_os}\",format={storage_format},if=none,id=os_nvme"
+                args += " -device nvme,serial=nvme-1,drive=os_nvme,bootindex=0"
+
         args += f" -drive file=fat:rw:{VirtualDrive},format=raw,media=disk" # Mount disk with startup.nsh
+        # Provides Rng services to the Guest VM
+        args += " -device virtio-rng-pci"
 
         if (self.env.GetValue("QEMU_HEADLESS").upper() == "TRUE"):
             args += " -display none"  # no graphics
 
         if (self.env.GetBuildValue("SMM_REQUIRE") == "1"):
             args += " -machine q35,smm=on" #,accel=(tcg|kvm)"
+            args += " --accel tcg,thread=single"
             #args += " -m ..."
-            #args += " -smp ..."
             args += " -global driver=cfi.pflash01,property=secure,value=on"
             args += " -drive if=pflash,format=raw,unit=0,file=" + os.path.join(OutputPath_FV, "OVMF_CODE.fd") + ",readonly=on"
             args += " -drive if=pflash,format=raw,unit=1,file=" + os.path.join(OutputPath_FV, "OVMF_VARS.fd")
+            if (self.env.GetBuildValue("STANDALONE_MM_ENABLE") == "1"):
+                # We will not support S3 in standalone MM mode
+                args += " -global ICH9-LPC.disable_s3=1"
+                # Make MMRAM bigger as it will need to hold the FV where the MM core is at
+                args += " -global mch.extended-tseg-mbytes=32"
         else:
             args += " -pflash " + os.path.join(OutputPath_FV, "OVMF.fd")    # path to firmware
 
 
+        SerialLog = None
         if (self.env.GetValue("MAKE_STARTUP_NSH").upper() == "TRUE"):
+            SerialLog = os.path.join(self.env.GetValue("BUILD_OUTPUT_BASE"), "serial.log")
+            if os.path.exists(SerialLog):
+                os.remove(SerialLog)
+            args += f" -serial file:{SerialLog}"
             f = open(os.path.join(VirtualDrive, "startup.nsh"), "w")
             f.write("BOOT SUCCESS !!! \n")
             ## add commands here
+            f.write("dh -d -v -p SimpleTextIn\n")
             f.write("reset -s\n")
             f.close()
 
@@ -222,6 +270,21 @@ class PlatformBuilder( UefiBuilder, BuildSettingsManager):
 
         if ret == 0xc0000005:
             #for some reason getting a c0000005 on successful return
-            return 0
+            ret = 0
+
+        if ret == 0 and SerialLog is not None:
+            # Verify that the ISA serial console (PNP0501, formatted as
+            # "Serial(0x0)" by UefiDevicePathLib) and PS/2 keyboard (PNP0303)
+            # bound to SimpleTextIn and that startup.nsh output reached the
+            # serial port.
+            if not os.path.exists(SerialLog):
+                logging.error(f"Serial log file not found: {SerialLog}")
+                return 1
+            with open(SerialLog, "r", errors="replace") as f:
+                serial_output = f.read()
+            for expected in ("Serial(0x0)", "Acpi(PNP0303,0x0)", "BOOT SUCCESS !!!"):
+                if expected not in serial_output:
+                    logging.error(f"Expected string '{expected}' not found in serial log")
+                    return 1
 
         return ret

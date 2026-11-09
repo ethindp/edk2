@@ -27,6 +27,7 @@
   @retval EFI_NOT_FOUND        The requested descriptors does not exist.
 
 **/
+STATIC
 EFI_STATUS
 SearchGcdMemorySpaces (
   IN EFI_GCD_MEMORY_SPACE_DESCRIPTOR  *MemorySpaceMap,
@@ -90,6 +91,7 @@ SetGcdMemorySpaceAttributes (
   UINTN                 EndIndex;
   EFI_PHYSICAL_ADDRESS  RegionStart;
   UINT64                RegionLength;
+  UINT64                Capabilities;
 
   DEBUG ((
     DEBUG_GCD,
@@ -146,17 +148,76 @@ SetGcdMemorySpaceAttributes (
       RegionLength = MemorySpaceMap[Index].BaseAddress + MemorySpaceMap[Index].Length - RegionStart;
     }
 
+    // Always add RO, RP, and XP, as all memory is capable of supporting these types (they are software constructs,
+    // not hardware features) and they are critical to maintaining a security boundary.
+    Capabilities = MemorySpaceMap[Index].Capabilities | EFI_MEMORY_RO | EFI_MEMORY_RP | EFI_MEMORY_XP;
+
+    // Update GCD capabilities as these may have changed in the page table from the original GCD setting
+    // this follows the same pattern as x86 GCD and Page Table syncing
+    Status = gDS->SetMemorySpaceCapabilities (
+                    RegionStart,
+                    RegionLength,
+                    Capabilities
+                    );
+
+    if (EFI_ERROR (Status)) {
+      DEBUG ((
+        DEBUG_ERROR,
+        "%a - failed to update GCD capabilities: 0x%llx on memory region: 0x%llx length: 0x%llx Status: %r\n",
+        __func__,
+        Capabilities,
+        RegionStart,
+        RegionLength,
+        Status
+        ));
+
+      // If we fail to set capabilities, we should assert as this is a GCD internal error, but follow the previous
+      // behavior and try to set the attributes (which may or may not fail)
+      ASSERT_EFI_ERROR (Status);
+    }
+
     //
-    // Set memory attributes according to MTRR attribute and the original attribute of descriptor
+    // Set memory attributes according to page table attributes and the original attributes of descriptor
     //
-    gDS->SetMemorySpaceAttributes (
-           RegionStart,
-           RegionLength,
-           (MemorySpaceMap[Index].Attributes & ~EFI_MEMORY_CACHETYPE_MASK) | (MemorySpaceMap[Index].Capabilities & Attributes)
-           );
+    Status = gDS->SetMemorySpaceAttributes (
+                    RegionStart,
+                    RegionLength,
+                    (MemorySpaceMap[Index].Attributes & ~EFI_MEMORY_CACHETYPE_MASK) | (Attributes & Capabilities)
+                    );
+
+    if (EFI_ERROR (Status)) {
+      DEBUG ((
+        DEBUG_ERROR,
+        "%a - failed to update GCD attributes: 0x%llx on memory region: 0x%llx length: 0x%llx Status: %r\n",
+        __func__,
+        Attributes,
+        RegionStart,
+        RegionLength,
+        Status
+        ));
+
+      ASSERT_EFI_ERROR (Status);
+    }
   }
 
   return EFI_SUCCESS;
+}
+
+/**
+  Checks if the specified ARM translation table attributes are cacheable memory.
+
+  @param[in]  Attributes  ARM memory attributes.
+
+  @retval TRUE if the attributes are cacheable, FALSE otherwise.
+**/
+STATIC
+BOOLEAN
+IsArmAttributeCacheable (
+  IN UINT64  Attributes
+  )
+{
+  return ((Attributes & TT_ATTR_INDX_MASK) == TT_ATTR_INDX_MEMORY_WRITE_THROUGH) ||
+         ((Attributes & TT_ATTR_INDX_MASK) == TT_ATTR_INDX_MEMORY_WRITE_BACK);
 }
 
 /**
@@ -194,12 +255,13 @@ CpuSetMemoryAttributes (
   UINTN       RegionBaseAddress;
   UINTN       RegionLength;
   UINTN       RegionArmAttributes;
+  BOOLEAN     FlushCache;
 
   if (mIsFlushingGCD) {
     return EFI_SUCCESS;
   }
 
-  if ((BaseAddress & (SIZE_4KB - 1)) != 0) {
+  if (!IS_ALIGNED (BaseAddress, SIZE_4KB)) {
     // Minimum granularity is SIZE_4KB (4KB on ARM)
     DEBUG ((DEBUG_PAGE, "CpuSetMemoryAttributes(%lx, %lx, %lx): Minimum granularity is SIZE_4KB\n", BaseAddress, Length, EfiAttributes));
     return EFI_UNSUPPORTED;
@@ -217,8 +279,42 @@ CpuSetMemoryAttributes (
   if (EFI_ERROR (Status) || (RegionArmAttributes != ArmAttributes) ||
       ((BaseAddress + Length) > (RegionBaseAddress + RegionLength)))
   {
-    return ArmSetMemoryAttributes (BaseAddress, Length, EfiAttributes);
-  } else {
-    return EFI_SUCCESS;
+    //
+    // If the region was previously mapped as a cacheable normal memory,
+    // and is changed to device or non-cacheable memory, ensure any
+    // stale cache lines are written back and invalidated. If this is not done,
+    // depending on the caching behavior of the platform, dirty cache lines may
+    // be written back corrupting data in the future, or stale cache lines may
+    // persist if caching is enabled later. In scenarios where the caller didn't
+    // explicitly change the cacheability, ignore this. This could still lead to
+    // unexpected caches, but this is a necessary concession to incorrect behavior
+    // in higher-level components.
+    //
+    FlushCache = FALSE;
+    if (!EFI_ERROR (Status) &&
+        ((EfiAttributes & EFI_MEMORY_RP) == 0) &&
+        ((EfiAttributes & EFI_MEMORY_CACHETYPE_MASK) != 0) &&
+        IsArmAttributeCacheable (RegionArmAttributes) &&
+        !IsArmAttributeCacheable (ArmAttributes))
+    {
+      FlushCache = TRUE;
+    }
+
+    Status = ArmSetMemoryAttributes (BaseAddress, Length, EfiAttributes, 0);
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+
+    if (FlushCache) {
+      //
+      // A data barrier is required to ensure that all page updates are complete and the TLB is flushed prior to the
+      // cache invalidation to avoid any unexpected cache lines being created.
+      //
+
+      ArmDataSynchronizationBarrier ();
+      WriteBackInvalidateDataCacheRange ((VOID *)(UINTN)BaseAddress, (UINTN)Length);
+    }
   }
+
+  return EFI_SUCCESS;
 }

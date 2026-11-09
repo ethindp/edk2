@@ -9,8 +9,7 @@
 
 **/
 
-#ifndef __SIMPLE_TEXT_IN_PROTOCOL_H__
-#define __SIMPLE_TEXT_IN_PROTOCOL_H__
+#pragma once
 
 #define EFI_SIMPLE_TEXT_INPUT_PROTOCOL_GUID \
   { \
@@ -100,6 +99,7 @@ EFI_STATUS
   @retval EFI_NOT_READY    There was no keystroke data available.
   @retval EFI_DEVICE_ERROR The keystroke information was not returned due to
                            hardware errors.
+  @retval EFI_UNSUPPORTED  The device does not support the ability to read keystroke data.
 
 **/
 typedef
@@ -123,5 +123,3 @@ struct _EFI_SIMPLE_TEXT_INPUT_PROTOCOL {
 };
 
 extern EFI_GUID  gEfiSimpleTextInProtocolGuid;
-
-#endif

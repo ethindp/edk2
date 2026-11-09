@@ -72,6 +72,13 @@ EfiPxeBcStart (
     return EFI_UNSUPPORTED;
   }
 
+  REPORT_STATUS_CODE_WITH_EXTENDED_DATA (
+    EFI_PROGRESS_CODE,
+    EFI_IO_BUS_IP_NETWORK | EFI_IOB_PC_RECONFIG,
+    (VOID *)&(Mode->UsingIpv6),
+    sizeof (Mode->UsingIpv6)
+    );
+
   if (Mode->UsingIpv6) {
     AsciiPrint ("\n>>Start PXE over IPv6");
     //
@@ -186,14 +193,14 @@ EfiPxeBcStart (
     //
     // Create event and set status for token to capture ICMP error message.
     //
-    Private->Icmp6Token.Status = EFI_NOT_READY;
-    Status                     = gBS->CreateEvent (
-                                        EVT_NOTIFY_SIGNAL,
-                                        TPL_NOTIFY,
-                                        PxeBcIcmpErrorUpdate,
-                                        Private,
-                                        &Private->IcmpToken.Event
-                                        );
+    Private->IcmpToken.Status = EFI_NOT_READY;
+    Status                    = gBS->CreateEvent (
+                                       EVT_NOTIFY_SIGNAL,
+                                       TPL_NOTIFY,
+                                       PxeBcIcmpErrorUpdate,
+                                       Private,
+                                       &Private->IcmpToken.Event
+                                       );
     if (EFI_ERROR (Status)) {
       goto ON_ERROR;
     }
@@ -428,7 +435,6 @@ EfiPxeBcDhcp (
     return EFI_INVALID_PARAMETER;
   }
 
-  Status                  = EFI_SUCCESS;
   Private                 = PXEBC_PRIVATE_DATA_FROM_PXEBC (This);
   Mode                    = Private->PxeBc.Mode;
   Mode->IcmpErrorReceived = FALSE;
@@ -2034,8 +2040,6 @@ EfiPxeBcSetStationIP (
 
   Private = PXEBC_PRIVATE_DATA_FROM_PXEBC (This);
   Mode    = Private->PxeBc.Mode;
-  Status  = EFI_SUCCESS;
-
   if (!Mode->UsingIpv6 &&
       (NewSubnetMask != NULL) &&
       !IP4_IS_VALID_NETMASK (NTOHL (NewSubnetMask->Addr[0])))
@@ -2328,7 +2332,7 @@ EFI_PXE_BASE_CODE_CALLBACK_PROTOCOL  gPxeBcCallBackTemplate = {
                                       Buffer. On output with a return code of EFI_BUFFER_TOO_SMALL,
                                       the size of Buffer required to retrieve the requested file.
   @param[in]      Buffer              The memory buffer to transfer the file to. IF Buffer is NULL,
-                                      then no the size of the requested file is returned in
+                                      then the size of the requested file is returned in
                                       BufferSize.
 
   @retval EFI_SUCCESS                 The file was loaded.
@@ -2374,7 +2378,6 @@ EfiPxeLoadFile (
   Private    = VirtualNic->Private;
   PxeBc      = &Private->PxeBc;
   UsingIpv6  = FALSE;
-  Status     = EFI_DEVICE_ERROR;
 
   //
   // Check media status before PXE start

@@ -13,7 +13,7 @@
   PLATFORM_VERSION        = 0.1
   DSC_SPECIFICATION       = 0x00010005
   OUTPUT_DIRECTORY        = Build/MdeModulePkg/HostTest
-  SUPPORTED_ARCHITECTURES = IA32|X64
+  SUPPORTED_ARCHITECTURES = IA32|X64|AARCH64
   BUILD_TARGETS           = NOOPT
   SKUID_IDENTIFIER        = DEFAULT
 
@@ -47,3 +47,53 @@
       UefiSortLib|MdeModulePkg/Library/UefiSortLib/UefiSortLib.inf
       DevicePathLib|MdePkg/Library/UefiDevicePathLib/UefiDevicePathLib.inf
   }
+
+  MdeModulePkg/Library/UefiSortLib/GoogleTest/UefiSortLibGoogleTest.inf {
+    <LibraryClasses>
+      UefiSortLib|MdeModulePkg/Library/UefiSortLib/UefiSortLib.inf
+      DevicePathLib|MdePkg/Library/UefiDevicePathLib/UefiDevicePathLib.inf
+  }
+
+  MdeModulePkg/Library/ImagePropertiesRecordLib/UnitTest/ImagePropertiesRecordLibUnitTestHost.inf {
+    <LibraryClasses>
+      ImagePropertiesRecordLib|MdeModulePkg/Library/ImagePropertiesRecordLib/ImagePropertiesRecordLib.inf
+      PeCoffGetEntryPointLib|MdePkg/Library/BasePeCoffGetEntryPointLib/BasePeCoffGetEntryPointLib.inf
+  }
+
+  MdeModulePkg/Bus/Pci/NvmExpressDxe/UnitTest/MediaSanitizeUnitTestHost.inf {
+    <LibraryClasses>
+      NvmExpressDxe|MdeModulePkg/Bus/Pci/NvmExpressDxe/NvmExpressDxe.inf
+  }
+
+  MdeModulePkg/Bus/Usb/UsbBusDxe/GoogleTest/UsbBusDxeGoogleTest.inf
+
+  MdeModulePkg/Library/DxeReportStatusCodeLib/GoogleTest/DxeReportStatusCodeLibGoogleTest.inf {
+    <LibraryClasses>
+      ReportStatusCodeLib|MdeModulePkg/Library/DxeReportStatusCodeLib/DxeReportStatusCodeLib.inf
+      DevicePathLib|MdePkg/Test/Mock/Library/GoogleTest/MockDevicePathLib/MockDevicePathLib.inf
+      UefiBootServicesTableLib|MdePkg/Test/Mock/Library/GoogleTest/MockUefiBootServicesTableLib/MockUefiBootServicesTableLib.inf
+  }
+
+  MdeModulePkg/Core/Dxe/Mem/GoogleTest/MemoryBinGoogleTestHost.inf {
+    <LibraryClasses>
+      HobLib|MdePkg/Test/Mock/Library/GoogleTest/MockHobLib/MockHobLib.inf
+  }
+
+  MdeModulePkg/Core/Pei/PeiMemoryServicesGoogleTestHost.inf {
+    <LibraryClasses>
+      HobLib|MdePkg/Test/Mock/Library/GoogleTest/MockHobLib/MockHobLib.inf
+  }
+
+  MdeModulePkg/Library/GptLib/UnitTest/GptLibUnitTestHost.inf {
+    <LibraryClasses>
+      GptLib|MdeModulePkg/Library/GptLib/GptLib.inf
+  }
+
+  #
+  # Build HOST_APPLICATION Libraries
+  #
+  MdeModulePkg/Test/Mock/Library/GoogleTest/MockHiiLib/MockHiiLib.inf
+  MdeModulePkg/Test/Mock/Library/GoogleTest/MockPciHostBridgeLib/MockPciHostBridgeLib.inf
+  MdeModulePkg/Test/Mock/Library/GoogleTest/MockVariablePolicyHelperLib/MockVariablePolicyHelperLib.inf
+  MdeModulePkg/Test/Mock/Library/GoogleTest/MockSecurityManagementLib/MockSecurityManagementLib.inf
+  MdeModulePkg/Test/Mock/Library/GoogleTest/MockTpmMeasurementLib/MockTpmMeasurementLib.inf

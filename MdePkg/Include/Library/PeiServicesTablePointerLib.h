@@ -6,8 +6,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef __PEI_SERVICES_TABLE_POINTER_LIB_H__
-#define __PEI_SERVICES_TABLE_POINTER_LIB_H__
+#pragma once
 
 /**
   Retrieves the cached value of the PEI Services Table pointer.
@@ -52,10 +51,11 @@ SetPeiServicesTablePointer (
   immediately preceding the Interrupt Descriptor Table (IDT) in memory.
   For X64 CPUs, the PEI Services Table pointer is stored in the 8 bytes
   immediately preceding the Interrupt Descriptor Table (IDT) in memory.
-  For Itanium and ARM CPUs, a the PEI Services Table Pointer is stored in
-  a dedicated CPU register.  This means that there is no memory storage
-  associated with storing the PEI Services Table pointer, so no additional
-  migration actions are required for Itanium or ARM CPUs.
+  For Itanium, ARM and LoongArch CPUs, a the PEI Services Table Pointer
+  is stored in a dedicated CPU register.  This means that there is no
+  memory storage associated with storing the PEI Services Table pointer,
+  so no additional migration actions are required for Itanium, ARM and
+  LoongArch CPUs.
 
 **/
 VOID
@@ -63,5 +63,3 @@ EFIAPI
 MigratePeiServicesTablePointer (
   VOID
   );
-
-#endif

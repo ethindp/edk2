@@ -10,8 +10,7 @@
 
 **/
 
-#ifndef __SIMPLE_TEXT_IN_EX_H__
-#define __SIMPLE_TEXT_IN_EX_H__
+#pragma once
 
 #include <Protocol/SimpleTextIn.h>
 
@@ -186,6 +185,7 @@ typedef struct {
   @retval EFI_NOT_READY    There was no keystroke data available.
   @retval EFI_DEVICE_ERROR The keystroke information was not returned due to
                            hardware errors.
+  @retval EFI_UNSUPPORTED  The device does not support the ability to read keystroke data.
 
 
 **/
@@ -308,5 +308,3 @@ struct _EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL {
 };
 
 extern EFI_GUID  gEfiSimpleTextInputExProtocolGuid;
-
-#endif

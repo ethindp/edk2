@@ -2,7 +2,7 @@
 #  Platform PEI driver
 #
 #  This module provides platform specific function to detect boot mode.
-#  Copyright (c) 2006 - 2019, Intel Corporation. All rights reserved.<BR>
+#  Copyright (c) 2006 - 2024, Intel Corporation. All rights reserved.<BR>
 #
 #  SPDX-License-Identifier: BSD-2-Clause-Patent
 #
@@ -25,14 +25,16 @@
 [Sources]
   AmdSev.c
   ClearCache.c
-  Cmos.c
-  Cmos.h
   FeatureControl.c
   Fv.c
   MemDetect.c
   MemTypeInfo.c
   Platform.c
   Platform.h
+  PlatformId.c
+  PlatformId.h
+  IntelTdx.c
+  SmmRelocation.c
 
 [Packages]
   EmbeddedPkg/EmbeddedPkg.dec
@@ -45,6 +47,9 @@
 [Guids]
   gEfiMemoryTypeInformationGuid
   gFdtHobGuid
+  gUefiOvmfPkgPlatformInfoGuid
+  gGhcbApicIdsGuid
+  gTcg800155PlatformIdEventHobGuid              ## SOMETIMES_PRODUCES
 
 [LibraryClasses]
   BaseLib
@@ -63,7 +68,11 @@
   MtrrLib
   MemEncryptSevLib
   PcdLib
-  VmgExitLib
+  CcExitLib
+  PlatformInitLib
+  SmmRelocationLib
+  TdxHelperLib
+  MemDebugLogLib
 
 [Pcd]
   gUefiOvmfPkgTokenSpaceGuid.PcdOvmfPeiMemFvBase
@@ -91,7 +100,11 @@
   gUefiOvmfPkgTokenSpaceGuid.PcdOvmfDecompressionScratchEnd
   gUefiOvmfPkgTokenSpaceGuid.PcdQ35TsegMbytes
   gUefiOvmfPkgTokenSpaceGuid.PcdQ35SmramAtDefaultSmbase
+  gUefiOvmfPkgTokenSpaceGuid.PcdXenPvhStartOfDayStructPtr
+  gUefiOvmfPkgTokenSpaceGuid.PcdXenPvhStartOfDayStructPtrSize
+  gUefiOvmfPkgTokenSpaceGuid.PcdSecureBootSupported
   gEfiMdePkgTokenSpaceGuid.PcdGuidedExtractHandlerTableAddress
+  gEfiMdePkgTokenSpaceGuid.PcdPciExpressBaseAddress
   gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwSpareSize
   gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageVariableSize
   gEfiMdeModulePkgTokenSpaceGuid.PcdEmuVariableNvStoreReserved
@@ -110,11 +123,11 @@
   gUefiCpuPkgTokenSpaceGuid.PcdSevEsIsEnabled
   gEfiMdePkgTokenSpaceGuid.PcdConfidentialComputingGuestAttr
   gUefiCpuPkgTokenSpaceGuid.PcdGhcbHypervisorFeatures
+  gEfiMdeModulePkgTokenSpaceGuid.PcdTdxSharedBitMask
 
 [FixedPcd]
   gUefiOvmfPkgTokenSpaceGuid.PcdOvmfCpuidBase
   gUefiOvmfPkgTokenSpaceGuid.PcdOvmfCpuidSize
-  gEfiMdePkgTokenSpaceGuid.PcdPciExpressBaseAddress
   gEmbeddedTokenSpaceGuid.PcdMemoryTypeEfiACPIMemoryNVS
   gEmbeddedTokenSpaceGuid.PcdMemoryTypeEfiACPIReclaimMemory
   gEmbeddedTokenSpaceGuid.PcdMemoryTypeEfiReservedMemoryType
@@ -122,20 +135,22 @@
   gEmbeddedTokenSpaceGuid.PcdMemoryTypeEfiRuntimeServicesData
   gUefiOvmfPkgTokenSpaceGuid.PcdOvmfSecGhcbBackupBase
   gUefiOvmfPkgTokenSpaceGuid.PcdOvmfSecGhcbBackupSize
+  gUefiOvmfPkgTokenSpaceGuid.PcdOvmfSecSvsmCaaBase
+  gUefiOvmfPkgTokenSpaceGuid.PcdOvmfSecSvsmCaaSize
   gUefiOvmfPkgTokenSpaceGuid.PcdOvmfWorkAreaBase
   gUefiOvmfPkgTokenSpaceGuid.PcdOvmfWorkAreaSize
   gUefiOvmfPkgTokenSpaceGuid.PcdOvmfSnpSecretsBase
   gUefiOvmfPkgTokenSpaceGuid.PcdOvmfSnpSecretsSize
 
 [FeaturePcd]
-  gUefiOvmfPkgTokenSpaceGuid.PcdCsmEnable
   gUefiOvmfPkgTokenSpaceGuid.PcdSmmSmramRequire
+  gUefiOvmfPkgTokenSpaceGuid.PcdQemuVarsRequire
 
 [Ppis]
   gEfiPeiMasterBootModePpiGuid
   gEfiPeiMpServicesPpiGuid
   gEfiPeiReadOnlyVariable2PpiGuid
+  gEfiPeiMpServices2PpiGuid
 
 [Depex]
   TRUE
-

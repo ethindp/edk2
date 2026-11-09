@@ -1,6 +1,6 @@
 /** @file
 *
-*  Copyright (c) 2011-2014, ARM Limited. All rights reserved.
+*  Copyright (c) 2011-2023, Arm Limited. All rights reserved.
 *
 *  SPDX-License-Identifier: BSD-2-Clause-Patent
 *
@@ -21,12 +21,6 @@
 #include <Ppi/ArmMpCoreInfo.h>
 
 #include "PrePi.h"
-
-VOID
-EFIAPI
-ProcessLibraryConstructorList (
-  VOID
-  );
 
 VOID
 PrePiMain (
@@ -59,6 +53,9 @@ PrePiMain (
   // relocations) don't become invisible once we turn them on.
   //
   InvalidateDataCacheRange ((VOID *)(UINTN)PcdGet64 (PcdFdBaseAddress), PcdGet32 (PcdFdSize));
+
+  // SEC phase needs to run library constructors by hand.
+  ProcessLibraryConstructorList ();
 
   // Initialize MMU and Memory HOBs (Resource Descriptor HOBs)
   Status = MemoryPeim (UefiMemoryBase, FixedPcdGet32 (PcdSystemMemoryUefiRegionSize));
@@ -93,15 +90,12 @@ PrePiMain (
   // Now, the HOB List has been initialized, we can register performance information
   PERF_START (NULL, "PEI", NULL, StartTimeStamp);
 
-  // SEC phase needs to run library constructors by hand.
-  ProcessLibraryConstructorList ();
-
   // Assume the FV that contains the SEC (our code) also contains a compressed FV.
   Status = DecompressFirstFv ();
   ASSERT_EFI_ERROR (Status);
 
   // Load the DXE Core and transfer control to it
-  Status = LoadDxeCoreFromFv (NULL, 0);
+  Status = LoadDxeCoreFromFv (NULL, SIZE_128KB);
   ASSERT_EFI_ERROR (Status);
 }
 
@@ -115,8 +109,6 @@ CEntryPoint (
   UINT64  StartTimeStamp;
 
   if (PerformanceMeasurementEnabled ()) {
-    // Initialize the Timer Library to setup the Timer HW controller
-    TimerConstructor ();
     // We cannot call yet the PerformanceLib because the HOB List has not been initialized
     StartTimeStamp = GetPerformanceCounter ();
   } else {

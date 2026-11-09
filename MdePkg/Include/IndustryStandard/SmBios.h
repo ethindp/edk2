@@ -1,15 +1,18 @@
 /** @file
-  Industry Standard Definitions of SMBIOS Table Specification v3.3.0.
+  Industry Standard Definitions of SMBIOS Table Specification v3.8.0.
 
-Copyright (c) 2006 - 2021, Intel Corporation. All rights reserved.<BR>
+Copyright (c) Microsoft Corporation. All rights reserved.<BR>
+Copyright (c) 2024-2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.<BR>
+Copyright (c) 2006 - 2024, Intel Corporation. All rights reserved.<BR>
 (C) Copyright 2015-2017 Hewlett Packard Enterprise Development LP<BR>
 (C) Copyright 2015 - 2019 Hewlett Packard Enterprise Development LP<BR>
+Copyright (c) 2022, AMD Incorporated. All rights reserved.<BR>
+Copyright (c) 1985 - 2022, American Megatrends International LLC.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef __SMBIOS_STANDARD_H__
-#define __SMBIOS_STANDARD_H__
+#pragma once
 
 ///
 /// Reference SMBIOS 2.6, chapter 3.1.2.
@@ -25,6 +28,14 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 /// This number is not used for any other purpose by the SMBIOS specification.
 ///
 #define SMBIOS_HANDLE_PI_RESERVED  0xFFFE
+
+///
+/// Reference SMBIOS 3.6, chapter 6.1.2.
+/// Unless otherwise specified, when referring to another structure's handle, the value
+/// 0FFFFh is used to indicate that the referenced handle is not applicable or does not
+/// exist.
+///
+#define SMBIOS_HANDLE_INVALID  0xFFFF
 
 ///
 /// Reference SMBIOS 2.6, chapter 3.1.3.
@@ -45,6 +56,24 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 // For SMBIOS 3.0, Structure table maximum size in Entry Point structure is DWORD field limited to 0xFFFFFFFF bytes.
 //
 #define SMBIOS_3_0_TABLE_MAX_LENGTH  0xFFFFFFFF
+
+///
+/// Reference SMBIOS 3.4, chapter 5.2.1 SMBIOS 2.1 (32-bit) Entry Point
+/// Table 1 - SMBIOS 2.1 (32-bit) Entry Point structure, offset 00h
+/// _SM_, specified as four ASCII characters (5F 53 4D 5F).
+///@{
+#define SMBIOS_ANCHOR_STRING         "_SM_"
+#define SMBIOS_ANCHOR_STRING_LENGTH  4
+///@}
+
+///
+/// Reference SMBIOS 3.4, chapter 5.2.2 SMBIOS 3.0 (64-bit) Entry Point
+/// Table 2 - SMBIOS 3.0 (64-bit) Entry Point structure, offset 00h
+/// _SM3_, specified as five ASCII characters (5F 53 4D 33 5F).
+///@{
+#define SMBIOS_3_0_ANCHOR_STRING         "_SM3_"
+#define SMBIOS_3_0_ANCHOR_STRING_LENGTH  5
+///@}
 
 //
 // SMBIOS type macros which is according to SMBIOS 3.3.0 specification.
@@ -94,6 +123,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #define SMBIOS_TYPE_MANAGEMENT_CONTROLLER_HOST_INTERFACE  42
 #define SMBIOS_TYPE_TPM_DEVICE                            43
 #define SMBIOS_TYPE_PROCESSOR_ADDITIONAL_INFORMATION      44
+#define SMBIOS_TYPE_FIRMWARE_INVENTORY_INFORMATION        45
+#define SMBIOS_TYPE_STRING_PROPERTY_INFORMATION           46
 
 ///
 /// Inactive type is added from SMBIOS 2.2. Reference SMBIOS 2.6, chapter 3.3.43.
@@ -134,7 +165,7 @@ typedef UINT16 SMBIOS_HANDLE;
 ///
 #pragma pack(1)
 typedef struct {
-  UINT8     AnchorString[4];
+  UINT8     AnchorString[SMBIOS_ANCHOR_STRING_LENGTH];
   UINT8     EntryPointStructureChecksum;
   UINT8     EntryPointLength;
   UINT8     MajorVersion;
@@ -151,7 +182,7 @@ typedef struct {
 } SMBIOS_TABLE_ENTRY_POINT;
 
 typedef struct {
-  UINT8     AnchorString[5];
+  UINT8     AnchorString[SMBIOS_3_0_ANCHOR_STRING_LENGTH];
   UINT8     EntryPointStructureChecksum;
   UINT8     EntryPointLength;
   UINT8     MajorVersion;
@@ -252,7 +283,9 @@ typedef struct {
   UINT8    TargetContentDistributionEnabled  : 1;
   UINT8    UefiSpecificationSupported        : 1;
   UINT8    VirtualMachineSupported           : 1;
-  UINT8    ExtensionByte2Reserved            : 3;
+  UINT8    ManufacturingModeSupported        : 1;
+  UINT8    ManufacturingModeEnabled          : 1;
+  UINT8    ExtensionByte2Reserved            : 1;
 } MBCE_SYSTEM_RESERVED;
 
 ///
@@ -457,6 +490,24 @@ typedef struct {
 ///
 /// System Enclosure or Chassis (Type 3).
 ///
+
+///
+/// Chassis - Height.
+///
+typedef enum {
+  ChassisHeightUnspecified   = 0x00,
+  ChassisHeightUseRackHeight = 0xFF  ///< Enclosure Height is specified at offset 16h+(n*m)
+} CHASSIS_HEIGHT;
+
+///
+/// Chassis - Rack Type.
+/// SMBIOS Spec 3.9.0 CR251 Additional Rack Types
+///
+typedef enum {
+  ChassisRackTypeUnspecified = 0x00,
+  ChassisRackTypeOU          = 0x01,
+} CHASSIS_RACK_TYPE;
+
 /// The information in this structure defines attributes of the system's mechanical enclosure(s).
 /// For example, if a system included a separate enclosure for its peripheral devices,
 /// two structures would be returned: one for the main, system enclosure and the second for
@@ -488,9 +539,11 @@ typedef struct {
   //
   // Since ContainedElements has a variable number of entries, must not define SKUNumber in
   // the structure.  Need to reference it by starting at offset 0x15 and adding
-  // (ContainedElementCount * ContainedElementRecordLength) bytes.
+  // (ContainedElementCount(n) * ContainedElementRecordLength(m)) bytes.
   //
-  // SMBIOS_TABLE_STRING         SKUNumber;
+  // SMBIOS_TABLE_STRING         SKUNumber;         ///< SMBIOS spec 2.7+ Offset 15h+(n*m)
+  // UINT8                       RackType;          ///< SMBIOS spec 3.9+ Offset 16h+(n*m) CR251
+  // UINT8                       RackHeight;        ///< SMBIOS spec 3.9+ Offset 17h+(n*m) CR251
 } SMBIOS_TABLE_TYPE3;
 
 ///
@@ -530,6 +583,7 @@ typedef enum {
   ProcessorFamilyM2                              = 0x13,
   ProcessorFamilyIntelCeleronM                   = 0x14,
   ProcessorFamilyIntelPentium4Ht                 = 0x15,
+  ProcessorFamilyIntel                           = 0x16,
   ProcessorFamilyAmdDuron                        = 0x18,
   ProcessorFamilyK5                              = 0x19,
   ProcessorFamilyK6                              = 0x1A,
@@ -681,6 +735,7 @@ typedef enum {
   ProcessorFamilyIntelCoreI5                     = 0xCD,
   ProcessorFamilyIntelCoreI3                     = 0xCE,
   ProcessorFamilyIntelCoreI9                     = 0xCF,
+  ProcessorFamilyIntelXeonD                      = 0xD0,  /// Smbios spec 3.8 updated this value
   ProcessorFamilyViaC7M                          = 0xD2,
   ProcessorFamilyViaC7D                          = 0xD3,
   ProcessorFamilyViaC7                           = 0xD4,
@@ -717,21 +772,47 @@ typedef enum {
 /// Processor Information2 - Processor Family2.
 ///
 typedef enum {
-  ProcessorFamilyARMv7          = 0x0100,
-  ProcessorFamilyARMv8          = 0x0101,
-  ProcessorFamilySH3            = 0x0104,
-  ProcessorFamilySH4            = 0x0105,
-  ProcessorFamilyARM            = 0x0118,
-  ProcessorFamilyStrongARM      = 0x0119,
-  ProcessorFamily6x86           = 0x012C,
-  ProcessorFamilyMediaGX        = 0x012D,
-  ProcessorFamilyMII            = 0x012E,
-  ProcessorFamilyWinChip        = 0x0140,
-  ProcessorFamilyDSP            = 0x015E,
-  ProcessorFamilyVideoProcessor = 0x01F4,
-  ProcessorFamilyRiscvRV32      = 0x0200,
-  ProcessorFamilyRiscVRV64      = 0x0201,
-  ProcessorFamilyRiscVRV128     = 0x0202
+  ProcessorFamilyARMv7               = 0x0100,
+  ProcessorFamilyARMv8               = 0x0101,
+  ProcessorFamilyARMv9               = 0x0102,
+  ProcessorFamilySH3                 = 0x0104,
+  ProcessorFamilySH4                 = 0x0105,
+  ProcessorFamilyARM                 = 0x0118,
+  ProcessorFamilyStrongARM           = 0x0119,
+  ProcessorFamily6x86                = 0x012C,
+  ProcessorFamilyMediaGX             = 0x012D,
+  ProcessorFamilyMII                 = 0x012E,
+  ProcessorFamilyWinChip             = 0x0140,
+  ProcessorFamilyDSP                 = 0x015E,
+  ProcessorFamilyVideoProcessor      = 0x01F4,
+  ProcessorFamilyRiscvRV32           = 0x0200,
+  ProcessorFamilyRiscVRV64           = 0x0201,
+  ProcessorFamilyRiscVRV128          = 0x0202,
+  ProcessorFamilyLoongArch           = 0x0258,
+  ProcessorFamilyLoongson1           = 0x0259,
+  ProcessorFamilyLoongson2           = 0x025A,
+  ProcessorFamilyLoongson3           = 0x025B,
+  ProcessorFamilyLoongson2K          = 0x025C,
+  ProcessorFamilyLoongson3A          = 0x025D,
+  ProcessorFamilyLoongson3B          = 0x025E,
+  ProcessorFamilyLoongson3C          = 0x025F,
+  ProcessorFamilyLoongson3D          = 0x0260,
+  ProcessorFamilyLoongson3E          = 0x0261,
+  ProcessorFamilyDualCoreLoongson2K  = 0x0262,
+  ProcessorFamilyQuadCoreLoongson3A  = 0x026C,
+  ProcessorFamilyMultiCoreLoongson3A = 0x026D,
+  ProcessorFamilyQuadCoreLoongson3B  = 0x026E,
+  ProcessorFamilyMultiCoreLoongson3B = 0x026F,
+  ProcessorFamilyMultiCoreLoongson3C = 0x0270,
+  ProcessorFamilyMultiCoreLoongson3D = 0x0271,
+  ProcessorFamilyIntelCore3          = 0x0300,
+  ProcessorFamilyIntelCore5          = 0x0301,
+  ProcessorFamilyIntelCore7          = 0x0302,
+  ProcessorFamilyIntelCore9          = 0x0303,
+  ProcessorFamilyIntelCoreUltra3     = 0x0304,
+  ProcessorFamilyIntelCoreUltra5     = 0x0305,
+  ProcessorFamilyIntelCoreUltra7     = 0x0306,
+  ProcessorFamilyIntelCoreUltra9     = 0x0307
 } PROCESSOR_FAMILY2_DATA;
 
 ///
@@ -812,7 +893,32 @@ typedef enum {
   ProcessorUpgradeSocketBGA1528   = 0x3C,
   ProcessorUpgradeSocketLGA4189   = 0x3D,
   ProcessorUpgradeSocketLGA1200   = 0x3E,
-  ProcessorUpgradeSocketLGA4677   = 0x3F
+  ProcessorUpgradeSocketLGA4677   = 0x3F,
+  ProcessorUpgradeSocketLGA1700   = 0x40,
+  ProcessorUpgradeSocketBGA1744   = 0x41,
+  ProcessorUpgradeSocketBGA1781   = 0x42,
+  ProcessorUpgradeSocketBGA1211   = 0x43,
+  ProcessorUpgradeSocketBGA2422   = 0x44,
+  ProcessorUpgradeSocketLGA1211   = 0x45,
+  ProcessorUpgradeSocketLGA2422   = 0x46,
+  ProcessorUpgradeSocketLGA5773   = 0x47,
+  ProcessorUpgradeSocketBGA5773   = 0x48,
+  ProcessorUpgradeSocketAM5       = 0x49,
+  ProcessorUpgradeSocketSP5       = 0x4A,
+  ProcessorUpgradeSocketSP6       = 0x4B,
+  ProcessorUpgradeSocketBGA883    = 0x4C,
+  ProcessorUpgradeSocketBGA1190   = 0x4D,
+  ProcessorUpgradeSocketBGA4129   = 0x4E,
+  ProcessorUpgradeSocketLGA4710   = 0x4F,
+  ProcessorUpgradeSocketLGA7529   = 0x50,
+  ProcessorUpgradeSocketBGA1964   = 0x51,
+  ProcessorUpgradeSocketBGA1792   = 0x52,
+  ProcessorUpgradeSocketBGA2049   = 0x53,
+  ProcessorUpgradeSocketBGA2551   = 0x54,
+  ProcessorUpgradeSocketLGA1851   = 0x55,
+  ProcessorUpgradeSocketBGA2114   = 0x56,
+  ProcessorUpgradeSocketBGA2833   = 0x57,
+  ProcessorUpgradeInvalid         = 0xFF
 } PROCESSOR_UPGRADE;
 
 ///
@@ -820,12 +926,12 @@ typedef enum {
 ///
 typedef struct {
   UINT32    ProcessorSteppingId : 4;
-  UINT32    ProcessorModel      :     4;
-  UINT32    ProcessorFamily     :    4;
-  UINT32    ProcessorType       :      2;
+  UINT32    ProcessorModel      : 4;
+  UINT32    ProcessorFamily     : 4;
+  UINT32    ProcessorType       : 2;
   UINT32    ProcessorReserved1  : 2;
-  UINT32    ProcessorXModel     :    4;
-  UINT32    ProcessorXFamily    :   8;
+  UINT32    ProcessorXModel     : 4;
+  UINT32    ProcessorXFamily    : 8;
   UINT32    ProcessorReserved2  : 4;
 } PROCESSOR_SIGNATURE;
 
@@ -890,10 +996,26 @@ typedef union {
   UINT8    Data;
 } PROCESSOR_STATUS_DATA;
 
+#ifdef MDE_CPU_AARCH64
+// This structure assumes Arm64 SoC ID is supported
+typedef struct {
+  UINT16    SocId;
+  UINT8     SipId;
+  UINT8     SipBankIndex;
+  UINT32    SocRevision;
+} PROCESSOR_ID_DATA;
+#elif defined (MDE_CPU_IA32) || defined (MDE_CPU_X64)
 typedef struct {
   PROCESSOR_SIGNATURE        Signature;
   PROCESSOR_FEATURE_FLAGS    FeatureFlags;
 } PROCESSOR_ID_DATA;
+#else
+// Please define PROCESSOR_ID_DATA for your architecture
+typedef struct {
+  PROCESSOR_SIGNATURE        Signature;
+  PROCESSOR_FEATURE_FLAGS    FeatureFlags;
+} PROCESSOR_ID_DATA;
+#endif
 
 ///
 /// Processor Information (Type 4).
@@ -941,6 +1063,14 @@ typedef struct {
   UINT16                 CoreCount2;
   UINT16                 EnabledCoreCount2;
   UINT16                 ThreadCount2;
+  //
+  // Add for smbios 3.6
+  //
+  UINT16                 ThreadEnabled;
+  //
+  // Add for smbios 3.8
+  //
+  SMBIOS_TABLE_STRING    SocketType;
 } SMBIOS_TABLE_TYPE4;
 
 ///
@@ -1070,6 +1200,40 @@ typedef struct {
 } SMBIOS_TABLE_TYPE6;
 
 ///
+/// Cache Information - Configuration.
+///
+typedef struct {
+  UINT16    CacheLevel    : 3;
+  UINT16    CacheSocketed : 1;
+  UINT16    Reserved      : 1;
+  UINT16    Location      : 2;
+  UINT16    Enabled       : 1;
+  UINT16    OperationMode : 2;
+  UINT16    Reserved2     : 6;
+} SMBIOS_CACHE_CONFIGURATION_DATA;
+
+///
+/// Cache Information - Size
+///
+typedef struct {
+  UINT16    Size           : 15;
+  UINT16    Granularity64K : 1;
+} SMBIOS_CACHE_SIZE;
+
+/// Maximum cache size representable in CACHE_SIZE at 1 KiB granularity
+#define SMBIOS_CACHE_SIZE_MAX_SIZE_1K_GRANULARITY  32767
+/// Maximum cache size representable in CACHE_SIZE at 64 KiB granularity
+#define SMBIOS_CACHE_SIZE_MAX_SIZE_64K_GRANULARITY  (32767 * 64)
+
+///
+/// Cache Information - Size 2
+///
+typedef struct {
+  UINT32    Size           : 31;
+  UINT32    Granularity64K : 1;
+} SMBIOS_CACHE_SIZE_2;
+
+///
 /// Cache Information - SRAM Type.
 ///
 typedef struct {
@@ -1138,8 +1302,8 @@ typedef struct {
   SMBIOS_STRUCTURE        Hdr;
   SMBIOS_TABLE_STRING     SocketDesignation;
   UINT16                  CacheConfiguration;
-  UINT16                  MaximumCacheSize;
-  UINT16                  InstalledSize;
+  SMBIOS_CACHE_SIZE       MaximumCacheSize;
+  SMBIOS_CACHE_SIZE       InstalledSize;
   CACHE_SRAM_TYPE_DATA    SupportedSRAMType;
   CACHE_SRAM_TYPE_DATA    CurrentSRAMType;
   UINT8                   CacheSpeed;
@@ -1149,8 +1313,8 @@ typedef struct {
   //
   // Add for smbios 3.1.0
   //
-  UINT32                  MaximumCacheSize2;
-  UINT32                  InstalledSize2;
+  SMBIOS_CACHE_SIZE_2     MaximumCacheSize2;
+  SMBIOS_CACHE_SIZE_2     InstalledSize2;
 } SMBIOS_TABLE_TYPE7;
 
 ///
@@ -1266,71 +1430,85 @@ typedef struct {
 /// System Slots - Slot Type
 ///
 typedef enum {
-  SlotTypeOther                          = 0x01,
-  SlotTypeUnknown                        = 0x02,
-  SlotTypeIsa                            = 0x03,
-  SlotTypeMca                            = 0x04,
-  SlotTypeEisa                           = 0x05,
-  SlotTypePci                            = 0x06,
-  SlotTypePcmcia                         = 0x07,
-  SlotTypeVlVesa                         = 0x08,
-  SlotTypeProprietary                    = 0x09,
-  SlotTypeProcessorCardSlot              = 0x0A,
-  SlotTypeProprietaryMemoryCardSlot      = 0x0B,
-  SlotTypeIORiserCardSlot                = 0x0C,
-  SlotTypeNuBus                          = 0x0D,
-  SlotTypePci66MhzCapable                = 0x0E,
-  SlotTypeAgp                            = 0x0F,
-  SlotTypeApg2X                          = 0x10,
-  SlotTypeAgp4X                          = 0x11,
-  SlotTypePciX                           = 0x12,
-  SlotTypeAgp8X                          = 0x13,
-  SlotTypeM2Socket1_DP                   = 0x14,
-  SlotTypeM2Socket1_SD                   = 0x15,
-  SlotTypeM2Socket2                      = 0x16,
-  SlotTypeM2Socket3                      = 0x17,
-  SlotTypeMxmTypeI                       = 0x18,
-  SlotTypeMxmTypeII                      = 0x19,
-  SlotTypeMxmTypeIIIStandard             = 0x1A,
-  SlotTypeMxmTypeIIIHe                   = 0x1B,
-  SlotTypeMxmTypeIV                      = 0x1C,
-  SlotTypeMxm30TypeA                     = 0x1D,
-  SlotTypeMxm30TypeB                     = 0x1E,
-  SlotTypePciExpressGen2Sff_8639         = 0x1F,
-  SlotTypePciExpressGen3Sff_8639         = 0x20,
-  SlotTypePciExpressMini52pinWithBSKO    = 0x21,    ///< PCI Express Mini 52-pin (CEM spec. 2.0) with bottom-side keep-outs.
-  SlotTypePciExpressMini52pinWithoutBSKO = 0x22,    ///< PCI Express Mini 52-pin (CEM spec. 2.0) without bottom-side keep-outs.
-  SlotTypePciExpressMini76pin            = 0x23,    ///< PCI Express Mini 76-pin (CEM spec. 2.0) Corresponds to Display-Mini card.
-  SlotTypeCXLFlexbus10                   = 0x30,
-  SlotTypePC98C20                        = 0xA0,
-  SlotTypePC98C24                        = 0xA1,
-  SlotTypePC98E                          = 0xA2,
-  SlotTypePC98LocalBus                   = 0xA3,
-  SlotTypePC98Card                       = 0xA4,
-  SlotTypePciExpress                     = 0xA5,
-  SlotTypePciExpressX1                   = 0xA6,
-  SlotTypePciExpressX2                   = 0xA7,
-  SlotTypePciExpressX4                   = 0xA8,
-  SlotTypePciExpressX8                   = 0xA9,
-  SlotTypePciExpressX16                  = 0xAA,
-  SlotTypePciExpressGen2                 = 0xAB,
-  SlotTypePciExpressGen2X1               = 0xAC,
-  SlotTypePciExpressGen2X2               = 0xAD,
-  SlotTypePciExpressGen2X4               = 0xAE,
-  SlotTypePciExpressGen2X8               = 0xAF,
-  SlotTypePciExpressGen2X16              = 0xB0,
-  SlotTypePciExpressGen3                 = 0xB1,
-  SlotTypePciExpressGen3X1               = 0xB2,
-  SlotTypePciExpressGen3X2               = 0xB3,
-  SlotTypePciExpressGen3X4               = 0xB4,
-  SlotTypePciExpressGen3X8               = 0xB5,
-  SlotTypePciExpressGen3X16              = 0xB6,
-  SlotTypePciExpressGen4                 = 0xB8,
-  SlotTypePciExpressGen4X1               = 0xB9,
-  SlotTypePciExpressGen4X2               = 0xBA,
-  SlotTypePciExpressGen4X4               = 0xBB,
-  SlotTypePciExpressGen4X8               = 0xBC,
-  SlotTypePciExpressGen4X16              = 0xBD
+  SlotTypeOther                                     = 0x01,
+  SlotTypeUnknown                                   = 0x02,
+  SlotTypeIsa                                       = 0x03,
+  SlotTypeMca                                       = 0x04,
+  SlotTypeEisa                                      = 0x05,
+  SlotTypePci                                       = 0x06,
+  SlotTypePcmcia                                    = 0x07,
+  SlotTypeVlVesa                                    = 0x08,
+  SlotTypeProprietary                               = 0x09,
+  SlotTypeProcessorCardSlot                         = 0x0A,
+  SlotTypeProprietaryMemoryCardSlot                 = 0x0B,
+  SlotTypeIORiserCardSlot                           = 0x0C,
+  SlotTypeNuBus                                     = 0x0D,
+  SlotTypePci66MhzCapable                           = 0x0E,
+  SlotTypeAgp                                       = 0x0F,
+  SlotTypeApg2X                                     = 0x10,
+  SlotTypeAgp4X                                     = 0x11,
+  SlotTypePciX                                      = 0x12,
+  SlotTypeAgp8X                                     = 0x13,
+  SlotTypeM2Socket1_DP                              = 0x14,
+  SlotTypeM2Socket1_SD                              = 0x15,
+  SlotTypeM2Socket2                                 = 0x16,
+  SlotTypeM2Socket3                                 = 0x17,
+  SlotTypeMxmTypeI                                  = 0x18,
+  SlotTypeMxmTypeII                                 = 0x19,
+  SlotTypeMxmTypeIIIStandard                        = 0x1A,
+  SlotTypeMxmTypeIIIHe                              = 0x1B,
+  SlotTypeMxmTypeIV                                 = 0x1C,
+  SlotTypeMxm30TypeA                                = 0x1D,
+  SlotTypeMxm30TypeB                                = 0x1E,
+  SlotTypePciExpressGen2Sff_8639                    = 0x1F,
+  SlotTypePciExpressGen3Sff_8639                    = 0x20,
+  SlotTypePciExpressMini52pinWithBSKO               = 0x21,    ///< PCI Express Mini 52-pin (CEM spec. 2.0) with bottom-side keep-outs.
+  SlotTypePciExpressMini52pinWithoutBSKO            = 0x22,    ///< PCI Express Mini 52-pin (CEM spec. 2.0) without bottom-side keep-outs.
+  SlotTypePciExpressMini76pin                       = 0x23,    ///< PCI Express Mini 76-pin (CEM spec. 2.0) Corresponds to Display-Mini card.
+  SlotTypePCIExpressGen4SFF_8639                    = 0x24,    ///< U.2
+  SlotTypePCIExpressGen5SFF_8639                    = 0x25,    ///< U.2
+  SlotTypeOCPNIC30SmallFormFactor                   = 0x26,    ///< SFF
+  SlotTypeOCPNIC30LargeFormFactor                   = 0x27,    ///< LFF
+  SlotTypeOCPNICPriorto30                           = 0x28,
+  SlotTypeCXLFlexbus10                              = 0x30,
+  SlotTypePC98C20                                   = 0xA0,
+  SlotTypePC98C24                                   = 0xA1,
+  SlotTypePC98E                                     = 0xA2,
+  SlotTypePC98LocalBus                              = 0xA3,
+  SlotTypePC98Card                                  = 0xA4,
+  SlotTypePciExpress                                = 0xA5,
+  SlotTypePciExpressX1                              = 0xA6,
+  SlotTypePciExpressX2                              = 0xA7,
+  SlotTypePciExpressX4                              = 0xA8,
+  SlotTypePciExpressX8                              = 0xA9,
+  SlotTypePciExpressX16                             = 0xAA,
+  SlotTypePciExpressGen2                            = 0xAB,
+  SlotTypePciExpressGen2X1                          = 0xAC,
+  SlotTypePciExpressGen2X2                          = 0xAD,
+  SlotTypePciExpressGen2X4                          = 0xAE,
+  SlotTypePciExpressGen2X8                          = 0xAF,
+  SlotTypePciExpressGen2X16                         = 0xB0,
+  SlotTypePciExpressGen3                            = 0xB1,
+  SlotTypePciExpressGen3X1                          = 0xB2,
+  SlotTypePciExpressGen3X2                          = 0xB3,
+  SlotTypePciExpressGen3X4                          = 0xB4,
+  SlotTypePciExpressGen3X8                          = 0xB5,
+  SlotTypePciExpressGen3X16                         = 0xB6,
+  SlotTypePciExpressGen4                            = 0xB8,
+  SlotTypePciExpressGen4X1                          = 0xB9,
+  SlotTypePciExpressGen4X2                          = 0xBA,
+  SlotTypePciExpressGen4X4                          = 0xBB,
+  SlotTypePciExpressGen4X8                          = 0xBC,
+  SlotTypePciExpressGen4X16                         = 0xBD,
+  SlotTypePCIExpressGen5                            = 0xBE,
+  SlotTypePCIExpressGen5X1                          = 0xBF,
+  SlotTypePCIExpressGen5X2                          = 0xC0,
+  SlotTypePCIExpressGen5X4                          = 0xC1,
+  SlotTypePCIExpressGen5X8                          = 0xC2,
+  SlotTypePCIExpressGen5X16                         = 0xC3,
+  SlotTypePCIExpressGen6andBeyond                   = 0xC4,
+  SlotTypeEnterpriseandDatacenter1UE1FormFactorSlot = 0xC5,
+  SlotTypeEnterpriseandDatacenter3E3FormFactorSlot  = 0xC6
 } MISC_SLOT_TYPE;
 
 ///
@@ -1354,6 +1532,39 @@ typedef enum {
 } MISC_SLOT_DATA_BUS_WIDTH;
 
 ///
+/// System Slots - Slot Physical Width.
+///
+typedef enum {
+  SlotPhysicalWidthOther   = 0x01,
+  SlotPhysicalWidthUnknown = 0x02,
+  SlotPhysicalWidth8Bit    = 0x03,
+  SlotPhysicalWidth16Bit   = 0x04,
+  SlotPhysicalWidth32Bit   = 0x05,
+  SlotPhysicalWidth64Bit   = 0x06,
+  SlotPhysicalWidth128Bit  = 0x07,
+  SlotPhysicalWidth1X      = 0x08,    ///< Or X1
+  SlotPhysicalWidth2X      = 0x09,    ///< Or X2
+  SlotPhysicalWidth4X      = 0x0A,    ///< Or X4
+  SlotPhysicalWidth8X      = 0x0B,    ///< Or X8
+  SlotPhysicalWidth12X     = 0x0C,    ///< Or X12
+  SlotPhysicalWidth16X     = 0x0D,    ///< Or X16
+  SlotPhysicalWidth32X     = 0x0E     ///< Or X32
+} MISC_SLOT_PHYSICAL_WIDTH;
+
+///
+/// System Slots - Slot Information.
+///
+typedef enum {
+  Others = 0x00,
+  Gen1   = 0x01,
+  Gen2   = 0x01,
+  Gen3   = 0x03,
+  Gen4   = 0x04,
+  Gen5   = 0x05,
+  Gen6   = 0x06
+} MISC_SLOT_INFORMATION;
+
+///
 /// System Slots - Current Usage.
 ///
 typedef enum {
@@ -1368,10 +1579,12 @@ typedef enum {
 /// System Slots - Slot Length.
 ///
 typedef enum {
-  SlotLengthOther   = 0x01,
-  SlotLengthUnknown = 0x02,
-  SlotLengthShort   = 0x03,
-  SlotLengthLong    = 0x04
+  SlotLengthOther                  = 0x01,
+  SlotLengthUnknown                = 0x02,
+  SlotLengthShort                  = 0x03,
+  SlotLengthLong                   = 0x04,
+  SlotLength2_5InchDriveFormFactor = 0x05,
+  SlotLength3_5InchDriveFormFactor = 0x06
 } MISC_SLOT_LENGTH;
 
 ///
@@ -1398,8 +1611,19 @@ typedef struct {
   UINT8    AsyncSurpriseRemoval    : 1;
   UINT8    FlexbusSlotCxl10Capable : 1;
   UINT8    FlexbusSlotCxl20Capable : 1;
-  UINT8    Reserved                : 1; ///< Set to 0.
+  UINT8    FlexbusSlotCxl30Capable : 1; /// SMBIOS spec 3.7.0 updated CXL 3.0 support
 } MISC_SLOT_CHARACTERISTICS2;
+
+///
+/// System Slots - Slot Height
+///
+typedef enum {
+  SlotHeightNone       = 0x00,
+  SlotHeightOther      = 0x01,
+  SlotHeightUnknown    = 0x02,
+  SlotHeightFullHeight = 0x03,
+  SlotHeightLowProfile = 0x04
+} MISC_SLOT_HEIGHT;
 
 ///
 /// System Slots - Peer Segment/Bus/Device/Function/Width Groups
@@ -1441,12 +1665,27 @@ typedef struct {
   UINT8                         PeerGroupingCount;
   MISC_SLOT_PEER_GROUP          PeerGroups[1];
   //
+  // Since PeerGroups has a variable number of entries, must not define new
+  // fields in the structure. Remaining fields can be referenced using
+  // SMBIOS_TABLE_TYPE9_EXTENDED structure
+  //
+} SMBIOS_TABLE_TYPE9;
+
+///
+/// Extended structure for System Slots (Type 9)
+///
+typedef struct {
+  //
   // Add for smbios 3.4
   //
-  UINT8                         SlotInformation;
-  UINT8                         SlotPhysicalWidth;
-  UINT16                        SlotPitch;
-} SMBIOS_TABLE_TYPE9;
+  UINT8     SlotInformation;
+  UINT8     SlotPhysicalWidth;
+  UINT16    SlotPitch;
+  //
+  // Add for smbios 3.5
+  //
+  UINT8     SlotHeight;             ///< The enumeration value from MISC_SLOT_HEIGHT.
+} SMBIOS_TABLE_TYPE9_EXTENDED;
 
 ///
 /// On Board Devices Information - Device Types.
@@ -1578,13 +1817,22 @@ typedef enum {
 /// System Event Log - Variable Data Format Types.
 ///
 typedef enum {
-  EventLogVariableNone                       = 0x00,
-  EventLogVariableHandle                     = 0x01,
-  EventLogVariableMutilEvent                 = 0x02,
-  EventLogVariableMutilEventHandle           = 0x03,
-  EventLogVariablePOSTResultBitmap           = 0x04,
-  EventLogVariableSysManagementType          = 0x05,
-  EventLogVariableMutliEventSysManagmentType = 0x06,
+  EventLogVariableNone       = 0x00,
+  EventLogVariableHandle     = 0x01,
+  EventLogVariableMultiEvent = 0x02,
+  // This misspelling is kept temporarily for backwards compatibility and will
+  // be removed in a future PR. Consumers must migrate to the new definition
+  EventLogVariableMutilEvent       = EventLogVariableMultiEvent,
+  EventLogVariableMultiEventHandle = 0x03,
+  // This misspelling is kept temporarily for backwards compatibility and will
+  // be removed in a future PR. Consumers must migrate to the new definition
+  EventLogVariableMutilEventHandle            = EventLogVariableMultiEventHandle,
+  EventLogVariablePOSTResultBitmap            = 0x04,
+  EventLogVariableSysManagementType           = 0x05,
+  EventLogVariableMultiEventSysManagementType = 0x06,
+  // This misspelling is kept temporarily for backwards compatibility and will
+  // be removed in a future PR. Consumers must migrate to the new definition
+  EventLogVariableMutliEventSysManagmentType = EventLogVariableMultiEventSysManagementType,
   EventLogVariableUnused                     = 0x07,
   EventLogVariableOEMAssigned                = 0x80
 } EVENT_LOG_VARIABLE_DATA;
@@ -1706,7 +1954,10 @@ typedef enum {
   MemoryFormFactorSodimm          = 0x0D,
   MemoryFormFactorSrimm           = 0x0E,
   MemoryFormFactorFbDimm          = 0x0F,
-  MemoryFormFactorDie             = 0x10
+  MemoryFormFactorDie             = 0x10,
+  MemoryFormFactorCamm            = 0x11,
+  MemoryFormFactorCuDimm          = 0x12, ///< SMBIOS spec 3.9.0 CR244
+  MemoryFormFactorCsoDimm         = 0x13  ///< SMBIOS spec 3.9.0 CR244
 } MEMORY_FORM_FACTOR;
 
 ///
@@ -1744,7 +1995,10 @@ typedef enum {
   MemoryTypeHBM                      = 0x20,
   MemoryTypeHBM2                     = 0x21,
   MemoryTypeDdr5                     = 0x22,
-  MemoryTypeLpddr5                   = 0x23
+  MemoryTypeLpddr5                   = 0x23,
+  MemoryTypeHBM3                     = 0x24,
+  MemoryTypeMrDimm                   = 0x25, ///< SMBIOS spec 3.9.0 CR248
+  MemoryTypeLpddr6                   = 0x26  ///< SMBIOS spec 3.10
 } MEMORY_DEVICE_TYPE;
 
 ///
@@ -1783,7 +2037,8 @@ typedef enum {
   // This definition is updated to represent Intel
   // Optane DC Persistent Memory in SMBIOS spec 3.4.0
   //
-  MemoryTechnologyIntelOptanePersistentMemory = 0x07
+  MemoryTechnologyIntelOptanePersistentMemory = 0x07,
+  MemoryTechnologyMrDimmDeprecated            = 0x08 ///< SMBIOS spec 3.9.0 CR248
 } MEMORY_DEVICE_TECHNOLOGY;
 
 ///
@@ -1874,18 +2129,28 @@ typedef struct {
   //
   UINT32                                     ExtendedSpeed;
   UINT32                                     ExtendedConfiguredMemorySpeed;
+  //
+  // Add for smbios 3.7.0
+  //
+  UINT16                                     Pmic0ManufacturerID;
+  UINT16                                     Pmic0RevisionNumber;
+  UINT16                                     RcdManufacturerID;
+  UINT16                                     RcdRevisionNumber;
 } SMBIOS_TABLE_TYPE17;
 
 ///
 /// 32-bit Memory Error Information - Error Type.
 ///
 typedef enum {
-  MemoryErrorOther            = 0x01,
-  MemoryErrorUnknown          = 0x02,
-  MemoryErrorOk               = 0x03,
-  MemoryErrorBadRead          = 0x04,
-  MemoryErrorParity           = 0x05,
-  MemoryErrorSigleBit         = 0x06,
+  MemoryErrorOther     = 0x01,
+  MemoryErrorUnknown   = 0x02,
+  MemoryErrorOk        = 0x03,
+  MemoryErrorBadRead   = 0x04,
+  MemoryErrorParity    = 0x05,
+  MemoryErrorSingleBit = 0x06,
+  // This misspelling is kept temporarily for backwards compatibility and will
+  // be removed in a future PR. Consumers must migrate to the new definition
+  MemoryErrorSigleBit         = MemoryErrorSingleBit,
   MemoryErrorDoubleBit        = 0x07,
   MemoryErrorMultiBit         = 0x08,
   MemoryErrorNibble           = 0x09,
@@ -2004,7 +2269,9 @@ typedef enum {
   PointingDeviceInterfaceADB              = 0x08,
   PointingDeviceInterfaceBusMouseDB9      = 0xA0,
   PointingDeviceInterfaceBusMouseMicroDin = 0xA1,
-  PointingDeviceInterfaceUsb              = 0xA2
+  PointingDeviceInterfaceUsb              = 0xA2,
+  PointingDeviceInterfaceI2c              = 0xA3,
+  PointingDeviceInterfaceSpi              = 0xA4
 } BUILTIN_POINTING_DEVICE_INTERFACE;
 
 ///
@@ -2508,7 +2775,13 @@ typedef enum {
   OnBoardDeviceExtendedTypeSound          = 0x07,
   OnBoardDeviceExtendedTypePATAController = 0x08,
   OnBoardDeviceExtendedTypeSATAController = 0x09,
-  OnBoardDeviceExtendedTypeSASController  = 0x0A
+  OnBoardDeviceExtendedTypeSASController  = 0x0A,
+  OnBoardDeviceExtendedTypeWirelessLAN    = 0x0B,
+  OnBoardDeviceExtendedTypeBluetooth      = 0x0C,
+  OnBoardDeviceExtendedTypeWWAN           = 0x0D,
+  OnBoardDeviceExtendedTypeeMMC           = 0x0E,
+  OnBoardDeviceExtendedTypeNvme           = 0x0F,
+  OnBoardDeviceExtendedTypeUfc            = 0x10
 } ONBOARD_DEVICE_EXTENDED_INFO_TYPE;
 
 ///
@@ -2543,6 +2816,22 @@ typedef struct {
 /// 00h - 3Fh: MCTP Host Interfaces
 ///
 typedef enum {
+  // MCTP Host Interface type identifiers as defined in DSP0239
+  MCHostInterfaceTypeKCS                                 = 0x02,
+  MCHostInterfaceType8250_UARTRegisterCompatible         = 0x03,
+  MCHostInterfaceType16450_UARTRegisterCompatible        = 0x04,
+  MCHostInterfaceType16550_16550A_UARTRegisterCompatible = 0x05,
+  MCHostInterfaceType16650_16650A_UARTRegisterCompatible = 0x06,
+  MCHostInterfaceType16750_16750A_UARTRegisterCompatible = 0x07,
+  MCHostInterfaceType16850_16850A_UARTRegisterCompatible = 0x08,
+  MCHostInterfaceTypeI2C_SMBUS                           = 0x09,
+  MCHostInterfaceTypeI3C                                 = 0x0A,
+  MCHostInterfaceTypePCIeVDM                             = 0x0B,
+  MCHostInterfaceTypeMMBI                                = 0x0C,
+  MCHostInterfaceTypePCC                                 = 0x0D,
+  MCHostInterfaceTypeUCIe                                = 0x0E,
+  MCHostInterfaceTypeUSB                                 = 0x0F,
+
   MCHostInterfaceTypeNetworkHostInterface = 0x40,
   MCHostInterfaceTypeOemDefined           = 0xF0
 } MC_HOST_INTERFACE_TYPE;
@@ -2585,15 +2874,17 @@ typedef struct {
 /// Processor Specific Block - Processor Architecture Type
 ///
 typedef enum {
-  ProcessorSpecificBlockArchTypeReserved   = 0x00,
-  ProcessorSpecificBlockArchTypeIa32       = 0x01,
-  ProcessorSpecificBlockArchTypeX64        = 0x02,
-  ProcessorSpecificBlockArchTypeItanium    = 0x03,
-  ProcessorSpecificBlockArchTypeAarch32    = 0x04,
-  ProcessorSpecificBlockArchTypeAarch64    = 0x05,
-  ProcessorSpecificBlockArchTypeRiscVRV32  = 0x06,
-  ProcessorSpecificBlockArchTypeRiscVRV64  = 0x07,
-  ProcessorSpecificBlockArchTypeRiscVRV128 = 0x08
+  ProcessorSpecificBlockArchTypeReserved    = 0x00,
+  ProcessorSpecificBlockArchTypeIa32        = 0x01,
+  ProcessorSpecificBlockArchTypeX64         = 0x02,
+  ProcessorSpecificBlockArchTypeItanium     = 0x03,
+  ProcessorSpecificBlockArchTypeAarch32     = 0x04,
+  ProcessorSpecificBlockArchTypeAarch64     = 0x05,
+  ProcessorSpecificBlockArchTypeRiscVRV32   = 0x06,
+  ProcessorSpecificBlockArchTypeRiscVRV64   = 0x07,
+  ProcessorSpecificBlockArchTypeRiscVRV128  = 0x08,
+  ProcessorSpecificBlockArchTypeLoongArch32 = 0x09,
+  ProcessorSpecificBlockArchTypeLoongArch64 = 0x0A
 } PROCESSOR_SPECIFIC_BLOCK_ARCH_TYPE;
 
 ///
@@ -2607,6 +2898,160 @@ typedef struct {
   ///
   ///
 } PROCESSOR_SPECIFIC_BLOCK;
+
+#define PROCESSOR_SPECIFIC_MAJOR_VERSION_SHIFT  (8)
+#define PROCESSOR_SPECIFIC_MAJOR_VERSION_MASK   (0xff00)
+#define PROCESSOR_SPECIFIC_MINOR_VERSION_SHIFT  (0)
+#define PROCESSOR_SPECIFIC_MINOR_VERSION_MASK   (0x00ff)
+#define PROCESSOR_SPECIFIC_VERSION_INFO(major, minor) \
+        ((UINT16)((((major) & ((PROCESSOR_SPECIFIC_MAJOR_VERSION_MASK >> \
+                                PROCESSOR_SPECIFIC_MAJOR_VERSION_SHIFT))) << \
+                  PROCESSOR_SPECIFIC_MAJOR_VERSION_SHIFT) | \
+                  (((minor) & PROCESSOR_SPECIFIC_MINOR_VERSION_MASK) << \
+                   PROCESSOR_SPECIFIC_MINOR_VERSION_SHIFT)))
+
+///
+/// Arm (AARCH64) processor specific Block.
+///
+typedef struct ArmProcSpecificBlock {
+  /// Revision for processor specific block
+  UINT16    Revision;
+
+  /// Length of this structure.
+  UINT8     Length;
+
+  /// Reserved;
+  UINT8     Reserved0;
+
+  /// Vendor ID.
+  UINT16    VendorId;
+
+  /// Sub type of Processor specific sub-data.
+  UINT8     SubType;
+
+  /// Reserved;
+  UINT8     Reserved1;
+
+  ///
+  /// Below followed by Arm Processor-specific sub-data
+  ///
+} ARM_PROCESSOR_SPECIFIC_BLOCK;
+
+///
+/// AArch64 Architecture Data for ArmProcessorSpecificDataSubTypeArch.
+///
+typedef struct AArch64ProcessorSpecificSubDataArch {
+  /// Version for Processor Specific Sub Data (Arch Data).
+  UINT16    Version;
+
+  /// Length of this structure.
+  UINT8     Length;
+
+  /// Reserved.
+  UINT8     Reserved0;
+
+  /// Reserved.
+  UINT32    Reserved1;
+
+  /// Value of ID_AA64AFR0_EL1.
+  UINT64    IdAA64Afr0;
+
+  /// Value of ID_AA64AFR1_EL1.
+  UINT64    IdAA64Afr1;
+
+  /// Value of ID_AA64DFR0_EL1.
+  UINT64    IdAA64Dfr0;
+
+  /// Value of ID_AA64DFR1_EL1.
+  UINT64    IdAA64Dfr1;
+
+  /// Value of ID_AA64DFR2_EL1.
+  UINT64    IdAA64Dfr2;
+
+  /// Value of ID_AA64FPFR0_EL1.
+  UINT64    IdAA64Fpfr0;
+
+  /// Value of ID_AA64ISAR0_EL1.
+  UINT64    IdAA64Isar0;
+
+  /// Value of ID_AA64ISAR1_EL1.
+  UINT64    IdAA64Isar1;
+
+  /// Value of ID_AA64ISAR2_EL1.
+  UINT64    IdAA64Isar2;
+
+  /// Value of ID_AA64ISAR3_EL1.
+  UINT64    IdAA64Isar3;
+
+  /// Value of ID_AA64MMFR0_EL1.
+  UINT64    IdAA64Mmfr0;
+
+  /// Value of ID_AA64MMFR1_EL1.
+  UINT64    IdAA64Mmfr1;
+
+  /// Value of ID_AA64MMFR2_EL1.
+  UINT64    IdAA64Mmfr2;
+
+  /// Value of ID_AA64MMFR3_EL1.
+  UINT64    IdAA64Mmfr3;
+
+  /// Value of ID_AA64MMFR4_EL1.
+  UINT64    IdAA64Mmfr4;
+
+  /// Value of ID_AA64PFR0_EL1.
+  UINT64    IdAA64Pfr0;
+
+  /// Value of ID_AA64PFR1_EL1.
+  UINT64    IdAA64Pfr1;
+
+  /// Value of ID_AA64PFR2_EL1.
+  UINT64    IdAA64Pfr2;
+
+  /// Value of ID_AA64SMFR0_EL1.
+  UINT64    IdAA64Smfr0;
+
+  /// Value of ID_AA64ZFR0_EL1.
+  UINT64    IdAA64Zfr0;
+} AARCH64_PROCESSOR_SPECIFIC_SUB_DATA_ARCH;
+
+#define X86_PROCESSOR_BLOCK_IDENTIFIER_USE_CONDITION_DATA  (0x01)
+
+///
+/// X86 (X64) processor specific Block.
+///
+typedef struct X86ProcessorSpecificBlock {
+  /// Identifier.
+  UINT8     BlockIdentifier;
+
+  /// Length of Processor-specific Block
+  UINT8     BlockLength;
+
+  /// Revision
+  UINT16    Revision;
+
+  /// Use Condition Attributes
+  UINT32    UseConditionAttributes;
+} X86_PROCESSOR_SPECIFIC_BLOCK;
+
+///
+/// RiscV processor specific Block.
+///
+typedef struct RiscVProcessorSpecificBlock {
+  /// Revision
+  UINT16    Revision;
+
+  /// The ID of this RISC-V hart.
+  UINT64    HartId;
+
+  /// Vendor ID.
+  UINT64    VendorId;
+
+  /// Machine Architecture ID.
+  UINT64    ArchId;
+
+  /// Machine Implementation ID.
+  UINT64    ImplId;
+} RISCV_PROCESSOR_SPECIFIC_BLOCK;
 
 ///
 /// Processor Additional Information(Type 44).
@@ -2645,6 +3090,109 @@ typedef struct {
   UINT64                 Characteristics;
   UINT32                 OemDefined;
 } SMBIOS_TABLE_TYPE43;
+
+///
+/// Firmware Inventory Version Format Type (Type 45).
+///
+typedef enum {
+  VersionFormatTypeFreeForm   = 0x00,
+  VersionFormatTypeMajorMinor = 0x01,
+  VersionFormatType32BitHex   = 0x02,
+  VersionFormatType64BitHex   = 0x03,
+  VersionFormatTypeReserved   = 0x04,  /// 0x04 - 0x7F are reserved
+  VersionFormatTypeOem        = 0x80   /// 0x80 - 0xFF are BIOS Vendor/OEM-specific
+} FIRMWARE_INVENTORY_VERSION_FORMAT_TYPE;
+
+///
+/// Firmware Inventory Firmware Id Format Type (Type 45).
+///
+typedef enum {
+  FirmwareIdFormatTypeFreeForm     = 0x00,
+  FirmwareIdFormatTypeUuid         = 0x01,
+  FirmwareIdFormatTypeReserved     = 0x04,  /// 0x04 - 0x7F are reserved
+  InventoryFirmwareIdFormatTypeOem = 0x80   /// 0x80 - 0xFF are BIOS Vendor/OEM-specific
+} FIRMWARE_INVENTORY_FIRMWARE_ID_FORMAT_TYPE;
+
+///
+/// Firmware Inventory Firmware Characteristics (Type 45).
+///
+typedef struct {
+  UINT16    Updatable      : 1;
+  UINT16    WriteProtected : 1;
+  UINT16    Reserved       : 14;
+} FIRMWARE_CHARACTERISTICS;
+
+///
+/// Firmware Inventory State Information (Type 45).
+///
+typedef enum {
+  FirmwareInventoryStateOther              = 0x01,
+  FirmwareInventoryStateUnknown            = 0x02,
+  FirmwareInventoryStateDisabled           = 0x03,
+  FirmwareInventoryStateEnabled            = 0x04,
+  FirmwareInventoryStateAbsent             = 0x05,
+  FirmwareInventoryStateStandbyOffline     = 0x06,
+  FirmwareInventoryStateStandbySpare       = 0x07,
+  FirmwareInventoryStateUnavailableOffline = 0x08
+} FIRMWARE_INVENTORY_STATE;
+
+///
+/// Firmware Inventory Information (Type 45)
+///
+/// The information in this structure defines an inventory of firmware
+/// components in the system. This can include firmware components such as
+/// BIOS, BMC, as well as firmware for other devices in the system.
+/// The information can be used by software to display the firmware inventory
+/// in a uniform manner. It can also be used by a management controller,
+/// such as a BMC, for remote system management.
+/// This structure is not intended to replace other standard programmatic
+/// interfaces for firmware updates.
+/// One Type 45 structure is provided for each firmware component.
+///
+typedef struct {
+  SMBIOS_STRUCTURE            Hdr;
+  SMBIOS_TABLE_STRING         FirmwareComponentName;
+  SMBIOS_TABLE_STRING         FirmwareVersion;
+  UINT8                       FirmwareVersionFormat;    ///< The enumeration value from FIRMWARE_INVENTORY_VERSION_FORMAT_TYPE
+  SMBIOS_TABLE_STRING         FirmwareId;
+  UINT8                       FirmwareIdFormat;         ///< The enumeration value from FIRMWARE_INVENTORY_FIRMWARE_ID_FORMAT_TYPE.
+  SMBIOS_TABLE_STRING         ReleaseDate;
+  SMBIOS_TABLE_STRING         Manufacturer;
+  SMBIOS_TABLE_STRING         LowestSupportedVersion;
+  UINT64                      ImageSize;
+  FIRMWARE_CHARACTERISTICS    Characteristics;
+  UINT8                       State;                    ///< The enumeration value from FIRMWARE_INVENTORY_STATE.
+  UINT8                       AssociatedComponentCount;
+  ///
+  /// zero or n-number of handles depends on AssociatedComponentCount
+  /// handles are of type SMBIOS_HANDLE
+  ///
+} SMBIOS_TABLE_TYPE45;
+
+///
+/// String Property IDs (Type 46).
+///
+typedef enum {
+  StringPropertyIdNone       = 0x0000,
+  StringPropertyIdDevicePath = 0x0001,
+  StringPropertyIdReserved   = 0x0002,  /// Reserved    0x0002 - 0x7FFF
+  StringPropertyIdBiosVendor = 0x8000,  /// BIOS vendor 0x8000 - 0xBFFF
+  StringPropertyIdOem        = 0xC000   /// OEM range   0xC000 - 0xFFFF
+} STRING_PROPERTY_ID;
+
+///
+/// This structure defines a string property for another structure.
+/// This allows adding string properties that are common to several structures
+/// without having to modify the definitions of these structures.
+/// Multiple type 46 structures can add string properties to the same
+/// parent structure.
+///
+typedef struct {
+  SMBIOS_STRUCTURE       Hdr;
+  UINT16                 StringPropertyId;          ///< The enumeration value from STRING_PROPERTY_ID.
+  SMBIOS_TABLE_STRING    StringPropertyValue;
+  SMBIOS_HANDLE          ParentHandle;
+} SMBIOS_TABLE_TYPE46;
 
 ///
 /// Inactive (Type 126)
@@ -2710,11 +3258,11 @@ typedef union {
   SMBIOS_TABLE_TYPE42     *Type42;
   SMBIOS_TABLE_TYPE43     *Type43;
   SMBIOS_TABLE_TYPE44     *Type44;
+  SMBIOS_TABLE_TYPE45     *Type45;
+  SMBIOS_TABLE_TYPE46     *Type46;
   SMBIOS_TABLE_TYPE126    *Type126;
   SMBIOS_TABLE_TYPE127    *Type127;
   UINT8                   *Raw;
 } SMBIOS_STRUCTURE_POINTER;
 
 #pragma pack()
-
-#endif

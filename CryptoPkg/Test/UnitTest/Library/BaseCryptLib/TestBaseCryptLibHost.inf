@@ -2,6 +2,7 @@
 # Host-based UnitTest for BaseCryptLib
 #
 # Copyright (c) Microsoft Corporation.<BR>
+# Copyright (c) 2022, Intel Corporation. All rights reserved.<BR>
 # SPDX-License-Identifier: BSD-2-Clause-Patent
 ##
 
@@ -20,6 +21,7 @@
 
 [Sources]
   UnitTestMain.c
+  UnitTestMainHost.c
   BaseCryptLibUnitTests.c
   TestBaseCryptLib.h
   HashTests.c
@@ -33,8 +35,20 @@
   DhTests.c
   RandTests.c
   Pkcs7EkuTests.c
+  Pkcs7AttachedContentTest.c
+  Pkcs7EncryptTests.c
+  Pkcs7DecryptTests.c
   OaepEncryptTests.c
   RsaPssTests.c
+  ParallelhashTests.c
+  HkdfTests.c
+  AeadAesGcmTests.c
+  BnTests.c
+  EcTests.c
+  X509Tests.c
+  EdDsaTests.c
+  MlDsaTests.c
+  SlhDsaTests.c
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -45,3 +59,5 @@
   DebugLib
   BaseCryptLib
   UnitTestLib
+  MmServicesTableLib
+  SynchronizationLib

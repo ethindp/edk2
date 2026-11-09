@@ -2,13 +2,13 @@
   Emulator Thunk to abstract OS services from pure EFI code
 
   Copyright (c) 2008 - 2011, Apple Inc. All rights reserved.<BR>
+  Copyright (c) 2023, Intel Corporation. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef __EMU_THUNK_PROTOCOL_H__
-#define __EMU_THUNK_PROTOCOL_H__
+#pragma once
 
 #define EMU_THUNK_PROTOCOL_GUID  \
  { 0x5CF32E0B, 0x8EDF, 0x2E44, { 0x9C, 0xDA, 0x93, 0x20, 0x5E, 0x99, 0xEC, 0x1C } }
@@ -130,7 +130,7 @@ UINT64
 typedef
 VOID
 (EFIAPI *EMU_SLEEP)(
-  IN  UINT64    Milliseconds
+  IN  UINT64    Nanoseconds
   );
 
 typedef
@@ -148,12 +148,12 @@ VOID
 typedef
 VOID
 (EFIAPI *EMU_GET_TIME)(
-  OUT  EFI_TIME               *Time,
+  OUT EFI_TIME                *Time,
   OUT EFI_TIME_CAPABILITIES   *Capabilities OPTIONAL
   );
 
 typedef
-VOID
+EFI_STATUS
 (EFIAPI *EMU_SET_TIME)(
   IN   EFI_TIME               *Time
   );
@@ -242,5 +242,3 @@ struct _EMU_THUNK_PROTOCOL {
 };
 
 extern EFI_GUID  gEmuThunkProtocolGuid;
-
-#endif

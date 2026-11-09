@@ -6,14 +6,14 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef __FV_REPORT_PEI_H__
-#define __FV_REPORT_PEI_H__
+#pragma once
 
 #include <PiPei.h>
 
 #include <IndustryStandard/Tpm20.h>
 
 #include <Ppi/FirmwareVolumeInfoStoredHashFv.h>
+#include <Ppi/FirmwareVolumeShadowPpi.h>
 
 #include <Library/PeiServicesLib.h>
 #include <Library/PcdLib.h>
@@ -117,5 +117,3 @@ typedef struct {
   HASH_FINAL_METHOD     HashFinal;
   HASH_ALL_METHOD       HashAll;
 } HASH_ALG_INFO;
-
-#endif //__FV_REPORT_PEI_H__

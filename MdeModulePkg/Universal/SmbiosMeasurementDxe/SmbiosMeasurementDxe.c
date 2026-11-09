@@ -1,7 +1,7 @@
 /** @file
   This driver measures SMBIOS table to TPM.
 
-Copyright (c) 2015 - 2019, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2015 - 2022, Intel Corporation. All rights reserved.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
@@ -66,6 +66,7 @@ SMBIOS_FILTER_TABLE  mSmbiosFilterType4BlackList[] = {
   { 0x04, OFFSET_OF (SMBIOS_TABLE_TYPE4, EnabledCoreCount2), FIELD_SIZE_OF (SMBIOS_TABLE_TYPE4, EnabledCoreCount2), 0                                  },
   { 0x04, OFFSET_OF (SMBIOS_TABLE_TYPE4, ThreadCount2),      FIELD_SIZE_OF (SMBIOS_TABLE_TYPE4, ThreadCount2),      0                                  },
   { 0x04, OFFSET_OF (SMBIOS_TABLE_TYPE4, Voltage),           FIELD_SIZE_OF (SMBIOS_TABLE_TYPE4, Voltage),           0                                  },
+  { 0x04, OFFSET_OF (SMBIOS_TABLE_TYPE4, CurrentSpeed),      FIELD_SIZE_OF (SMBIOS_TABLE_TYPE4, CurrentSpeed),      0                                  },
 };
 SMBIOS_FILTER_TABLE  mSmbiosFilterType17BlackList[] = {
   { 0x11, OFFSET_OF (SMBIOS_TABLE_TYPE17, SerialNumber), FIELD_SIZE_OF (SMBIOS_TABLE_TYPE17, SerialNumber), SMBIOS_FILTER_TABLE_FLAG_IS_STRING },
@@ -123,62 +124,6 @@ typedef struct {
 
 /**
 
-  This function dump raw data.
-
-  @param  Data  raw data
-  @param  Size  raw data size
-
-**/
-VOID
-InternalDumpData (
-  IN UINT8  *Data,
-  IN UINTN  Size
-  )
-{
-  UINTN  Index;
-
-  for (Index = 0; Index < Size; Index++) {
-    DEBUG ((DEBUG_VERBOSE, "%02x", (UINTN)Data[Index]));
-  }
-}
-
-/**
-
-  This function dump raw data with colume format.
-
-  @param  Data  raw data
-  @param  Size  raw data size
-
-**/
-VOID
-InternalDumpHex (
-  IN UINT8  *Data,
-  IN UINTN  Size
-  )
-{
-  UINTN  Index;
-  UINTN  Count;
-  UINTN  Left;
-
-  #define COLUME_SIZE  (16 * 2)
-
-  Count = Size / COLUME_SIZE;
-  Left  = Size % COLUME_SIZE;
-  for (Index = 0; Index < Count; Index++) {
-    DEBUG ((DEBUG_VERBOSE, "%04x: ", Index * COLUME_SIZE));
-    InternalDumpData (Data + Index * COLUME_SIZE, COLUME_SIZE);
-    DEBUG ((DEBUG_VERBOSE, "\n"));
-  }
-
-  if (Left != 0) {
-    DEBUG ((DEBUG_VERBOSE, "%04x: ", Index * COLUME_SIZE));
-    InternalDumpData (Data + Index * COLUME_SIZE, Left);
-    DEBUG ((DEBUG_VERBOSE, "\n"));
-  }
-}
-
-/**
-
   This function get filter structure by SMBIOS type.
 
   @param  Type  SMBIOS type
@@ -217,14 +162,12 @@ GetSmbiosStringById (
   OUT  UINTN                    *StringLen
   )
 {
-  UINTN  Size;
   UINTN  StrLen;
   CHAR8  *CharInStr;
   UINTN  StringsNumber;
   CHAR8  *String;
 
   CharInStr     = (CHAR8 *)Head + Head->Length;
-  Size          = Head->Length;
   StringsNumber = 0;
   StrLen        = 0;
   //
@@ -233,7 +176,6 @@ GetSmbiosStringById (
   String = NULL;
   while (*CharInStr != 0 || *(CharInStr+1) != 0) {
     if (*CharInStr == 0) {
-      Size += 1;
       CharInStr++;
     }
 
@@ -255,7 +197,6 @@ GetSmbiosStringById (
     // forward the pointer
     //
     CharInStr     += StrLen;
-    Size          += StrLen;
     StringsNumber += 1;
     if (StringsNumber == StringId) {
       break;
@@ -288,7 +229,7 @@ FilterSmbiosEntry (
 
   DEBUG ((DEBUG_INFO, "Smbios Table (Type - %d):\n", ((SMBIOS_STRUCTURE *)TableEntry)->Type));
   DEBUG_CODE (
-    InternalDumpHex (TableEntry, TableEntrySize);
+    DUMP_HEX (DEBUG_VERBOSE, 0, TableEntry, TableEntrySize, "");
     );
 
   //
@@ -331,7 +272,7 @@ FilterSmbiosEntry (
 
   DEBUG ((DEBUG_INFO, "Filter Smbios Table (Type - %d):\n", ((SMBIOS_STRUCTURE *)TableEntry)->Type));
   DEBUG_CODE (
-    InternalDumpHex (TableEntry, TableEntrySize);
+    DUMP_HEX (DEBUG_VERBOSE, 0, TableEntry, TableEntrySize, "");
     );
 }
 
@@ -586,7 +527,7 @@ MeasureSmbiosTable (
     DEBUG ((DEBUG_INFO, "The Smbios Table starts at: 0x%x\n", SmbiosTableAddress));
     DEBUG ((DEBUG_INFO, "The Smbios Table size: 0x%x\n", TableLength));
     DEBUG_CODE (
-      InternalDumpHex ((UINT8 *)(UINTN)SmbiosTableAddress, TableLength);
+      DUMP_HEX (DEBUG_VERBOSE, 0, (UINT8 *)(UINTN)SmbiosTableAddress, TableLength, "");
       );
 
     TableAddress = AllocateCopyPool ((UINTN)TableLength, (VOID *)(UINTN)SmbiosTableAddress);
@@ -599,7 +540,7 @@ MeasureSmbiosTable (
     DEBUG ((DEBUG_INFO, "The final Smbios Table starts at: 0x%x\n", TableAddress));
     DEBUG ((DEBUG_INFO, "The final Smbios Table size: 0x%x\n", TableLength));
     DEBUG_CODE (
-      InternalDumpHex (TableAddress, TableLength);
+      DUMP_HEX (DEBUG_VERBOSE, 0, TableAddress, TableLength, "");
       );
 
     HandoffTables.NumberOfTables = 1;
@@ -635,6 +576,10 @@ MeasureSmbiosTable (
                );
     if (!EFI_ERROR (Status)) {
       gBS->CloseEvent (Event);
+    }
+
+    if (TableAddress != NULL) {
+      FreePool (TableAddress);
     }
   }
 

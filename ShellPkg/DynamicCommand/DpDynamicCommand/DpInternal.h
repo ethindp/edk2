@@ -11,8 +11,7 @@
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#ifndef _DP_INTELNAL_H_
-#define _DP_INTELNAL_H_
+#pragma once
 
 #define DP_GAUGE_STRING_LENGTH  36
 
@@ -28,6 +27,7 @@ extern UINT8               *mBootPerformanceTable;
 extern UINTN               mBootPerformanceTableLength;
 extern MEASUREMENT_RECORD  *mMeasurementList;
 extern UINTN               mMeasurementNum;
+extern UINT64              mResetEnd;
 
 extern PERF_SUMMARY_DATA  SummaryData;    ///< Create the SummaryData structure and init. to ZERO.
 
@@ -310,5 +310,3 @@ VOID
 ProcessCumulative (
   IN PERF_CUM_DATA  *CustomCumulativeData OPTIONAL
   );
-
-#endif

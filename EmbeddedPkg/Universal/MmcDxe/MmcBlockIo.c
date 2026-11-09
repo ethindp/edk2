@@ -28,7 +28,7 @@ MmcGetCardStatus (
 {
   EFI_STATUS             Status;
   UINT32                 Response[4];
-  UINTN                  CmdArg;
+  UINT32                 CmdArg;
   EFI_MMC_HOST_PROTOCOL  *MmcHost;
 
   Status  = EFI_SUCCESS;
@@ -136,7 +136,7 @@ MmcTransferBlock (
   )
 {
   EFI_STATUS             Status;
-  UINTN                  CmdArg;
+  UINT32                 CmdArg;
   INTN                   Timeout;
   UINT32                 Response[4];
   MMC_HOST_INSTANCE      *MmcHostInstance;
@@ -150,22 +150,22 @@ MmcTransferBlock (
     // if 0 : SDSC card
     // if 1 : SDXC/SDHC
     if (MmcHostInstance->CardInfo.OCRData.AccessMode & SD_CARD_CAPACITY) {
-      CmdArg = Lba;
+      CmdArg = (UINT32)Lba;
     } else {
-      CmdArg = MultU64x32 (Lba, This->Media->BlockSize);
+      CmdArg = (UINT32)MultU64x32 (Lba, This->Media->BlockSize);
     }
   } else {
     // Set command argument based on the card access mode (Byte mode or Block mode)
     if ((MmcHostInstance->CardInfo.OCRData.AccessMode & MMC_OCR_ACCESS_MASK) ==
         MMC_OCR_ACCESS_SECTOR)
     {
-      CmdArg = Lba;
+      CmdArg = (UINT32)Lba;
     } else {
-      CmdArg = MultU64x32 (Lba, This->Media->BlockSize);
+      CmdArg = (UINT32)MultU64x32 (Lba, This->Media->BlockSize);
     }
   }
 
-  Status = MmcHost->SendCommand (MmcHost, Cmd, CmdArg);
+  Status = MmcHost->SendCommand (MmcHost, (MMC_CMD)Cmd, CmdArg);
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "%a(MMC_CMD%d): Error %r\n", __func__, Cmd, Status));
     return Status;
@@ -210,6 +210,13 @@ MmcTransferBlock (
         break;  // Prevents delay once finished
       }
     }
+
+    gBS->Stall (1);
+  }
+
+  if (Timeout < 0) {
+    DEBUG ((DEBUG_ERROR, "%s: The Card is busy\n", __func__));
+    return EFI_NOT_READY;
   }
 
   if (BufferSize > This->Media->BlockSize) {
@@ -242,7 +249,7 @@ MmcIoBlocks (
 {
   UINT32                 Response[4];
   EFI_STATUS             Status;
-  UINTN                  CmdArg;
+  UINT32                 CmdArg;
   INTN                   Timeout;
   UINTN                  Cmd;
   MMC_HOST_INSTANCE      *MmcHostInstance;
@@ -250,10 +257,10 @@ MmcIoBlocks (
   UINTN                  BytesRemainingToBeTransfered;
   UINTN                  BlockCount;
   UINTN                  ConsumeSize;
-  UINT32                 MaxBlock;
+  UINTN                  MaxBlock;
   UINTN                  RemainingBlock;
 
-  BlockCount      = 1;
+  MaxBlock        = 1;
   MmcHostInstance = MMC_HOST_INSTANCE_FROM_BLOCK_IO_THIS (This);
   ASSERT (MmcHostInstance != NULL);
   MmcHost = MmcHostInstance->MmcHost;
@@ -283,7 +290,11 @@ MmcIoBlocks (
   }
 
   if (MMC_HOST_HAS_ISMULTIBLOCK (MmcHost) && MmcHost->IsMultiBlock (MmcHost)) {
-    BlockCount = BufferSize / This->Media->BlockSize;
+    //
+    // Max block number in single cmd is 65535 blocks.
+    // Access as many blocks as possible.
+    //
+    MaxBlock = MIN (BufferSize / This->Media->BlockSize, 0xFFFF);
   }
 
   // All blocks must be within the device
@@ -300,16 +311,10 @@ MmcIoBlocks (
     return EFI_INVALID_PARAMETER;
   }
 
-  // Max block number in single cmd is 65535 blocks.
-  MaxBlock                     = 0xFFFF;
-  RemainingBlock               = BlockCount;
+  RemainingBlock               = BufferSize / This->Media->BlockSize;
   BytesRemainingToBeTransfered = BufferSize;
   while (BytesRemainingToBeTransfered > 0) {
-    if (RemainingBlock <= MaxBlock) {
-      BlockCount = RemainingBlock;
-    } else {
-      BlockCount = MaxBlock;
-    }
+    BlockCount = MIN (MaxBlock, RemainingBlock);
 
     // Check if the Card is in Ready status
     CmdArg      = MmcHostInstance->CardInfo.RCA << 16;
@@ -323,9 +328,11 @@ MmcIoBlocks (
       if (!EFI_ERROR (Status)) {
         MmcHost->ReceiveResponse (MmcHost, MMC_RESPONSE_TYPE_R1, Response);
       }
+
+      gBS->Stall (1);
     }
 
-    if (0 == Timeout) {
+    if (Timeout < 0) {
       DEBUG ((DEBUG_ERROR, "The Card is busy\n"));
       return EFI_NOT_READY;
     }

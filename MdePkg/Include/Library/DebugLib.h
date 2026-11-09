@@ -8,13 +8,19 @@
   of size reduction when compiler optimization is disabled. If MDEPKG_NDEBUG is
   defined, then debug and assert related macros wrapped by it are the NULL implementations.
 
+  The implementations of the macros used when MDEPKG_NDEBUG is defined rely on the fact that
+  directly unreachable code is pruned, even with compiler optimization disabled (which has
+  been confirmed by generated code size tests on supported compilers). The advantage of
+  implementations which consume their arguments within directly unreachable code is that
+  compilers understand this, and stop warning about variables which would become unused when
+  MDEPKG_NDEBUG is defined if the macros had completely empty definitions.
+
 Copyright (c) 2006 - 2020, Intel Corporation. All rights reserved.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef __DEBUG_LIB_H__
-#define __DEBUG_LIB_H__
+#pragma once
 
 //
 // Declare bits for PcdDebugPropertyMask
@@ -29,26 +35,30 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 //
 // Declare bits for PcdDebugPrintErrorLevel and the ErrorLevel parameter of DebugPrint()
 //
-#define DEBUG_INIT      0x00000001  // Initialization
-#define DEBUG_WARN      0x00000002  // Warnings
-#define DEBUG_LOAD      0x00000004  // Load events
-#define DEBUG_FS        0x00000008  // EFI File system
-#define DEBUG_POOL      0x00000010  // Alloc & Free (pool)
-#define DEBUG_PAGE      0x00000020  // Alloc & Free (page)
-#define DEBUG_INFO      0x00000040  // Informational debug messages
-#define DEBUG_DISPATCH  0x00000080  // PEI/DXE/SMM Dispatchers
-#define DEBUG_VARIABLE  0x00000100  // Variable
-#define DEBUG_BM        0x00000400  // Boot Manager
-#define DEBUG_BLKIO     0x00001000  // BlkIo Driver
-#define DEBUG_NET       0x00004000  // Network Io Driver
-#define DEBUG_UNDI      0x00010000  // UNDI Driver
-#define DEBUG_LOADFILE  0x00020000  // LoadFile
-#define DEBUG_EVENT     0x00080000  // Event messages
-#define DEBUG_GCD       0x00100000  // Global Coherency Database changes
-#define DEBUG_CACHE     0x00200000  // Memory range cachability changes
-#define DEBUG_VERBOSE   0x00400000  // Detailed debug messages that may
-                                    // significantly impact boot performance
-#define DEBUG_ERROR  0x80000000     // Error
+#define DEBUG_INIT      0x00000001       // Initialization
+#define DEBUG_WARN      0x00000002       // Warnings
+#define DEBUG_LOAD      0x00000004       // Load events
+#define DEBUG_FS        0x00000008       // EFI File system
+#define DEBUG_POOL      0x00000010       // Alloc & Free (pool)
+#define DEBUG_PAGE      0x00000020       // Alloc & Free (page)
+#define DEBUG_INFO      0x00000040       // Informational debug messages
+#define DEBUG_DISPATCH  0x00000080       // PEI/DXE/SMM Dispatchers
+#define DEBUG_VARIABLE  0x00000100       // Variable
+#define DEBUG_BM        0x00000400       // Boot Manager
+#define DEBUG_BLKIO     0x00001000       // BlkIo Driver
+#define DEBUG_NET       0x00004000       // Network Io Driver
+#define DEBUG_UNDI      0x00010000       // UNDI Driver
+#define DEBUG_LOADFILE  0x00020000       // LoadFile
+#define DEBUG_EVENT     0x00080000       // Event messages
+#define DEBUG_GCD       0x00100000       // Global Coherency Database changes
+#define DEBUG_CACHE     0x00200000       // Memory range cachability changes
+#define DEBUG_VERBOSE   0x00400000       // Detailed debug messages that may
+                                         // significantly impact boot performance
+#define DEBUG_MANAGEABILITY  0x00800000  // Detailed debug and payload manageability messages
+                                         // related to modules such as Redfish, IPMI, MCTP etc.
+#define DEBUG_SECURITY  0x01000000       // Security and security HW related messages, such as TPM
+#define DEBUG_PAGING    0x02000000       // Page table updates (memory encryption, page attributes, ...)
+#define DEBUG_ERROR     0x80000000       // Error
 
 //
 // Aliases of debug message mask bits
@@ -183,8 +193,8 @@ DebugBPrint (
 
   Print a message of the form "ASSERT <FileName>(<LineNumber>): <Description>\n"
   to the debug output device.  If DEBUG_PROPERTY_ASSERT_BREAKPOINT_ENABLED bit of
-  PcdDebugProperyMask is set then CpuBreakpoint() is called. Otherwise, if
-  DEBUG_PROPERTY_ASSERT_DEADLOOP_ENABLED bit of PcdDebugProperyMask is set then
+  PcdDebugPropertyMask is set then CpuBreakpoint() is called. Otherwise, if
+  DEBUG_PROPERTY_ASSERT_DEADLOOP_ENABLED bit of PcdDebugPropertyMask is set then
   CpuDeadLoop() is called.  If neither of these bits are set, then this function
   returns immediately after the message is printed to the debug output device.
   DebugAssert() must actively prevent recursion.  If DebugAssert() is called while
@@ -232,10 +242,10 @@ DebugClearMemory (
   Returns TRUE if ASSERT() macros are enabled.
 
   This function returns TRUE if the DEBUG_PROPERTY_DEBUG_ASSERT_ENABLED bit of
-  PcdDebugProperyMask is set.  Otherwise, FALSE is returned.
+  PcdDebugPropertyMask is set.  Otherwise, FALSE is returned.
 
-  @retval  TRUE    The DEBUG_PROPERTY_DEBUG_ASSERT_ENABLED bit of PcdDebugProperyMask is set.
-  @retval  FALSE   The DEBUG_PROPERTY_DEBUG_ASSERT_ENABLED bit of PcdDebugProperyMask is clear.
+  @retval  TRUE    The DEBUG_PROPERTY_DEBUG_ASSERT_ENABLED bit of PcdDebugPropertyMask is set.
+  @retval  FALSE   The DEBUG_PROPERTY_DEBUG_ASSERT_ENABLED bit of PcdDebugPropertyMask is clear.
 
 **/
 BOOLEAN
@@ -248,10 +258,10 @@ DebugAssertEnabled (
   Returns TRUE if DEBUG() macros are enabled.
 
   This function returns TRUE if the DEBUG_PROPERTY_DEBUG_PRINT_ENABLED bit of
-  PcdDebugProperyMask is set.  Otherwise, FALSE is returned.
+  PcdDebugPropertyMask is set.  Otherwise, FALSE is returned.
 
-  @retval  TRUE    The DEBUG_PROPERTY_DEBUG_PRINT_ENABLED bit of PcdDebugProperyMask is set.
-  @retval  FALSE   The DEBUG_PROPERTY_DEBUG_PRINT_ENABLED bit of PcdDebugProperyMask is clear.
+  @retval  TRUE    The DEBUG_PROPERTY_DEBUG_PRINT_ENABLED bit of PcdDebugPropertyMask is set.
+  @retval  FALSE   The DEBUG_PROPERTY_DEBUG_PRINT_ENABLED bit of PcdDebugPropertyMask is clear.
 
 **/
 BOOLEAN
@@ -264,10 +274,10 @@ DebugPrintEnabled (
   Returns TRUE if DEBUG_CODE() macros are enabled.
 
   This function returns TRUE if the DEBUG_PROPERTY_DEBUG_CODE_ENABLED bit of
-  PcdDebugProperyMask is set.  Otherwise, FALSE is returned.
+  PcdDebugPropertyMask is set.  Otherwise, FALSE is returned.
 
-  @retval  TRUE    The DEBUG_PROPERTY_DEBUG_CODE_ENABLED bit of PcdDebugProperyMask is set.
-  @retval  FALSE   The DEBUG_PROPERTY_DEBUG_CODE_ENABLED bit of PcdDebugProperyMask is clear.
+  @retval  TRUE    The DEBUG_PROPERTY_DEBUG_CODE_ENABLED bit of PcdDebugPropertyMask is set.
+  @retval  FALSE   The DEBUG_PROPERTY_DEBUG_CODE_ENABLED bit of PcdDebugPropertyMask is clear.
 
 **/
 BOOLEAN
@@ -280,10 +290,10 @@ DebugCodeEnabled (
   Returns TRUE if DEBUG_CLEAR_MEMORY() macro is enabled.
 
   This function returns TRUE if the DEBUG_PROPERTY_CLEAR_MEMORY_ENABLED bit of
-  PcdDebugProperyMask is set.  Otherwise, FALSE is returned.
+  PcdDebugPropertyMask is set.  Otherwise, FALSE is returned.
 
-  @retval  TRUE    The DEBUG_PROPERTY_CLEAR_MEMORY_ENABLED bit of PcdDebugProperyMask is set.
-  @retval  FALSE   The DEBUG_PROPERTY_CLEAR_MEMORY_ENABLED bit of PcdDebugProperyMask is clear.
+  @retval  TRUE    The DEBUG_PROPERTY_CLEAR_MEMORY_ENABLED bit of PcdDebugPropertyMask is set.
+  @retval  FALSE   The DEBUG_PROPERTY_CLEAR_MEMORY_ENABLED bit of PcdDebugPropertyMask is clear.
 
 **/
 BOOLEAN
@@ -337,13 +347,16 @@ UnitTestDebugAssert (
   IN CONST CHAR8  *Description
   );
 
-  #if defined (__clang__) && defined (__FILE_NAME__)
+  #if defined (_ASSERT)
+    #undef _ASSERT
+  #endif
+  #if defined (__FILE_NAME__)
 #define _ASSERT(Expression)  UnitTestDebugAssert (__FILE_NAME__, DEBUG_LINE_NUMBER, DEBUG_EXPRESSION_STRING (Expression))
   #else
 #define _ASSERT(Expression)  UnitTestDebugAssert (__FILE__, DEBUG_LINE_NUMBER, DEBUG_EXPRESSION_STRING (Expression))
   #endif
 #else
-  #if defined (__clang__) && defined (__FILE_NAME__)
+  #if defined (__FILE_NAME__)
 #define _ASSERT(Expression)  DebugAssert (__FILE_NAME__, DEBUG_LINE_NUMBER, DEBUG_EXPRESSION_STRING (Expression))
   #else
 #define _ASSERT(Expression)  DebugAssert (__FILE__, DEBUG_LINE_NUMBER, DEBUG_EXPRESSION_STRING (Expression))
@@ -370,16 +383,16 @@ UnitTestDebugAssert (
         DebugPrint (PrintLevel, ##__VA_ARGS__);      \
       }                                              \
     } while (FALSE)
-#define _DEBUG(Expression)  _DEBUG_PRINT Expression
+#define _DEBUGLIB_DEBUG(Expression)  _DEBUG_PRINT Expression
 #else
-#define _DEBUG(Expression)  DebugPrint Expression
+#define _DEBUGLIB_DEBUG(Expression)  DebugPrint Expression
 #endif
 
 /**
   Macro that calls DebugAssert() if an expression evaluates to FALSE.
 
   If MDEPKG_NDEBUG is not defined and the DEBUG_PROPERTY_DEBUG_ASSERT_ENABLED
-  bit of PcdDebugProperyMask is set, then this macro evaluates the Boolean
+  bit of PcdDebugPropertyMask is set, then this macro evaluates the Boolean
   expression specified by Expression.  If Expression evaluates to FALSE, then
   DebugAssert() is called passing in the source filename, source line number,
   and Expression.
@@ -398,14 +411,19 @@ UnitTestDebugAssert (
       }                             \
     } while (FALSE)
 #else
-#define ASSERT(Expression)
+#define ASSERT(Expression)       \
+    do {                           \
+      if (FALSE) {                 \
+        (VOID) (Expression);       \
+      }                            \
+    } while (FALSE)
 #endif
 
 /**
   Macro that calls DebugPrint().
 
   If MDEPKG_NDEBUG is not defined and the DEBUG_PROPERTY_DEBUG_PRINT_ENABLED
-  bit of PcdDebugProperyMask is set, then this macro passes Expression to
+  bit of PcdDebugPropertyMask is set, then this macro passes Expression to
   DebugPrint().
 
   @param  Expression  Expression containing an error level, a format string,
@@ -417,18 +435,23 @@ UnitTestDebugAssert (
 #define DEBUG(Expression)        \
     do {                           \
       if (DebugPrintEnabled ()) {  \
-        _DEBUG (Expression);       \
+        _DEBUGLIB_DEBUG (Expression);       \
       }                            \
     } while (FALSE)
 #else
-#define DEBUG(Expression)
+#define DEBUG(Expression)        \
+    do {                           \
+      if (FALSE) {                 \
+        _DEBUGLIB_DEBUG (Expression);       \
+      }                            \
+    } while (FALSE)
 #endif
 
 /**
   Macro that calls DebugAssert() if an EFI_STATUS evaluates to an error code.
 
   If MDEPKG_NDEBUG is not defined and the DEBUG_PROPERTY_DEBUG_ASSERT_ENABLED
-  bit of PcdDebugProperyMask is set, then this macro evaluates the EFI_STATUS
+  bit of PcdDebugPropertyMask is set, then this macro evaluates the EFI_STATUS
   value specified by StatusParameter.  If StatusParameter is an error code,
   then DebugAssert() is called passing in the source filename, source line
   number, and StatusParameter.
@@ -447,14 +470,19 @@ UnitTestDebugAssert (
       }                                                                                  \
     } while (FALSE)
 #else
-#define ASSERT_EFI_ERROR(StatusParameter)
+#define ASSERT_EFI_ERROR(StatusParameter)                                             \
+    do {                                                                                \
+      if (FALSE) {                                                                      \
+        (VOID) (StatusParameter);                                                       \
+      }                                                                                 \
+    } while (FALSE)
 #endif
 
 /**
   Macro that calls DebugAssert() if a RETURN_STATUS evaluates to an error code.
 
   If MDEPKG_NDEBUG is not defined and the DEBUG_PROPERTY_DEBUG_ASSERT_ENABLED
-  bit of PcdDebugProperyMask is set, then this macro evaluates the
+  bit of PcdDebugPropertyMask is set, then this macro evaluates the
   RETURN_STATUS value specified by StatusParameter.  If StatusParameter is an
   error code, then DebugAssert() is called passing in the source filename,
   source line number, and StatusParameter.
@@ -474,7 +502,12 @@ UnitTestDebugAssert (
       }                                                                 \
     } while (FALSE)
 #else
-#define ASSERT_RETURN_ERROR(StatusParameter)
+#define ASSERT_RETURN_ERROR(StatusParameter)                          \
+    do {                                                                \
+      if (FALSE) {                                                      \
+        (VOID) (StatusParameter);                                       \
+      }                                                                 \
+    } while (FALSE)
 #endif
 
 /**
@@ -482,7 +515,7 @@ UnitTestDebugAssert (
   handle database.
 
   If MDEPKG_NDEBUG is defined or the DEBUG_PROPERTY_DEBUG_ASSERT_ENABLED bit
-  of PcdDebugProperyMask is clear, then return.
+  of PcdDebugPropertyMask is clear, then return.
 
   If Handle is NULL, then a check is made to see if the protocol specified by Guid
   is present on any handle in the handle database.  If Handle is not NULL, then
@@ -523,29 +556,34 @@ UnitTestDebugAssert (
 /**
   Macro that marks the beginning of debug source code.
 
-  If the DEBUG_PROPERTY_DEBUG_CODE_ENABLED bit of PcdDebugProperyMask is set,
+  If the DEBUG_PROPERTY_DEBUG_CODE_ENABLED bit of PcdDebugPropertyMask is set,
   then this macro marks the beginning of source code that is included in a module.
   Otherwise, the source lines between DEBUG_CODE_BEGIN() and DEBUG_CODE_END()
   are not included in a module.
 
 **/
-#define DEBUG_CODE_BEGIN()  do { if (DebugCodeEnabled ()) { UINT8  __DebugCodeLocal
+#define DEBUG_CODE_BEGIN()     \
+  do {                         \
+    if (DebugCodeEnabled ()) { \
+      do { } while (FALSE)
 
 /**
   The macro that marks the end of debug source code.
 
-  If the DEBUG_PROPERTY_DEBUG_CODE_ENABLED bit of PcdDebugProperyMask is set,
+  If the DEBUG_PROPERTY_DEBUG_CODE_ENABLED bit of PcdDebugPropertyMask is set,
   then this macro marks the end of source code that is included in a module.
   Otherwise, the source lines between DEBUG_CODE_BEGIN() and DEBUG_CODE_END()
   are not included in a module.
 
 **/
-#define DEBUG_CODE_END()  __DebugCodeLocal = 0; __DebugCodeLocal++; } } while (FALSE)
+#define DEBUG_CODE_END()         \
+    }                            \
+  } while (FALSE)
 
 /**
   The macro that declares a section of debug source code.
 
-  If the DEBUG_PROPERTY_DEBUG_CODE_ENABLED bit of PcdDebugProperyMask is set,
+  If the DEBUG_PROPERTY_DEBUG_CODE_ENABLED bit of PcdDebugPropertyMask is set,
   then the source code specified by Expression is included in a module.
   Otherwise, the source specified by Expression is not included in a module.
 
@@ -558,7 +596,7 @@ UnitTestDebugAssert (
 /**
   The macro that calls DebugClearMemory() to clear a buffer to a default value.
 
-  If the DEBUG_PROPERTY_CLEAR_MEMORY_ENABLED bit of PcdDebugProperyMask is set,
+  If the DEBUG_PROPERTY_CLEAR_MEMORY_ENABLED bit of PcdDebugPropertyMask is set,
   then this macro calls DebugClearMemory() passing in Address and Length.
 
   @param  Address  The pointer to a buffer.
@@ -581,13 +619,17 @@ UnitTestDebugAssert (
   public data structure to retrieve a pointer to the private data structure.
 
   If MDEPKG_NDEBUG is defined or the DEBUG_PROPERTY_DEBUG_ASSERT_ENABLED bit
-  of PcdDebugProperyMask is clear, then this macro computes the offset, in bytes,
+  of PcdDebugPropertyMask is clear, then this macro computes the offset, in bytes,
   of the field specified by Field from the beginning of the data structure specified
-  by TYPE.  This offset is subtracted from Record, and is used to return a pointer
-  to a data structure of the type specified by TYPE.
+  by TYPE.  This offset is subtracted from Record, and is used to compute a pointer
+  to a data structure of the type specified by TYPE.  The Signature field of the
+  data structure specified by TYPE is compared to TestSignature.  If the signatures
+  match, then a pointer to the pointer to a data structure of the type specified by
+  TYPE is returned.  If the signatures do not match, then NULL is returned to
+  signify that the passed in data structure is invalid.
 
   If MDEPKG_NDEBUG is not defined and the DEBUG_PROPERTY_DEBUG_ASSERT_ENABLED bit
-  of PcdDebugProperyMask is set, then this macro computes the offset, in bytes,
+  of PcdDebugPropertyMask is set, then this macro computes the offset, in bytes,
   of field specified by Field from the beginning of the data structure specified
   by TYPE.  This offset is subtracted from Record, and is used to compute a pointer
   to a data structure of the type specified by TYPE.  The Signature field of the
@@ -618,10 +660,83 @@ UnitTestDebugAssert (
 #define CR(Record, TYPE, Field, TestSignature)                                              \
     (DebugAssertEnabled () && (BASE_CR (Record, TYPE, Field)->Signature != TestSignature)) ?  \
     (TYPE *) (_ASSERT (CR has Bad Signature), Record) :                                       \
+    (BASE_CR (Record, TYPE, Field)->Signature != TestSignature) ?                             \
+    NULL :                                                                                    \
     BASE_CR (Record, TYPE, Field)
 #else
 #define CR(Record, TYPE, Field, TestSignature)                                              \
+    (BASE_CR (Record, TYPE, Field)->Signature != TestSignature) ?                           \
+    NULL :                                                                                  \
     BASE_CR (Record, TYPE, Field)
 #endif
 
+/**
+  Log a formatted hexdump as the debug message on the specified debug
+  error level.
+  The hexdump is split into lines of 16 dumped bytes. Each line is
+  prefixed with a caller-provided string and offset. The full hexdump
+  is bracketed, and its byte ascii char also print. If the byte value
+  is not the ascii code, it will print as '.'
+  @param[in] ErrorLevel        The error level of the debug message.
+  @param[in] Offset            Offset to be displayed after LinePrefixFormat.
+                               Offset will be increased for each print line.
+  @param[in] Data              The data to dump.
+  @param[in] DataSize          Number of bytes in Data.
+  @param[in] LinePrefixFormat  Format string describing the prefix that is
+                               printed at the beginning of each dump line,
+                               including the bracket lines.
+  @param[in] ...               Arguments for LinePrefixFormat.
+**/
+#if !defined (MDEPKG_NDEBUG)
+#define DUMP_HEX(ErrorLevel, Offset, Data, DataSize, LinePrefixFormat, ...)         \
+  do {                                                                              \
+    if (DebugPrintEnabled () && DebugPrintLevelEnabled (ErrorLevel)) {              \
+      CONST CHAR8  *_digits = "0123456789ABCDEF";                                   \
+      CONST UINT8  *_bytes  = (CONST UINT8 *)(Data);                                \
+      UINTN        _hexOff  = (Offset);                                             \
+      UINTN        _remaining;                                                      \
+      UINTN        _index;                                                          \
+      CHAR8        _line[49];                                                       \
+      CHAR8        _ascii[17];                                                      \
+                                                                                    \
+      if (_bytes == NULL) {                                                         \
+        DebugPrint (ErrorLevel, LinePrefixFormat, ##__VA_ARGS__);                   \
+        DebugPrint (ErrorLevel, "%08X: <NULL>\r\n", _hexOff);                       \
+        break;                                                                      \
+      }                                                                             \
+      for (_remaining = (DataSize), _index = 0; _remaining != 0;                    \
+           --_remaining, ++_bytes, _index = (_index + 1) & 0x0F) {                  \
+        _line[3 * _index]     = _digits[*_bytes >> 4];                              \
+        _line[3 * _index + 1] = _digits[*_bytes & 0xF];                             \
+        _line[3 * _index + 2] = (_index == 7) ? '-' : ' ';                          \
+        _ascii[_index] = (*_bytes < ' ' || *_bytes > '~') ? '.' : (CHAR8)*_bytes;   \
+        if ((_index == 15) || (_remaining == 1)) {                                  \
+          _line[3 * (_index + 1)] = '\0';                                           \
+          _ascii[_index + 1]      = '\0';                                           \
+          DebugPrint (ErrorLevel, LinePrefixFormat, ##__VA_ARGS__);                 \
+          DebugPrint (ErrorLevel, "%08X: %-48a |%a|\r\n", _hexOff, _line, _ascii);  \
+          _hexOff += _index + 1;                                                    \
+        }                                                                           \
+      }                                                                             \
+    }                                                                               \
+  } while (FALSE)
+#else
+// When MDEPKG_NDEBUG is set, we don't print anything. However, compilers will complain
+// about unused parameters, so we need to consume them here. This includes the variable
+// arguments, which are consumed by routing them through the DEBUG macro. This code path
+// is not actually taken due to the if (FALSE) check, but it satisfies compilers.
+#define DUMP_HEX(ErrorLevel,                                                        \
+                 Offset,                                                            \
+                 Data,                                                              \
+                 DataSize,                                                          \
+                 LinePrefixFormat,                                                  \
+                 ...)                                                               \
+    do {                                                                            \
+      if (FALSE) {                                                                  \
+        (VOID) (Offset);                                                            \
+        (VOID) (Data);                                                              \
+        (VOID) (DataSize);                                                          \
+        DebugPrint (ErrorLevel, LinePrefixFormat, ##__VA_ARGS__);                   \
+      }                                                                             \
+    } while (FALSE)
 #endif

@@ -1,5 +1,5 @@
 /** @file
-  HOB Library implementation for Standalone MM Core.
+  HOB Library implementation for Standalone MM modules.
 
 Copyright (c) 2006 - 2014, Intel Corporation. All rights reserved.<BR>
 Copyright (c) 2017 - 2018, ARM Limited. All rights reserved.<BR>
@@ -127,6 +127,36 @@ GetNextHob (
 }
 
 /**
+  Returns the next Resource Descriptor HOB from the starting HOB.
+
+  @param  HobStart      The starting HOB pointer to search from.
+
+  @return The next Resource Descriptor HOB from the starting HOB.
+
+**/
+VOID *
+EFIAPI
+GetNextResourceHob (
+  IN CONST VOID  *HobStart
+  )
+{
+  EFI_PEI_HOB_POINTERS  Hob;
+
+  ASSERT (HobStart != NULL);
+
+  Hob.Raw = (UINT8 *)HobStart;
+  while (!END_OF_HOB_LIST (Hob)) {
+    if (IS_RESOURCE_DESCRIPTOR_HOB (Hob)) {
+      return Hob.Raw;
+    }
+
+    Hob.Raw = GET_NEXT_HOB (Hob);
+  }
+
+  return NULL;
+}
+
+/**
   Returns the first instance of a HOB type among the whole HOB list.
 
   This function searches the first instance of a HOB type among the whole HOB list.
@@ -191,6 +221,10 @@ GetNextGuidHob (
     GuidHob.Raw = GET_NEXT_HOB (GuidHob);
   }
 
+  if ((GuidHob.Raw == NULL) && (HobStart == GetHobList ())) {
+    DEBUG ((DEBUG_WARN, "MM: GUIDed HOB [%g] not found in the entire HOB list.\n", Guid));
+  }
+
   return GuidHob.Raw;
 }
 
@@ -250,48 +284,13 @@ GetBootModeHob (
   return HandOffHob->BootMode;
 }
 
-VOID *
-CreateHob (
-  IN  UINT16  HobType,
-  IN  UINT16  HobLength
-  )
-{
-  EFI_HOB_HANDOFF_INFO_TABLE  *HandOffHob;
-  EFI_HOB_GENERIC_HEADER      *HobEnd;
-  EFI_PHYSICAL_ADDRESS        FreeMemory;
-  VOID                        *Hob;
-
-  HandOffHob = GetHobList ();
-
-  HobLength = (UINT16)((HobLength + 0x7) & (~0x7));
-
-  FreeMemory = HandOffHob->EfiFreeMemoryTop - HandOffHob->EfiFreeMemoryBottom;
-
-  if (FreeMemory < HobLength) {
-    return NULL;
-  }
-
-  Hob                                        = (VOID *)(UINTN)HandOffHob->EfiEndOfHobList;
-  ((EFI_HOB_GENERIC_HEADER *)Hob)->HobType   = HobType;
-  ((EFI_HOB_GENERIC_HEADER *)Hob)->HobLength = HobLength;
-  ((EFI_HOB_GENERIC_HEADER *)Hob)->Reserved  = 0;
-
-  HobEnd                      = (EFI_HOB_GENERIC_HEADER *)((UINTN)Hob + HobLength);
-  HandOffHob->EfiEndOfHobList = (EFI_PHYSICAL_ADDRESS)(UINTN)HobEnd;
-
-  HobEnd->HobType   = EFI_HOB_TYPE_END_OF_HOB_LIST;
-  HobEnd->HobLength = sizeof (EFI_HOB_GENERIC_HEADER);
-  HobEnd->Reserved  = 0;
-  HobEnd++;
-  HandOffHob->EfiFreeMemoryBottom = (EFI_PHYSICAL_ADDRESS)(UINTN)HobEnd;
-
-  return Hob;
-}
-
 /**
   Builds a HOB for a loaded PE32 module.
 
   This function builds a HOB for a loaded PE32 module.
+  It can only be invoked by Standalone MM Core.
+  For Standalone MM drivers, it will ASSERT() since HOB is read only for Standalone MM drivers.
+
   If ModuleName is NULL, then ASSERT().
   If there is no additional space for HOB creation, then ASSERT().
 
@@ -310,33 +309,47 @@ BuildModuleHob (
   IN EFI_PHYSICAL_ADDRESS  EntryPoint
   )
 {
-  EFI_HOB_MEMORY_ALLOCATION_MODULE  *Hob;
-
-  ASSERT (
-    ((MemoryAllocationModule & (EFI_PAGE_SIZE - 1)) == 0) &&
-    ((ModuleLength & (EFI_PAGE_SIZE - 1)) == 0)
-    );
-
-  Hob = CreateHob (EFI_HOB_TYPE_MEMORY_ALLOCATION, sizeof (EFI_HOB_MEMORY_ALLOCATION_MODULE));
-
-  CopyGuid (&(Hob->MemoryAllocationHeader.Name), &gEfiHobMemoryAllocModuleGuid);
-  Hob->MemoryAllocationHeader.MemoryBaseAddress = MemoryAllocationModule;
-  Hob->MemoryAllocationHeader.MemoryLength      = ModuleLength;
-  Hob->MemoryAllocationHeader.MemoryType        = EfiBootServicesCode;
-
   //
-  // Zero the reserved space to match HOB spec
+  // HOB is read only for Standalone MM drivers
   //
-  ZeroMem (Hob->MemoryAllocationHeader.Reserved, sizeof (Hob->MemoryAllocationHeader.Reserved));
+  ASSERT (FALSE);
+}
 
-  CopyGuid (&Hob->ModuleName, ModuleName);
-  Hob->EntryPoint = EntryPoint;
+/**
+  Builds a HOB that describes a chunk of system memory with memory attributes.
+
+  This function builds a HOB that describes a chunk of system memory.
+  If there is no additional space for HOB creation, then ASSERT().
+
+  @param  ResourceType               The type of resource described by this HOB.
+  @param  ResourceCapabilities       The resource capabilities of the memory described by this HOB.
+  @param  PhysicalStart              The 64 bit physical address of memory described by this HOB.
+  @param  ResourceLength             The length of the memory described by this HOB in bytes.
+  @param  ResourceMemoryAttributes   The memory attribute for the memory described by this HOB.
+  @param  OwnerGuid                  GUID for the owner of this resource.
+
+**/
+VOID
+EFIAPI
+BuildResourceDescriptor2Hob (
+  IN EFI_RESOURCE_TYPE            ResourceType,
+  IN EFI_RESOURCE_ATTRIBUTE_TYPE  ResourceCapabilities,
+  IN EFI_PHYSICAL_ADDRESS         PhysicalStart,
+  IN UINT64                       ResourceLength,
+  IN UINT64                       ResourceMemoryAttributes,
+  IN EFI_GUID                     *OwnerGuid OPTIONAL
+  )
+{
+  ASSERT (FALSE);
 }
 
 /**
   Builds a HOB that describes a chunk of system memory.
 
   This function builds a HOB that describes a chunk of system memory.
+  It can only be invoked by Standalone MM Core.
+  For Standalone MM drivers, it will ASSERT() since HOB is read only for Standalone MM drivers.
+
   If there is no additional space for HOB creation, then ASSERT().
 
   @param  ResourceType        The type of resource described by this HOB.
@@ -354,15 +367,10 @@ BuildResourceDescriptorHob (
   IN UINT64                       NumberOfBytes
   )
 {
-  EFI_HOB_RESOURCE_DESCRIPTOR  *Hob;
-
-  Hob = CreateHob (EFI_HOB_TYPE_RESOURCE_DESCRIPTOR, sizeof (EFI_HOB_RESOURCE_DESCRIPTOR));
-  ASSERT (Hob != NULL);
-
-  Hob->ResourceType      = ResourceType;
-  Hob->ResourceAttribute = ResourceAttribute;
-  Hob->PhysicalStart     = PhysicalStart;
-  Hob->ResourceLength    = NumberOfBytes;
+  //
+  // HOB is read only for Standalone MM drivers
+  //
+  ASSERT (FALSE);
 }
 
 /**
@@ -371,6 +379,9 @@ BuildResourceDescriptorHob (
   This function builds a customized HOB tagged with a GUID for identification
   and returns the start address of GUID HOB data so that caller can fill the customized data.
   The HOB Header and Name field is already stripped.
+  It can only be invoked by Standalone MM Core.
+  For Standalone MM drivers, it will ASSERT() since HOB is read only for Standalone MM drivers.
+
   If Guid is NULL, then ASSERT().
   If there is no additional space for HOB creation, then ASSERT().
   If DataLength >= (0x10000 - sizeof (EFI_HOB_GUID_TYPE)), then ASSERT().
@@ -388,16 +399,11 @@ BuildGuidHob (
   IN UINTN           DataLength
   )
 {
-  EFI_HOB_GUID_TYPE  *Hob;
-
   //
-  // Make sure that data length is not too long.
+  // HOB is read only for Standalone MM drivers
   //
-  ASSERT (DataLength <= (0xffff - sizeof (EFI_HOB_GUID_TYPE)));
-
-  Hob = CreateHob (EFI_HOB_TYPE_GUID_EXTENSION, (UINT16)(sizeof (EFI_HOB_GUID_TYPE) + DataLength));
-  CopyGuid (&Hob->Name, Guid);
-  return Hob + 1;
+  ASSERT (FALSE);
+  return NULL;
 }
 
 /**
@@ -406,6 +412,9 @@ BuildGuidHob (
   This function builds a customized HOB tagged with a GUID for identification,
   copies the input data to the HOB data field and returns the start address of the GUID HOB data.
   The HOB Header and Name field is already stripped.
+  It can only be invoked by Standalone MM Core.
+  For Standalone MM drivers, it will ASSERT() since HOB is read only for Standalone MM drivers.
+
   If Guid is NULL, then ASSERT().
   If Data is NULL and DataLength > 0, then ASSERT().
   If there is no additional space for HOB creation, then ASSERT().
@@ -426,19 +435,20 @@ BuildGuidDataHob (
   IN UINTN           DataLength
   )
 {
-  VOID  *HobData;
-
-  ASSERT (Data != NULL || DataLength == 0);
-
-  HobData = BuildGuidHob (Guid, DataLength);
-
-  return CopyMem (HobData, Data, DataLength);
+  //
+  // HOB is read only for Standalone MM drivers
+  //
+  ASSERT (FALSE);
+  return NULL;
 }
 
 /**
   Builds a Firmware Volume HOB.
 
   This function builds a Firmware Volume HOB.
+  It can only be invoked by Standalone MM Core.
+  For Standalone MM drivers, it will ASSERT() since HOB is read only for Standalone MM drivers.
+
   If there is no additional space for HOB creation, then ASSERT().
 
   @param  BaseAddress   The base address of the Firmware Volume.
@@ -452,18 +462,19 @@ BuildFvHob (
   IN UINT64                Length
   )
 {
-  EFI_HOB_FIRMWARE_VOLUME  *Hob;
-
-  Hob = CreateHob (EFI_HOB_TYPE_FV, sizeof (EFI_HOB_FIRMWARE_VOLUME));
-
-  Hob->BaseAddress = BaseAddress;
-  Hob->Length      = Length;
+  //
+  // HOB is read only for Standalone MM drivers
+  //
+  ASSERT (FALSE);
 }
 
 /**
   Builds a EFI_HOB_TYPE_FV2 HOB.
 
   This function builds a EFI_HOB_TYPE_FV2 HOB.
+  It can only be invoked by Standalone MM Core.
+  For Standalone MM drivers, it will ASSERT() since HOB is read only for Standalone MM drivers.
+
   If there is no additional space for HOB creation, then ASSERT().
 
   @param  BaseAddress   The base address of the Firmware Volume.
@@ -481,20 +492,19 @@ BuildFv2Hob (
   IN CONST    EFI_GUID              *FileName
   )
 {
-  EFI_HOB_FIRMWARE_VOLUME2  *Hob;
-
-  Hob = CreateHob (EFI_HOB_TYPE_FV2, sizeof (EFI_HOB_FIRMWARE_VOLUME2));
-
-  Hob->BaseAddress = BaseAddress;
-  Hob->Length      = Length;
-  CopyGuid (&Hob->FvName, FvName);
-  CopyGuid (&Hob->FileName, FileName);
+  //
+  // HOB is read only for Standalone MM drivers
+  //
+  ASSERT (FALSE);
 }
 
 /**
   Builds a HOB for the CPU.
 
   This function builds a HOB for the CPU.
+  It can only be invoked by Standalone MM Core.
+  For Standalone MM drivers, it will ASSERT() since HOB is read only for Standalone MM drivers.
+
   If there is no additional space for HOB creation, then ASSERT().
 
   @param  SizeOfMemorySpace   The maximum physical memory addressability of the processor.
@@ -508,23 +518,19 @@ BuildCpuHob (
   IN UINT8  SizeOfIoSpace
   )
 {
-  EFI_HOB_CPU  *Hob;
-
-  Hob = CreateHob (EFI_HOB_TYPE_CPU, sizeof (EFI_HOB_CPU));
-
-  Hob->SizeOfMemorySpace = SizeOfMemorySpace;
-  Hob->SizeOfIoSpace     = SizeOfIoSpace;
-
   //
-  // Zero the reserved space to match HOB spec
+  // HOB is read only for Standalone MM drivers
   //
-  ZeroMem (Hob->Reserved, sizeof (Hob->Reserved));
+  ASSERT (FALSE);
 }
 
 /**
   Builds a HOB for the memory allocation.
 
   This function builds a HOB for the memory allocation.
+  It can only be invoked by Standalone MM Core.
+  For Standalone MM drivers, it will ASSERT() since HOB is read only for Standalone MM drivers.
+
   If there is no additional space for HOB creation, then ASSERT().
 
   @param  BaseAddress   The 64 bit physical address of the memory.
@@ -540,23 +546,10 @@ BuildMemoryAllocationHob (
   IN EFI_MEMORY_TYPE       MemoryType
   )
 {
-  EFI_HOB_MEMORY_ALLOCATION  *Hob;
-
-  ASSERT (
-    ((BaseAddress & (EFI_PAGE_SIZE - 1)) == 0) &&
-    ((Length & (EFI_PAGE_SIZE - 1)) == 0)
-    );
-
-  Hob = CreateHob (EFI_HOB_TYPE_MEMORY_ALLOCATION, sizeof (EFI_HOB_MEMORY_ALLOCATION));
-
-  ZeroMem (&(Hob->AllocDescriptor.Name), sizeof (EFI_GUID));
-  Hob->AllocDescriptor.MemoryBaseAddress = BaseAddress;
-  Hob->AllocDescriptor.MemoryLength      = Length;
-  Hob->AllocDescriptor.MemoryType        = MemoryType;
   //
-  // Zero the reserved space to match HOB spec
+  // HOB is read only for Standalone MM drivers
   //
-  ZeroMem (Hob->AllocDescriptor.Reserved, sizeof (Hob->AllocDescriptor.Reserved));
+  ASSERT (FALSE);
 }
 
 /**
@@ -646,4 +639,74 @@ BuildStackHob (
   )
 {
   ASSERT (FALSE);
+}
+
+/**
+  Returns the next instance of the memory allocation HOB with the matched GUID from
+  the starting HOB.
+
+  This function searches the first instance of a HOB from the starting HOB pointer.
+  Such HOB should satisfy two conditions:
+  Its HOB type is EFI_HOB_TYPE_MEMORY_ALLOCATION and its GUID Name equals to input Guid.
+  If there does not exist such HOB from the starting HOB pointer, it will return NULL.
+
+  If Guid is NULL, then ASSERT().
+  If HobStart is NULL, then ASSERT().
+
+  @param  Guid          The GUID to match with in the HOB list.
+  @param  HobStart      The starting HOB pointer to search from.
+
+  @retval !NULL  The next instance of the Memory Allocation HOB with matched GUID from the starting HOB.
+  @retval NULL   NULL is returned if the matching Memory Allocation HOB is not found.
+
+**/
+VOID *
+EFIAPI
+GetNextMemoryAllocationGuidHob (
+  IN CONST EFI_GUID  *Guid,
+  IN CONST VOID      *HobStart
+  )
+{
+  EFI_PEI_HOB_POINTERS  Hob;
+
+  ASSERT (Guid != NULL);
+  ASSERT (HobStart != NULL);
+
+  for (Hob.Raw = (UINT8 *)HobStart; (Hob.Raw = GetNextHob (EFI_HOB_TYPE_MEMORY_ALLOCATION, Hob.Raw)) != NULL;
+       Hob.Raw = GET_NEXT_HOB (Hob))
+  {
+    if (CompareGuid (&Hob.MemoryAllocation->AllocDescriptor.Name, Guid)) {
+      return Hob.Raw;
+    }
+  }
+
+  return NULL;
+}
+
+/**
+  Search the HOB list for the Memory Allocation HOB with a matching base address
+  and set the Name GUID. If there does not exist such Memory Allocation HOB in the
+  HOB list, it will return NULL.
+
+  If Guid is NULL, then ASSERT().
+
+  @param BaseAddress  BaseAddress of Memory Allocation HOB to set Name to Guid.
+  @param Guid         Pointer to the GUID to set in the matching Memory Allocation GUID.
+
+  @retval !NULL  The instance of the tagged Memory Allocation HOB with matched base address.
+  @retval NULL   NULL is returned if the matching Memory Allocation HOB is not found.
+
+**/
+VOID *
+EFIAPI
+TagMemoryAllocationHobWithGuid (
+  IN EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN CONST EFI_GUID        *Guid
+  )
+{
+  //
+  // HOB is read only for Standalone MM drivers
+  //
+  ASSERT (FALSE);
+  return NULL;
 }

@@ -7,8 +7,7 @@
 
 **/
 
-#ifndef __EFI_PXEBC_DHCP6_H__
-#define __EFI_PXEBC_DHCP6_H__
+#pragma once
 
 #define PXEBC_DHCP6_OPTION_MAX_NUM     16
 #define PXEBC_DHCP6_OPTION_MAX_SIZE    312
@@ -33,6 +32,23 @@
 #define PXEBC_TFTP_URL_SEPARATOR          '/'
 #define PXEBC_ADDR_START_DELIMITER        '['
 #define PXEBC_ADDR_END_DELIMITER          ']'
+
+//
+// A DUID consists of a 2-octet type code represented in network byte
+// order, followed by a variable number of octets that make up the
+// actual identifier.  The length of the DUID (not including the type
+// code) is at least 1 octet and at most 128 octets.
+//
+#define PXEBC_MIN_SIZE_OF_DUID  (sizeof(UINT16) + 1)
+#define PXEBC_MAX_SIZE_OF_DUID  (sizeof(UINT16) + 128)
+
+//
+// This define represents the combineds code and length field from
+// https://datatracker.ietf.org/doc/html/rfc3315#section-22.1
+//
+#define PXEBC_COMBINED_SIZE_OF_OPT_CODE_AND_LEN  \
+      (sizeof (((EFI_DHCP6_PACKET_OPTION *)0)->OpCode) + \
+      sizeof (((EFI_DHCP6_PACKET_OPTION *)0)->OpLen))
 
 #define GET_NEXT_DHCP6_OPTION(Opt) \
   (EFI_DHCP6_PACKET_OPTION *) ((UINT8 *) (Opt) + \
@@ -254,5 +270,3 @@ PxeBcDhcp6Sarr (
   IN PXEBC_PRIVATE_DATA  *Private,
   IN EFI_DHCP6_PROTOCOL  *Dhcp6
   );
-
-#endif

@@ -6,8 +6,7 @@
 *
 **/
 
-#ifndef _PREPI_H_
-#define _PREPI_H_
+#pragma once
 
 #include <PiPei.h>
 
@@ -21,12 +20,6 @@
 #include <Library/SerialPortLib.h>
 
 #define SerialPrint(txt)  SerialPortWrite (txt, AsciiStrLen(txt)+1);
-
-RETURN_STATUS
-EFIAPI
-TimerConstructor (
-  VOID
-  );
 
 VOID
 PrePiMain (
@@ -59,5 +52,3 @@ VOID
 ArchInitialize (
   VOID
   );
-
-#endif /* _PREPI_H_ */

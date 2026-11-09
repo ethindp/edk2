@@ -2,6 +2,7 @@
   AML Resource Data Code Generation.
 
   Copyright (c) 2020 - 2021, Arm Limited. All rights reserved.<BR>
+  Copyright (C) 2023 - 2025 Advanced Micro Devices, Inc. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -19,6 +20,7 @@
 #include <Api/AmlApiHelper.h>
 #include <Tree/AmlNode.h>
 #include <ResourceData/AmlResourceData.h>
+#include <Utils/AmlUtility.h>
 
 /** If ParentNode is not NULL, append RdNode.
     If NewRdNode is not NULL, update its value to RdNode.
@@ -213,78 +215,6 @@ AddressSpaceGeneralFlags (
   return (IsPosDecode ? 0 : BIT1)    |
          (IsMinFixed ? BIT2 : 0)     |
          (IsMaxFixed ? BIT3 : 0);
-}
-
-/** Check Address Space Descriptor Fields.
-
-  Cf. ACPI 6.4 Table 6.44:
-  "Valid Combination of Address Space Descriptor Fields"
-
-  See ACPI 6.4 spec, s19.6.36 for more.
-
-  @param [in]  IsMinFixed           Minimum address is fixed.
-  @param [in]  IsMaxFixed           Maximum address is fixed.
-  @param [in]  AddressGranularity   Address granularity.
-  @param [in]  AddressMinimum       Minimum address.
-  @param [in]  AddressMaximum       Maximum address.
-  @param [in]  AddressTranslation   Address translation.
-  @param [in]  RangeLength          Range length.
-
-  @retval EFI_SUCCESS             The function completed successfully.
-  @retval EFI_INVALID_PARAMETER   Invalid parameter.
-**/
-STATIC
-EFI_STATUS
-EFIAPI
-CheckAddressSpaceFields (
-  IN  BOOLEAN  IsMinFixed,
-  IN  BOOLEAN  IsMaxFixed,
-  IN  UINT64   AddressGranularity,
-  IN  UINT64   AddressMinimum,
-  IN  UINT64   AddressMaximum,
-  IN  UINT64   AddressTranslation,
-  IN  UINT64   RangeLength
-  )
-{
-  if ((AddressMinimum > AddressMaximum)                     ||
-      (RangeLength > (AddressMaximum - AddressMinimum + 1)) ||
-      ((AddressGranularity != 0) &&
-       (((AddressGranularity + 1) & AddressGranularity) != 0)))
-  {
-    ASSERT (0);
-    return EFI_INVALID_PARAMETER;
-  }
-
-  if (RangeLength != 0) {
-    if (IsMinFixed ^ IsMaxFixed) {
-      ASSERT (0);
-      return EFI_INVALID_PARAMETER;
-    } else if (IsMinFixed                 &&
-               IsMaxFixed                 &&
-               (AddressGranularity != 0)  &&
-               ((AddressMaximum - AddressMinimum + 1) != RangeLength))
-    {
-      ASSERT (0);
-      return EFI_INVALID_PARAMETER;
-    }
-  } else {
-    if (IsMinFixed && IsMaxFixed) {
-      ASSERT (0);
-      return EFI_INVALID_PARAMETER;
-    } else if (IsMinFixed &&
-               ((AddressMinimum & AddressGranularity) != 0))
-    {
-      ASSERT (0);
-      return EFI_INVALID_PARAMETER;
-    } else if (IsMaxFixed &&
-               (((AddressMaximum + 1) & AddressGranularity) != 0))
-    {
-      ASSERT (0);
-      return EFI_INVALID_PARAMETER;
-    }
-  }
-
-  return EFI_SUCCESS;
 }
 
 /** Code generation for the "DWordSpace ()" ASL function.
@@ -570,7 +500,7 @@ AmlCodeGenRdDWordMemory (
   IN        BOOLEAN IsPosDecode,
   IN        BOOLEAN IsMinFixed,
   IN        BOOLEAN IsMaxFixed,
-  IN        UINT8 Cacheable,
+  IN        AML_MEMORY_ATTRIBUTES_MEM Cacheable,
   IN        BOOLEAN IsReadWrite,
   IN        UINT32 AddressGranularity,
   IN        UINT32 AddressMinimum,
@@ -579,7 +509,7 @@ AmlCodeGenRdDWordMemory (
   IN        UINT32 RangeLength,
   IN        UINT8 ResourceSourceIndex,
   IN  CONST CHAR8 *ResourceSource,
-  IN        UINT8 MemoryRangeType,
+  IN        AML_MEMORY_ATTRIBUTES_MTP MemoryRangeType,
   IN        BOOLEAN IsTypeStatic,
   IN        AML_OBJECT_NODE_HANDLE NameOpNode, OPTIONAL
   OUT       AML_DATA_NODE_HANDLE    *NewRdNode  OPTIONAL
@@ -619,7 +549,7 @@ AmlCodeGenRdDWordMemory (
   See ACPI 6.4 spec, s19.2.8 for more.
 
   @param [in]  IsReadWrite          ReadAndWrite parameter.
-  @param [in]  Addres               AddressBase parameter.
+  @param [in]  Address              AddressBase parameter.
   @param [in]  RangeLength          Range length.
   @param [in]  NameOpNode           NameOp object node defining a named object.
                                     If provided, append the new resource data
@@ -847,11 +777,11 @@ AmlCodeGenRdWordBusNumber (
   IN        BOOLEAN IsMinFixed,
   IN        BOOLEAN IsMaxFixed,
   IN        BOOLEAN IsPosDecode,
-  IN        UINT32 AddressGranularity,
-  IN        UINT32 AddressMinimum,
-  IN        UINT32 AddressMaximum,
-  IN        UINT32 AddressTranslation,
-  IN        UINT32 RangeLength,
+  IN        UINT16 AddressGranularity,
+  IN        UINT16 AddressMinimum,
+  IN        UINT16 AddressMaximum,
+  IN        UINT16 AddressTranslation,
+  IN        UINT16 RangeLength,
   IN        UINT8 ResourceSourceIndex,
   IN  CONST CHAR8 *ResourceSource,
   IN        AML_OBJECT_NODE_HANDLE NameOpNode, OPTIONAL
@@ -866,6 +796,93 @@ AmlCodeGenRdWordBusNumber (
            IsMinFixed,
            IsMaxFixed,
            0,
+           AddressGranularity,
+           AddressMinimum,
+           AddressMaximum,
+           AddressTranslation,
+           RangeLength,
+           ResourceSourceIndex,
+           ResourceSource,
+           NameOpNode,
+           NewRdNode
+           );
+}
+
+/** Code generation for the "WordIO ()" ASL function.
+
+  The Resource Data effectively created is a Word Address Space Resource
+  Data. Cf ACPI 6.5:
+   - s6.4.3.5.3 "Word Address Space Descriptor".
+
+  The created resource data node can be:
+   - appended to the list of resource data elements of the NameOpNode.
+     In such case NameOpNode must be defined by a the "Name ()" ASL statement
+     and initially contain a "ResourceTemplate ()".
+   - returned through the NewRdNode parameter.
+
+  @param [in]  IsResourceConsumer   ResourceUsage parameter.
+  @param [in]  IsMinFixed           Minimum address is fixed.
+  @param [in]  IsMaxFixed           Maximum address is fixed.
+  @param [in]  IsPosDecode          Decode parameter
+  @param [in]  IsaRanges            Possible values are:
+                                     0-Reserved
+                                     1-NonISAOnly
+                                     2-ISAOnly
+                                     3-EntireRange
+  @param [in]  AddressGranularity   Address granularity.
+  @param [in]  AddressMinimum       Minimum address.
+  @param [in]  AddressMaximum       Maximum address.
+  @param [in]  AddressTranslation   Address translation.
+  @param [in]  RangeLength          Range length.
+  @param [in]  ResourceSourceIndex  Resource Source index.
+                                    Not supported. Must be 0.
+  @param [in]  ResourceSource       Resource Source.
+                                    Not supported. Must be NULL.
+  @param [in]  IsDenseTranslation   TranslationDensity parameter.
+  @param [in]  IsTypeStatic         TranslationType parameter.
+  @param [in]  NameOpNode           NameOp object node defining a named object.
+                                    If provided, append the new resource data
+                                    node to the list of resource data elements
+                                    of this node.
+  @param [out] NewRdNode            If provided and success,
+                                    contain the created node.
+
+  @retval EFI_SUCCESS             The function completed successfully.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+  @retval EFI_OUT_OF_RESOURCES    Could not allocate memory.
+**/
+EFI_STATUS
+EFIAPI
+AmlCodeGenRdWordIo (
+  IN        BOOLEAN IsResourceConsumer,
+  IN        BOOLEAN IsMinFixed,
+  IN        BOOLEAN IsMaxFixed,
+  IN        BOOLEAN IsPosDecode,
+  IN        UINT8 IsaRanges,
+  IN        UINT16 AddressGranularity,
+  IN        UINT16 AddressMinimum,
+  IN        UINT16 AddressMaximum,
+  IN        UINT16 AddressTranslation,
+  IN        UINT16 RangeLength,
+  IN        UINT8 ResourceSourceIndex,
+  IN  CONST CHAR8 *ResourceSource,
+  IN        BOOLEAN IsDenseTranslation,
+  IN        BOOLEAN IsTypeStatic,
+  IN        AML_OBJECT_NODE_HANDLE NameOpNode, OPTIONAL
+  OUT       AML_DATA_NODE_HANDLE    *NewRdNode  OPTIONAL
+  )
+{
+  return AmlCodeGenRdWordSpace (
+           ACPI_ADDRESS_SPACE_TYPE_IO,
+           IsResourceConsumer,
+           IsPosDecode,
+           IsMinFixed,
+           IsMaxFixed,
+           RdIoRangeSpecificFlags (
+             IsaRanges,
+             IsDenseTranslation,
+             IsTypeStatic
+             ),
            AddressGranularity,
            AddressMinimum,
            AddressMaximum,
@@ -1012,6 +1029,96 @@ AmlCodeGenRdQWordSpace (
   return LinkRdNode (RdNode, NameOpNode, NewRdNode);
 }
 
+/** Code generation for the "QWordIO ()" ASL function.
+
+  The Resource Data effectively created is a QWord Address Space Resource
+  Data. Cf ACPI 6.4:
+   - s6.4.3.5.1 "QWord Address Space Descriptor".
+   - s19.6.109 "QWordIO".
+
+  The created resource data node can be:
+   - appended to the list of resource data elements of the NameOpNode.
+     In such case NameOpNode must be defined by a the "Name ()" ASL statement
+     and initially contain a "ResourceTemplate ()".
+   - returned through the NewRdNode parameter.
+
+  See ACPI 6.4 spec, s19.6.109 for more.
+
+  @param [in]  IsResourceConsumer   ResourceUsage parameter.
+  @param [in]  IsMinFixed           Minimum address is fixed.
+  @param [in]  IsMaxFixed           Maximum address is fixed.
+  @param [in]  IsPosDecode          Decode parameter
+  @param [in]  IsaRanges            Possible values are:
+                                     0-Reserved
+                                     1-NonISAOnly
+                                     2-ISAOnly
+                                     3-EntireRange
+  @param [in]  AddressGranularity   Address granularity.
+  @param [in]  AddressMinimum       Minimum address.
+  @param [in]  AddressMaximum       Maximum address.
+  @param [in]  AddressTranslation   Address translation.
+  @param [in]  RangeLength          Range length.
+  @param [in]  ResourceSourceIndex  Resource Source index.
+                                    Unused. Must be 0.
+  @param [in]  ResourceSource       Resource Source.
+                                    Unused. Must be NULL.
+  @param [in]  IsDenseTranslation   TranslationDensity parameter.
+  @param [in]  IsTypeStatic         TranslationType parameter.
+  @param [in]  NameOpNode           NameOp object node defining a named object.
+                                    If provided, append the new resource data
+                                    node to the list of resource data elements
+                                    of this node.
+  @param [out] NewRdNode            If provided and success,
+                                    contain the created node.
+
+  @retval EFI_SUCCESS             The function completed successfully.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+  @retval EFI_OUT_OF_RESOURCES    Could not allocate memory.
+**/
+EFI_STATUS
+EFIAPI
+AmlCodeGenRdQWordIo (
+  IN        BOOLEAN IsResourceConsumer,
+  IN        BOOLEAN IsMinFixed,
+  IN        BOOLEAN IsMaxFixed,
+  IN        BOOLEAN IsPosDecode,
+  IN        UINT8 IsaRanges,
+  IN        UINT64 AddressGranularity,
+  IN        UINT64 AddressMinimum,
+  IN        UINT64 AddressMaximum,
+  IN        UINT64 AddressTranslation,
+  IN        UINT64 RangeLength,
+  IN        UINT8 ResourceSourceIndex,
+  IN  CONST CHAR8 *ResourceSource,
+  IN        BOOLEAN IsDenseTranslation,
+  IN        BOOLEAN IsTypeStatic,
+  IN        AML_OBJECT_NODE_HANDLE NameOpNode, OPTIONAL
+  OUT       AML_DATA_NODE_HANDLE    *NewRdNode  OPTIONAL
+  )
+{
+  return AmlCodeGenRdQWordSpace (
+           ACPI_ADDRESS_SPACE_TYPE_IO,
+           IsResourceConsumer,
+           IsPosDecode,
+           IsMinFixed,
+           IsMaxFixed,
+           RdIoRangeSpecificFlags (
+             IsaRanges,
+             IsDenseTranslation,
+             IsTypeStatic
+             ),
+           AddressGranularity,
+           AddressMinimum,
+           AddressMaximum,
+           AddressTranslation,
+           RangeLength,
+           ResourceSourceIndex,
+           ResourceSource,
+           NameOpNode,
+           NewRdNode
+           );
+}
+
 /** Code generation for the "QWordMemory ()" ASL function.
 
   The Resource Data effectively created is a QWord Address Space Resource
@@ -1071,7 +1178,7 @@ AmlCodeGenRdQWordMemory (
   IN        BOOLEAN IsPosDecode,
   IN        BOOLEAN IsMinFixed,
   IN        BOOLEAN IsMaxFixed,
-  IN        UINT8 Cacheable,
+  IN        AML_MEMORY_ATTRIBUTES_MEM Cacheable,
   IN        BOOLEAN IsReadWrite,
   IN        UINT64 AddressGranularity,
   IN        UINT64 AddressMinimum,
@@ -1080,7 +1187,7 @@ AmlCodeGenRdQWordMemory (
   IN        UINT64 RangeLength,
   IN        UINT8 ResourceSourceIndex,
   IN  CONST CHAR8 *ResourceSource,
-  IN        UINT8 MemoryRangeType,
+  IN        AML_MEMORY_ATTRIBUTES_MTP MemoryRangeType,
   IN        BOOLEAN IsTypeStatic,
   IN        AML_OBJECT_NODE_HANDLE NameOpNode, OPTIONAL
   OUT       AML_DATA_NODE_HANDLE    *NewRdNode  OPTIONAL
@@ -1159,7 +1266,8 @@ AmlCodeGenRdInterrupt (
   EFI_STATUS  Status;
 
   AML_DATA_NODE                           *RdNode;
-  EFI_ACPI_EXTENDED_INTERRUPT_DESCRIPTOR  RdInterrupt;
+  EFI_ACPI_EXTENDED_INTERRUPT_DESCRIPTOR  *RdInterrupt;
+  UINT16                                  RdInterruptSize;
   UINT32                                  *FirstInterrupt;
 
   if ((IrqList == NULL) ||
@@ -1170,32 +1278,40 @@ AmlCodeGenRdInterrupt (
     return EFI_INVALID_PARAMETER;
   }
 
+  // EFI_ACPI_EXTENDED_INTERRUPT_DESCRIPTOR already includes the first interrupt
+  RdInterruptSize = sizeof (EFI_ACPI_EXTENDED_INTERRUPT_DESCRIPTOR) + (IrqCount - 1) * sizeof (UINT32);
+  RdInterrupt     = (EFI_ACPI_EXTENDED_INTERRUPT_DESCRIPTOR *)AllocateZeroPool (RdInterruptSize);
+  if (RdInterrupt == NULL) {
+    ASSERT_EFI_ERROR (EFI_OUT_OF_RESOURCES);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
   // Header
-  RdInterrupt.Header.Header.Bits.Name =
+  RdInterrupt->Header.Header.Bits.Name =
     ACPI_LARGE_EXTENDED_IRQ_DESCRIPTOR_NAME;
-  RdInterrupt.Header.Header.Bits.Type = ACPI_LARGE_ITEM_FLAG;
-  RdInterrupt.Header.Length           = sizeof (EFI_ACPI_EXTENDED_INTERRUPT_DESCRIPTOR) -
-                                        sizeof (ACPI_LARGE_RESOURCE_HEADER);
+  RdInterrupt->Header.Header.Bits.Type = ACPI_LARGE_ITEM_FLAG;
+  RdInterrupt->Header.Length           = RdInterruptSize - sizeof (ACPI_LARGE_RESOURCE_HEADER);
 
   // Body
-  RdInterrupt.InterruptVectorFlags = (ResourceConsumer ? BIT0 : 0) |
-                                     (EdgeTriggered ? BIT1 : 0)    |
-                                     (ActiveLow ? BIT2 : 0)        |
-                                     (Shared ? BIT3 : 0);
-  RdInterrupt.InterruptTableLength = IrqCount;
+  RdInterrupt->InterruptVectorFlags = (ResourceConsumer ? BIT0 : 0) |
+                                      (EdgeTriggered ? BIT1 : 0)    |
+                                      (ActiveLow ? BIT2 : 0)        |
+                                      (Shared ? BIT3 : 0);
+  RdInterrupt->InterruptTableLength = IrqCount;
 
   // Get the address of the first interrupt field.
-  FirstInterrupt = RdInterrupt.InterruptNumber;
+  FirstInterrupt = RdInterrupt->InterruptNumber;
 
   // Copy the list of interrupts.
   CopyMem (FirstInterrupt, IrqList, (sizeof (UINT32) * IrqCount));
 
   Status = AmlCreateDataNode (
              EAmlNodeDataTypeResourceData,
-             (UINT8 *)&RdInterrupt,
-             sizeof (EFI_ACPI_EXTENDED_INTERRUPT_DESCRIPTOR),
+             (UINT8 *)RdInterrupt,
+             RdInterruptSize,
              &RdNode
              );
+  FreePool (RdInterrupt);
   if (EFI_ERROR (Status)) {
     ASSERT (0);
     return Status;
@@ -1257,7 +1373,10 @@ AmlCodeGenRdRegister (
   AML_DATA_NODE                         *RdNode;
   EFI_ACPI_GENERIC_REGISTER_DESCRIPTOR  RdRegister;
 
-  if ((AccessSize > EFI_ACPI_6_4_QWORD)  ||
+  // Cf. ACPI 6.4, s14.7 Referencing the PCC address space
+  // The AccessSize represents the Subspace Id for the PCC address space.
+  if (((AddressSpace != EFI_ACPI_6_4_PLATFORM_COMMUNICATION_CHANNEL) &&
+       (AccessSize > EFI_ACPI_6_4_QWORD)) ||
       ((NameOpNode == NULL) && (NewRdNode == NULL)))
   {
     ASSERT (0);
@@ -1290,6 +1409,89 @@ AmlCodeGenRdRegister (
   }
 
   return LinkRdNode (RdNode, NameOpNode, NewRdNode);
+}
+
+/** Code generation for the "IO ()" ASL function.
+
+  The Resource Data effectively created is a IO Resource
+  Data. Cf ACPI 6.5:
+   - s19.6.65 IO (IO Resource Descriptor Macro)
+   - s6.4.2.5 I/O Port Descriptor
+
+  The created resource data node can be:
+   - appended to the list of resource data elements of the NameOpNode.
+     In such case NameOpNode must be defined by a the "Name ()" ASL statement
+     and initially contain a "ResourceTemplate ()".
+   - returned through the NewRdNode parameter.
+
+  @param [in]  IsDecoder16          Decoder parameter.
+                                    TRUE if 16-bit decoder.
+                                    FALSE if 10-bit decoder.
+  @param [in]  AddressMinimum       Minimum address.
+  @param [in]  AddressMaximum       Maximum address.
+  @param [in]  Alignment            Alignment.
+  @param [in]  RangeLength          Range length.
+  @param [in]  NameOpNode           NameOp object node defining a named object.
+                                    If provided, append the new resource data
+                                    node to the list of resource data elements
+                                    of this node.
+  @param [out] NewRdNode            If provided and success,
+                                    contain the created node.
+
+  @retval EFI_SUCCESS               The function completed successfully.
+  @retval EFI_INVALID_PARAMETER     Invalid parameter.
+**/
+EFI_STATUS
+EFIAPI
+AmlCodeGenRdIo (
+  IN  BOOLEAN IsDecoder16,
+  IN  UINT16 AddressMinimum,
+  IN  UINT16 AddressMaximum,
+  IN  UINT8 Alignment,
+  IN  UINT8 RangeLength,
+  IN  AML_OBJECT_NODE_HANDLE NameOpNode, OPTIONAL
+  OUT AML_DATA_NODE_HANDLE  *NewRdNode  OPTIONAL
+  )
+{
+  EFI_STATUS                   Status;
+  EFI_ACPI_IO_PORT_DESCRIPTOR  IoDesc;
+  AML_DATA_NODE                *IoNode;
+
+  if (AddressMinimum > AddressMaximum) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  if (Alignment != 0) {
+    /// check the alignment
+    if ((AddressMinimum % Alignment) != 0) {
+      return EFI_INVALID_PARAMETER;
+    }
+
+    if ((AddressMaximum % Alignment) != 0) {
+      return EFI_INVALID_PARAMETER;
+    }
+  }
+
+  IoDesc.Header.Byte = ACPI_IO_PORT_DESCRIPTOR;
+  IoDesc.Information = IsDecoder16 ? BIT0 : 0;
+
+  IoDesc.BaseAddressMin = AddressMinimum;
+  IoDesc.BaseAddressMax = AddressMaximum;
+  IoDesc.Alignment      = Alignment;
+  IoDesc.Length         = RangeLength;
+
+  Status = AmlCreateDataNode (
+             EAmlNodeDataTypeResourceData,
+             (UINT8 *)&IoDesc,
+             sizeof (IoDesc),
+             &IoNode
+             );
+  if (EFI_ERROR (Status)) {
+    ASSERT (0);
+    return Status;
+  }
+
+  return LinkRdNode (IoNode, NameOpNode, NewRdNode);
 }
 
 /** Code generation for the EndTag resource data.
@@ -1407,78 +1609,463 @@ error_handler:
   return Status;
 }
 
-// DEPRECATED APIS
-#ifndef DISABLE_NEW_DEPRECATED_INTERFACES
+/** Code generation for the IRQ Descriptor.
 
-/** DEPRECATED API
-
-  Add an Interrupt Resource Data node.
-
-  This function creates a Resource Data element corresponding to the
-  "Interrupt ()" ASL function, stores it in an AML Data Node.
-
-  It then adds it after the input CurrRdNode in the list of resource data
-  element.
-
-  The Resource Data effectively created is an Extended Interrupt Resource
-  Data. See ACPI 6.3 specification, s6.4.3.6 "Extended Interrupt Descriptor"
-  for more information about Extended Interrupt Resource Data.
-
-  The Extended Interrupt contains one single interrupt.
-
-  This function allocates memory to create a data node. It is the caller's
-  responsibility to either:
-   - attach this node to an AML tree;
-   - delete this node.
-
-  Note: The _CRS node must be defined using the ASL Name () function.
-        e.g. Name (_CRS, ResourceTemplate () {
-               ...
-             }
-
-  @ingroup UserApis
-
-  @param  [in]  NameOpCrsNode    NameOp object node defining a "_CRS" object.
-                                 Must have an OpCode=AML_NAME_OP, SubOpCode=0.
-                                 NameOp object nodes are defined in ASL
-                                 using the "Name ()" function.
-  @param  [in]  ResourceConsumer The device consumes the specified interrupt
-                                 or produces it for use by a child device.
-  @param  [in]  EdgeTriggered    The interrupt is edge triggered or
-                                 level triggered.
-  @param  [in]  ActiveLow        The interrupt is active-high or active-low.
-  @param  [in]  Shared           The interrupt can be shared with other
-                                 devices or not (Exclusive).
-  @param  [in]  IrqList          Interrupt list. Must be non-NULL.
-  @param  [in]  IrqCount         Interrupt count. Must be non-zero.
+  The Resource Data effectively created is an IRQ Resource
+  Data. Cf ACPI 6.5 specification:
+   - s6.4.2.1 "IRQ Descriptor"
+   - s19.6.66 "IRQ (Interrupt Resource Descriptor Macro)"
 
 
-  @retval EFI_SUCCESS             The function completed successfully.
-  @retval EFI_INVALID_PARAMETER   Invalid parameter.
-  @retval EFI_OUT_OF_RESOURCES    Could not allocate memory.
+  The created resource data node can be:
+   - appended to the list of resource data elements of the NameOpNode.
+     In such case NameOpNode must be defined by a the "Name ()" ASL statement
+     and initially contain a "ResourceTemplate ()".
+   - returned through the NewRdNode parameter.
+
+  @param  [in]  IsEdgeTriggered The interrupt is edge triggered or
+                                level triggered.
+  @param  [in]  IsActiveLow     The interrupt is active-high or active-low.
+  @param  [in]  IsShared        The interrupt can be shared with other
+                                devices or not (Exclusive).
+  @param  [in]  IrqList         List of IRQ numbers. Must be non-NULL.
+  @param  [in]  IrqCount        Number of IRQs in IrqList. Must be > 0 and <= 16.
+  @param  [in]  NameOpNode      NameOp object node defining a named object.
+                                If provided, append the new resource data node
+                                to the list of resource data elements of this node.
+  @param  [out] NewRdNode       If provided and success, contain the created node.
+
+  @retval EFI_SUCCESS           The function completed successfully.
+  @retval EFI_INVALID_PARAMETER Invalid parameter.
+  @retval various               Other errors as indicated.
 **/
 EFI_STATUS
 EFIAPI
-AmlCodeGenCrsAddRdInterrupt (
-  IN  AML_OBJECT_NODE_HANDLE  NameOpCrsNode,
-  IN  BOOLEAN                 ResourceConsumer,
-  IN  BOOLEAN                 EdgeTriggered,
-  IN  BOOLEAN                 ActiveLow,
-  IN  BOOLEAN                 Shared,
-  IN  UINT32                  *IrqList,
-  IN  UINT8                   IrqCount
+AmlCodeGenRdIrq (
+  IN  BOOLEAN                 IsEdgeTriggered,
+  IN  BOOLEAN                 IsActiveLow,
+  IN  BOOLEAN                 IsShared,
+  IN  UINT8                   *IrqList,
+  IN  UINT8                   IrqCount,
+  IN  AML_OBJECT_NODE_HANDLE  NameOpNode  OPTIONAL,
+  OUT AML_DATA_NODE_HANDLE    *NewRdNode  OPTIONAL
   )
 {
-  return AmlCodeGenRdInterrupt (
-           ResourceConsumer,
-           EdgeTriggered,
-           ActiveLow,
-           Shared,
-           IrqList,
-           IrqCount,
-           NameOpCrsNode,
-           NULL
-           );
+  AML_DATA_NODE            *RdNode;
+  EFI_ACPI_IRQ_DESCRIPTOR  IrqDesc;
+  EFI_STATUS               Status;
+  UINT8                    Index;
+  UINT16                   Mask;
+
+  if ((NameOpNode == NULL) && (NewRdNode == NULL)) {
+    ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+    return EFI_INVALID_PARAMETER;
+  }
+
+ #if defined (MDE_CPU_ARM) || defined (MDE_CPU_AARCH64)
+  if ((IsEdgeTriggered && !IsActiveLow) ||
+      (!IsEdgeTriggered && IsActiveLow))
+  {
+    ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+    return EFI_INVALID_PARAMETER;
+  }
+
+ #endif
+
+  if ((IrqList == NULL) || (IrqCount == 0) || (IrqCount > 16)) {
+    ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Mask = 0;
+  for (Index = 0; Index < IrqCount; Index++) {
+    if (IrqList[Index] > 16) {
+      ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+      return EFI_INVALID_PARAMETER;
+    }
+
+    if ((Mask & (1 << IrqList[Index])) != 0) {
+      ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+      return EFI_INVALID_PARAMETER;
+    }
+
+    Mask |= (1 << IrqList[Index]);
+  }
+
+  if (Mask == 0) {
+    ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  IrqDesc.Header.Bits.Type   = ACPI_SMALL_ITEM_FLAG;
+  IrqDesc.Header.Bits.Name   = ACPI_SMALL_IRQ_DESCRIPTOR_NAME;
+  IrqDesc.Header.Bits.Length = sizeof (EFI_ACPI_IRQ_DESCRIPTOR) -
+                               sizeof (ACPI_SMALL_RESOURCE_HEADER);
+  IrqDesc.Mask        = Mask;
+  IrqDesc.Information = (IsEdgeTriggered ? BIT0 : 0) |
+                        (IsActiveLow ? BIT3 : 0)    |
+                        (IsShared ? BIT4 : 0);
+
+  Status = AmlCreateDataNode (
+             EAmlNodeDataTypeResourceData,
+             (UINT8 *)&IrqDesc,
+             sizeof (EFI_ACPI_IRQ_DESCRIPTOR),
+             &RdNode
+             );
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    return Status;
+  }
+
+  return LinkRdNode (RdNode, NameOpNode, NewRdNode);
 }
 
-#endif // DISABLE_NEW_DEPRECATED_INTERFACES
+/** Code generation for the UART Serial Bus Connection Resource Descriptor.
+
+  The Resource Data effectively created is a UART Serial Bus Connection
+  Resource Descriptor Resource Data.
+  Cf ACPI 6.5:
+   - s19.6.143 UARTSerialBusV2
+     (UART Serial Bus Connection Resource Descriptor Version 2 Macro)
+   - s6.4.3.8.2.3 UART Serial Bus Connection Resource Descriptor
+
+  The created resource data node can be:
+   - appended to the list of resource data elements of the NameOpNode.
+     In such case NameOpNode must be defined by a the "Name ()" ASL statement
+     and initially contain a "ResourceTemplate ()".
+   - returned through the NewRdNode parameter.
+
+  @param [in] IsResourceConsumer          ResourceUsage parameter.
+  @param [in] IsSlaveMode                 Indicates whether the uart operates in slave mode.
+  @param [in] IsBigEndian                 Indicates whether the bit transfer is big-endian.
+  @param [in] BitsPerByte                 Indicates the number of bits per byte.
+  @param [in] StopBits                    Specifies the stop bits format used.
+  @param [in] FlowControl                 Specifies the flow control protocol used.
+  @param [in] BaudRate                    Specifies the baud rate.
+  @param [in] RxFifo                      Number of bytes in the receiver FIFO.
+  @param [in] TxFifo                      Number of bytes in the transmitter FIFO.
+  @param [in] Parity                      Specifies the parity format used.
+  @param [in] SerialLinesEnabled          Specifies which serial lines are enabled.
+  @param [in] VendorDefinedData           VendorDefinedData parameter.
+  @param [in] VendorDefinedDataLength     VendorDefinedDataLength parameter.
+  @param [in] ResourceSource              Name of source resource used.
+  @param [in] ResourceSourceLength        Resource Source Length.
+  @param [in] NameOpNode                  NameOpNode object node defining a named object.
+                                          If provided, append the new resource data
+                                          node to the list of resource data elements
+                                          of this node.
+  @param [out] NewRdNode                  If provided and success,
+                                          contain the created node.
+
+  @retval EFI_SUCCESS           The function completed successfully.
+  @retval EFI_INVALID_PARAMETER Invalid parameter.
+  @retval EFI_OUT_OF_RESOURCES  Could not allocate memory.
+  @retval various               Other errors as indicated.
+
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+AmlCodeGenRdUartSerialBus (
+  IN  BOOLEAN                 IsResourceConsumer,
+  IN  BOOLEAN                 IsSlaveMode,
+  IN  BOOLEAN                 IsBigEndian,
+  IN  UINT8                   BitsPerByte,
+  IN  UINT8                   StopBits,
+  IN  UINT8                   FlowControl,
+  IN  UINT32                  BaudRate,
+  IN  UINT16                  RxFifo,
+  IN  UINT16                  TxFifo,
+  IN  UINT8                   Parity,
+  IN  UINT8                   SerialLinesEnabled,
+  IN  UINT8                   *VendorDefinedData OPTIONAL,
+  IN  UINT16                  VendorDefinedDataLength,
+  IN  CHAR8                   *ResourceSource,
+  IN  UINT16                  ResourceSourceLength,
+  IN  AML_OBJECT_NODE_HANDLE  NameOpNode OPTIONAL,
+  OUT AML_DATA_NODE_HANDLE    *NewRdNode OPTIONAL
+  )
+{
+  AML_DATA_NODE  *RdNode;
+  EFI_STATUS     Status;
+  UINT16         UartDescBuffLength;
+  UINT8          *UartDescBuff;
+  UINT8          BitsPerByteMask;
+
+  EFI_ACPI_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR  UartDesc;
+
+  if ((NameOpNode == NULL) && (NewRdNode == NULL)) {
+    ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  if (((VendorDefinedData == NULL) && (VendorDefinedDataLength > 0)) ||
+      ((VendorDefinedData != NULL) && (VendorDefinedDataLength == 0)))
+  {
+    ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  if ((ResourceSource == NULL) || (ResourceSourceLength <= 0)) {
+    ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  if (StopBits > EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_TSF_STOP_BIT_2) {
+    ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  if (FlowControl > EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_TSF_FC_XON_XOFF) {
+    ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  if (Parity > EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_PARITY_SPACE) {
+    ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  switch (BitsPerByte) {
+    case 5:
+      BitsPerByteMask = EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_TSF_5_BITS_PER_BYTE;
+      break;
+    case 6:
+      BitsPerByteMask = EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_TSF_6_BITS_PER_BYTE;
+      break;
+    case 7:
+      BitsPerByteMask = EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_TSF_7_BITS_PER_BYTE;
+      break;
+    case 8:
+      BitsPerByteMask = EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_TSF_8_BITS_PER_BYTE;
+      break;
+    case 9:
+      BitsPerByteMask = EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_TSF_9_BITS_PER_BYTE;
+      break;
+    default:
+      ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+      return EFI_INVALID_PARAMETER;
+  }
+
+  /// as per spec last two bits are reserved and must be 0.
+  if ((SerialLinesEnabled &
+       ~(EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_LIN_RTS |
+         EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_LIN_CTS |
+         EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_LIN_DTR |
+         EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_LIN_DSR |
+         EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_LIN_RI |
+         EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_LIN_DTD)) != 0)
+  {
+    ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  UartDesc.Header.Header.Bits.Type = ACPI_LARGE_ITEM_FLAG;
+  UartDesc.Header.Header.Bits.Name = ACPI_LARGE_GENERIC_SERIAL_BUS_CONNECTION_DESCRIPTOR_NAME;
+  UartDesc.RevisionId              = EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_REVISION_ID;
+  UartDesc.ResourceSourceIndex     = 0;
+  UartDesc.SerialBusType           = EFI_ACPI_SERIAL_BUS_RESOURCE_TYPE_UART;
+  UartDesc.GeneralFlags            = (IsResourceConsumer ? BIT1 : 0) |
+                                     (IsSlaveMode ? BIT0 : 0);
+  UartDesc.TypeSpecificFlags = (IsBigEndian ? BIT7 : 0) |
+                               (BitsPerByteMask << 4) |
+                               (StopBits << 2)        |
+                               (FlowControl);
+  UartDesc.TypeSpecificRevisionId = EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_REVISION_ID;
+  /// TypeDataLength is the length of the data following the TypeDataLength,
+  /// up to the Additional vendor supplied data (not included).
+  UartDesc.TypeDataLength = sizeof (UartDesc.DefaultBaudRate) +
+                            sizeof (UartDesc.RxFIFO) +
+                            sizeof (UartDesc.TxFIFO) +
+                            sizeof (UartDesc.Parity) +
+                            sizeof (UartDesc.SerialLinesEnabled) +
+                            VendorDefinedDataLength;
+  UartDesc.DefaultBaudRate    = BaudRate;
+  UartDesc.RxFIFO             = RxFifo;
+  UartDesc.TxFIFO             = TxFifo;
+  UartDesc.Parity             = Parity;
+  UartDesc.SerialLinesEnabled = SerialLinesEnabled;
+
+  UartDescBuffLength = sizeof (EFI_ACPI_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR) +
+                       VendorDefinedDataLength +
+                       ResourceSourceLength;
+
+  UartDesc.Header.Length = UartDescBuffLength - sizeof (ACPI_LARGE_RESOURCE_HEADER);
+
+  UartDescBuff = AllocateZeroPool (UartDescBuffLength);
+  if (UartDescBuff == NULL) {
+    ASSERT_EFI_ERROR (EFI_OUT_OF_RESOURCES);
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  CopyMem (
+    UartDescBuff,
+    &UartDesc,
+    sizeof (EFI_ACPI_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR)
+    );
+
+  if (VendorDefinedData != NULL) {
+    CopyMem (
+      UartDescBuff + sizeof (EFI_ACPI_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR),
+      VendorDefinedData,
+      VendorDefinedDataLength
+      );
+  }
+
+  CopyMem (
+    UartDescBuff +
+    sizeof (EFI_ACPI_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR) +
+    VendorDefinedDataLength,
+    ResourceSource,
+    ResourceSourceLength
+    );
+
+  Status = AmlCreateDataNode (
+             EAmlNodeDataTypeResourceData,
+             UartDescBuff,
+             UartDescBuffLength,
+             &RdNode
+             );
+  FreePool (UartDescBuff);
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    return Status;
+  }
+
+  return LinkRdNode (RdNode, NameOpNode, NewRdNode);
+}
+
+/** Code generation for the UARTSerialBusV2() ASL macro.
+
+  The Resource Data effectively created is a UART Serial Bus Connection
+  Resource Descriptor Resource Data.
+  Cf ACPI 6.5:
+   - s19.6.143 UARTSerialBusV2
+     (UART Serial Bus Connection Resource Descriptor Version 2 Macro)
+   - s6.4.3.8.2.3 UART Serial Bus Connection Resource Descriptor
+
+  The created resource data node can be:
+   - appended to the list of resource data elements of the NameOpNode.
+     In such case NameOpNode must be defined by a the "Name ()" ASL statement
+     and initially contain a "ResourceTemplate ()".
+   - returned through the NewRdNode parameter.
+
+  @param [in]  InitialBaudRate           Initial baud rate.
+  @param [in]  BitsPerByte               Number of bits per byte.
+                                         Optional, default is 8.
+  @param [in]  StopBits                  Number of stop bits.
+                                         Optional, default is 1.
+  @param [in]  LinesInUse                Number of lines in use.
+  @param [in]  IsBigEndian               Indicates whether the bit transfer is big-endian.
+                                         Optional, default is FALSE (little-endian).
+  @param [in]  Parity                    Parity format used.
+                                          Optional, default is no parity.
+  @param [in]  FlowControl               Flow control protocol used.
+                                          Optional, default is no flow control.
+  @param [in]  ReceiveBufferSize         Size of the receive buffer.
+  @param [in]  TransmitBufferSize        Size of the transmit buffer.
+  @param [in]  ResourceSource            Name of source resource used.
+  @param [in]  ResourceSourceLength      Length of the Resource Source.
+  @param [in]  ResourceSourceIndex       Resource Source index.
+                                         Optional, default is 0.
+  @param [in]  ResourceUsage             Resource usage, TRUE for consumer,
+                                         FALSE for producer.
+                                         Optional, default is TRUE (consumer).
+  @param [in]  IsShared                  Indicates whether the resource is shared.
+                                         Optional, default is FALSE (exclusive).
+  @param [in]  VendorDefinedData         Vendor defined data.
+                                         Optional, can be NULL.
+  @param [in]  VendorDefinedDataLength   Length of the vendor defined data.
+  @param [in]  NameOpNode                NameOp object node defining a named object.
+                                         If provided, append the new resource data
+                                         node to the list of resource data elements
+                                         of this node.
+  @param [out] NewRdNode                 If provided and success,
+                                         contain the created node.
+
+  @retval EFI_SUCCESS                   The function completed successfully.
+  @retval EFI_INVALID_PARAMETER         Invalid parameter.
+  @retval various                       Various failure values of called functions.
+**/
+EFI_STATUS
+EFIAPI
+AmlCodeGenRdUartSerialBusV2 (
+  IN  UINT32                  InitialBaudRate,
+  IN  UINT8                   *BitsPerByte OPTIONAL,
+  IN  UINT8                   *StopBits OPTIONAL,
+  IN  UINT8                   LinesInUse,
+  IN  BOOLEAN                 *IsBigEndian OPTIONAL,
+  IN  UINT8                   *Parity OPTIONAL,
+  IN  UINT8                   *FlowControl OPTIONAL,
+  IN  UINT16                  ReceiveBufferSize,
+  IN  UINT16                  TransmitBufferSize,
+  IN  CHAR8                   *ResourceSource,
+  IN  UINT16                  ResourceSourceLength,
+  IN  UINT8                   *ResourceSourceIndex OPTIONAL,
+  IN  BOOLEAN                 *ResourceUsage OPTIONAL,
+  IN  BOOLEAN                 *IsShared OPTIONAL,
+  IN  UINT8                   *VendorDefinedData OPTIONAL,
+  IN  UINT16                  VendorDefinedDataLength,
+  IN  AML_OBJECT_NODE_HANDLE  NameOpNode OPTIONAL,
+  OUT AML_DATA_NODE_HANDLE    *NewRdNode OPTIONAL
+  )
+{
+  EFI_STATUS  Status;
+
+  if ((NameOpNode == NULL) && (NewRdNode == NULL)) {
+    ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  if (((VendorDefinedData == NULL) && (VendorDefinedDataLength > 0)) ||
+      ((VendorDefinedData != NULL) && (VendorDefinedDataLength == 0)))
+  {
+    ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  if ((ResourceSource == NULL) || (ResourceSourceLength <= 0)) {
+    ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  if (ResourceSourceIndex != NULL) {
+    if (*ResourceSourceIndex != 0) {
+      ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+      return EFI_INVALID_PARAMETER;
+    }
+  }
+
+  Status = AmlCodeGenRdUartSerialBus (
+             /// default is resource consumer
+             (ResourceUsage != NULL) ? *ResourceUsage : TRUE,
+             /// slave mode
+             TRUE,
+             /// default is little-endian
+             (IsBigEndian != NULL) ? *IsBigEndian : FALSE,
+             /// default is 8 bits per byte
+             (BitsPerByte != NULL) ? *BitsPerByte : 8,
+             /// default is 1 stop bit
+             (StopBits != NULL) ? *StopBits : EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_TSF_STOP_BIT_1,
+             /// default is no flow control
+             (FlowControl != NULL) ? *FlowControl : EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_TSF_FC_NONE,
+             InitialBaudRate,
+             ReceiveBufferSize,
+             TransmitBufferSize,
+             /// default is no parity
+             (Parity != NULL) ? *Parity : EFI_ACPI_5_0_SERIAL_BUS_RESOURCE_UART_DESCRIPTOR_PARITY_NONE,
+             LinesInUse,
+             VendorDefinedData,
+             VendorDefinedDataLength,
+             ResourceSource,
+             ResourceSourceLength,
+             NameOpNode,
+             NewRdNode
+             );
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    return Status;
+  }
+
+  return Status;
+}

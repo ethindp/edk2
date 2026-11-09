@@ -21,7 +21,6 @@
 [Packages]
   ArmPkg/ArmPkg.dec
   ArmVirtPkg/ArmVirtPkg.dec
-  EmbeddedPkg/EmbeddedPkg.dec
   MdeModulePkg/MdeModulePkg.dec
   MdePkg/MdePkg.dec
   OvmfPkg/OvmfPkg.dec
@@ -31,26 +30,33 @@
   gArmVirtTokenSpaceGuid.PcdTpm2SupportEnabled
 
 [LibraryClasses]
+  ArmCcaInitPeiLib
+  BaseLib
+  BaseMemoryLib
   DebugLib
   HobLib
   FdtLib
+  FdtSerialPortAddressLib
   PcdLib
   PeiServicesLib
+  QemuFwCfgSimpleParserLib
 
 [FixedPcd]
   gArmTokenSpaceGuid.PcdFvSize
-  gArmVirtTokenSpaceGuid.PcdDeviceTreeAllocationPadding
+  gArmVirtTokenSpaceGuid.PcdSerialDebugPrintErrorLevel
+  gUefiOvmfPkgTokenSpaceGuid.PcdDeviceTreeAllocationPadding
 
 [Pcd]
   gArmTokenSpaceGuid.PcdFvBaseAddress
-  gArmVirtTokenSpaceGuid.PcdDeviceTreeInitialBaseAddress
-  gEfiSecurityPkgTokenSpaceGuid.PcdTpmBaseAddress         ## SOMETIMES_PRODUCES
+  gEfiSecurityPkgTokenSpaceGuid.PcdTpmBaseAddress             ## SOMETIMES_PRODUCES
+  gUefiOvmfPkgTokenSpaceGuid.PcdDeviceTreeInitialBaseAddress
 
 [Ppis]
-  gOvmfTpmDiscoveredPpiGuid                               ## SOMETIMES_PRODUCES
-  gPeiTpmInitializationDonePpiGuid                        ## SOMETIMES_PRODUCES
+  gOvmfTpmDiscoveredPpiGuid                                   ## SOMETIMES_PRODUCES
+  gPeiTpmInitializationDonePpiGuid                            ## SOMETIMES_PRODUCES
 
 [Guids]
+  gArmMpCoreInfoGuid
   gEarlyPL011BaseAddressGuid
   gFdtHobGuid
 

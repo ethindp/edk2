@@ -3,6 +3,7 @@
 
 Copyright (c) 2006 - 2019, Intel Corporation. All rights reserved.<BR>
 (C) Copyright 2018 Hewlett Packard Enterprise Development LP<BR>
+Copyright (c) 2026, American Megatrends International LLC. All rights reserved.<BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
@@ -231,7 +232,7 @@ RegisterPciDevice (
   //
   PciIo = &(PciIoDevice->PciIo);
   Data8 = PCI_INT_LINE_UNKNOWN;
-  PciIo->Pci.Write (PciIo, EfiPciIoWidthUint8, 0x3C, 1, &Data8);
+  PciIo->Pci.Write (PciIo, EfiPciIoWidthUint8, PCI_INT_LINE_OFFSET, 1, &Data8);
 
   //
   // Process OpRom
@@ -329,7 +330,16 @@ RegisterPciDevice (
     // or loaded from device in the previous round of bus enumeration
     //
     if (HasEfiImage) {
-      ProcessOpRomImage (PciIoDevice);
+      //
+      // Try to searching native OpRom first
+      //
+      Status = ProcessOpRomImage (PciIoDevice, TRUE);
+      //
+      // If the native OpRom is not found, try to searching foreign OpRom
+      //
+      if (Status == EFI_NOT_FOUND) {
+        ProcessOpRomImage (PciIoDevice, FALSE);
+      }
     }
   }
 
@@ -772,7 +782,11 @@ StartPciDevices (
   LIST_ENTRY     *CurrentLink;
 
   RootBridge = GetRootBridgeByHandle (Controller);
-  ASSERT (RootBridge != NULL);
+  if (RootBridge == NULL ) {
+    ASSERT (RootBridge != NULL);
+    return EFI_NOT_READY;
+  }
+
   ThisHostBridge = RootBridge->PciRootBridgeIo->ParentHandle;
 
   CurrentLink = mPciDevicePool.ForwardLink;

@@ -1,7 +1,8 @@
 /** @file
   MP initialize support functions for DXE phase.
 
-  Copyright (c) 2016 - 2020, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2016 - 2024, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2024, AMD Inc. All rights reserved.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
@@ -12,8 +13,8 @@
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/DebugAgentLib.h>
 #include <Library/DxeServicesTableLib.h>
-#include <Library/VmgExitLib.h>
-#include <Register/Amd/Fam17Msr.h>
+#include <Library/CcExitLib.h>
+#include <Register/Amd/SevSnpMsr.h>
 #include <Register/Amd/Ghcb.h>
 
 #include <Protocol/Timer.h>
@@ -25,9 +26,6 @@ EFI_EVENT         mCheckAllApsEvent            = NULL;
 EFI_EVENT         mMpInitExitBootServicesEvent = NULL;
 EFI_EVENT         mLegacyBootEvent             = NULL;
 volatile BOOLEAN  mStopCheckAllApsStatus       = TRUE;
-VOID              *mReservedApLoopFunc         = NULL;
-UINTN             mReservedTopOfApStack;
-volatile UINT32   mNumberToFinish = 0;
 
 //
 // Begin wakeup buffer allocation below 0x88000
@@ -111,7 +109,7 @@ GetWakeupBuffer (
   // LegacyBios driver only reports warning when page allocation in range
   // [0x60000, 0x88000) fails.
   // This library is consumed by CpuDxe driver to produce CPU Arch protocol.
-  // LagacyBios driver depends on CPU Arch protocol which guarantees below
+  // LegacyBios driver depends on CPU Arch protocol which guarantees below
   // allocation runs earlier than LegacyBios driver.
   //
   if (ConfidentialComputingGuestHas (CCAttrAmdSevEs)) {
@@ -162,7 +160,7 @@ GetWakeupBuffer (
   @retval 0       Cannot find free memory below 4GB.
 **/
 UINTN
-GetModeTransitionBuffer (
+AllocateCodePage (
   IN UINTN  BufferSize
   )
 {
@@ -222,9 +220,9 @@ GetSevEsAPMemory (
   Msr.GhcbPhysicalAddress = AsmReadMsr64 (MSR_SEV_ES_GHCB);
   Ghcb                    = Msr.Ghcb;
 
-  VmgInit (Ghcb, &InterruptState);
-  VmgExit (Ghcb, SVM_EXIT_AP_JUMP_TABLE, 0, (UINT64)(UINTN)StartAddress);
-  VmgDone (Ghcb, InterruptState);
+  CcExitVmgInit (Ghcb, &InterruptState);
+  CcExitVmgExit (Ghcb, SVM_EXIT_AP_JUMP_TABLE, 0, (UINT64)(UINTN)StartAddress);
+  CcExitVmgDone (Ghcb, InterruptState);
 
   return (UINTN)StartAddress;
 }
@@ -315,7 +313,9 @@ GetProtectedMode16CS (
   IA32_DESCRIPTOR          GdtrDesc;
   IA32_SEGMENT_DESCRIPTOR  *GdtEntry;
   UINTN                    GdtEntryCount;
-  UINT16                   Index;
+  UINTN                    Index;
+  UINT16                   CodeSegmentValue;
+  EFI_STATUS               Status;
 
   Index = (UINT16)-1;
   AsmReadGdtr (&GdtrDesc);
@@ -331,8 +331,19 @@ GetProtectedMode16CS (
     GdtEntry++;
   }
 
-  ASSERT (Index != GdtEntryCount);
-  return Index * 8;
+  Status = SafeUintnToUint16 (Index, &CodeSegmentValue);
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    return 0;
+  }
+
+  Status = SafeUint16Mult (CodeSegmentValue, 8, &CodeSegmentValue);
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    return 0;
+  }
+
+  return CodeSegmentValue;
 }
 
 /**
@@ -348,7 +359,9 @@ GetProtectedModeCS (
   IA32_DESCRIPTOR          GdtrDesc;
   IA32_SEGMENT_DESCRIPTOR  *GdtEntry;
   UINTN                    GdtEntryCount;
-  UINT16                   Index;
+  UINTN                    Index;
+  UINT16                   CodeSegmentValue;
+  EFI_STATUS               Status;
 
   AsmReadGdtr (&GdtrDesc);
   GdtEntryCount = (GdtrDesc.Limit + 1) / sizeof (IA32_SEGMENT_DESCRIPTOR);
@@ -363,51 +376,112 @@ GetProtectedModeCS (
     GdtEntry++;
   }
 
-  ASSERT (Index != GdtEntryCount);
-  return Index * 8;
+  Status = SafeUintnToUint16 (Index, &CodeSegmentValue);
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    return 0;
+  }
+
+  Status = SafeUint16Mult (CodeSegmentValue, 8, &CodeSegmentValue);
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    return 0;
+  }
+
+  return CodeSegmentValue;
 }
 
 /**
-  Do sync on APs.
+  Allocate buffer for ApLoopCode.
 
-  @param[in, out] Buffer  Pointer to private data buffer.
+  @param[in]      Pages    Number of pages to allocate.
+  @param[in, out] Address  Pointer to the allocated buffer.
 **/
 VOID
-EFIAPI
-RelocateApLoop (
-  IN OUT VOID  *Buffer
+AllocateApLoopCodeBuffer (
+  IN UINTN                     Pages,
+  IN OUT EFI_PHYSICAL_ADDRESS  *Address
   )
 {
-  CPU_MP_DATA           *CpuMpData;
-  BOOLEAN               MwaitSupport;
-  ASM_RELOCATE_AP_LOOP  AsmRelocateApLoopFunc;
-  UINTN                 ProcessorNumber;
-  UINTN                 StackStart;
+  EFI_STATUS  Status;
 
-  MpInitLibWhoAmI (&ProcessorNumber);
-  CpuMpData    = GetCpuMpData ();
-  MwaitSupport = IsMwaitSupport ();
-  if (CpuMpData->UseSevEsAPMethod) {
-    StackStart = CpuMpData->SevEsAPResetStackStart;
+  Status = gBS->AllocatePages (
+                  AllocateMaxAddress,
+                  EfiReservedMemoryType,
+                  Pages,
+                  Address
+                  );
+  ASSERT_EFI_ERROR (Status);
+}
+
+/**
+  Remove Nx protection for the range specific by BaseAddress and Length.
+
+  @param[in] BaseAddress  BaseAddress of the range.
+  @param[in] Length       Length of the range.
+**/
+VOID
+RemoveNxProtection (
+  IN EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN UINTN                 Length
+  )
+{
+  EFI_STATUS                       Status;
+  EFI_GCD_MEMORY_SPACE_DESCRIPTOR  MemDesc;
+
+  Status = gDS->GetMemorySpaceDescriptor (BaseAddress, &MemDesc);
+  if (!EFI_ERROR (Status)) {
+    if (((MemDesc.Capabilities & EFI_MEMORY_XP) == EFI_MEMORY_XP) && ((MemDesc.Attributes & EFI_MEMORY_XP) == EFI_MEMORY_XP)) {
+      Status = gDS->SetMemorySpaceAttributes (
+                      BaseAddress,
+                      Length,
+                      MemDesc.Attributes & (~EFI_MEMORY_XP)
+                      );
+
+      if (EFI_ERROR (Status)) {
+        DEBUG ((DEBUG_ERROR, "%a - Setting Nx on 0x%p returned %r\n", __func__, BaseAddress, Status));
+        ASSERT_EFI_ERROR (Status);
+      }
+    }
   } else {
-    StackStart = mReservedTopOfApStack;
+    DEBUG ((DEBUG_ERROR, "%a - Memory Address was not found in Memory map! %lp %r\n", __func__, BaseAddress, Status));
+    ASSERT_EFI_ERROR (Status);
   }
+}
 
-  AsmRelocateApLoopFunc = (ASM_RELOCATE_AP_LOOP)(UINTN)mReservedApLoopFunc;
-  AsmRelocateApLoopFunc (
-    MwaitSupport,
-    CpuMpData->ApTargetCState,
-    CpuMpData->PmCodeSegment,
-    StackStart - ProcessorNumber * AP_SAFE_STACK_SIZE,
-    (UINTN)&mNumberToFinish,
-    CpuMpData->Pm16CodeSegment,
-    CpuMpData->SevEsAPBuffer,
-    CpuMpData->WakeupBuffer
-    );
-  //
-  // It should never reach here
-  //
-  ASSERT (FALSE);
+/**
+  Add ReadOnly protection to the range specified by BaseAddress and Length.
+
+  @param[in] BaseAddress  BaseAddress of the range.
+  @param[in] Length       Length of the range.
+**/
+VOID
+ApplyRoProtection (
+  IN EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN UINTN                 Length
+  )
+{
+  EFI_STATUS                       Status;
+  EFI_GCD_MEMORY_SPACE_DESCRIPTOR  MemDesc;
+
+  Status = gDS->GetMemorySpaceDescriptor (BaseAddress, &MemDesc);
+  if (!EFI_ERROR (Status)) {
+    if (((MemDesc.Capabilities & EFI_MEMORY_RO) == EFI_MEMORY_RO) && ((MemDesc.Attributes & EFI_MEMORY_RO) != EFI_MEMORY_RO)) {
+      Status = gDS->SetMemorySpaceAttributes (
+                      BaseAddress,
+                      Length,
+                      MemDesc.Attributes | EFI_MEMORY_RO
+                      );
+
+      if (EFI_ERROR (Status)) {
+        DEBUG ((DEBUG_ERROR, "%a - Setting Ro on 0x%p returned %r\n", __func__, BaseAddress, Status));
+        ASSERT_EFI_ERROR (Status);
+      }
+    }
+  } else {
+    DEBUG ((DEBUG_ERROR, "%a - Memory Address was not found in Memory map! %lp %r\n", __func__, BaseAddress, Status));
+    ASSERT_EFI_ERROR (Status);
+  }
 }
 
 /**
@@ -451,7 +525,7 @@ MpInitChangeApLoopCallback (
       );
   }
 
-  DEBUG ((DEBUG_INFO, "%a() done!\n", __FUNCTION__));
+  DEBUG ((DEBUG_INFO, "%a() done!\n", __func__));
 }
 
 /**
@@ -465,8 +539,6 @@ InitMpGlobalData (
   )
 {
   EFI_STATUS                       Status;
-  EFI_PHYSICAL_ADDRESS             Address;
-  UINTN                            ApSafeBufferSize;
   UINTN                            Index;
   EFI_GCD_MEMORY_SPACE_DESCRIPTOR  MemDesc;
   UINTN                            StackBase;
@@ -525,68 +597,7 @@ InitMpGlobalData (
     }
   }
 
-  //
-  // Avoid APs access invalid buffer data which allocated by BootServices,
-  // so we will allocate reserved data for AP loop code. We also need to
-  // allocate this buffer below 4GB due to APs may be transferred to 32bit
-  // protected mode on long mode DXE.
-  // Allocating it in advance since memory services are not available in
-  // Exit Boot Services callback function.
-  //
-  ApSafeBufferSize = EFI_PAGES_TO_SIZE (
-                       EFI_SIZE_TO_PAGES (
-                         CpuMpData->AddressMap.RelocateApLoopFuncSize
-                         )
-                       );
-  Address = BASE_4GB - 1;
-  Status  = gBS->AllocatePages (
-                   AllocateMaxAddress,
-                   EfiReservedMemoryType,
-                   EFI_SIZE_TO_PAGES (ApSafeBufferSize),
-                   &Address
-                   );
-  ASSERT_EFI_ERROR (Status);
-
-  mReservedApLoopFunc = (VOID *)(UINTN)Address;
-  ASSERT (mReservedApLoopFunc != NULL);
-
-  //
-  // Make sure that the buffer memory is executable if NX protection is enabled
-  // for EfiReservedMemoryType.
-  //
-  // TODO: Check EFI_MEMORY_XP bit set or not once it's available in DXE GCD
-  //       service.
-  //
-  Status = gDS->GetMemorySpaceDescriptor (Address, &MemDesc);
-  if (!EFI_ERROR (Status)) {
-    gDS->SetMemorySpaceAttributes (
-           Address,
-           ApSafeBufferSize,
-           MemDesc.Attributes & (~EFI_MEMORY_XP)
-           );
-  }
-
-  ApSafeBufferSize = EFI_PAGES_TO_SIZE (
-                       EFI_SIZE_TO_PAGES (
-                         CpuMpData->CpuCount * AP_SAFE_STACK_SIZE
-                         )
-                       );
-  Address = BASE_4GB - 1;
-  Status  = gBS->AllocatePages (
-                   AllocateMaxAddress,
-                   EfiReservedMemoryType,
-                   EFI_SIZE_TO_PAGES (ApSafeBufferSize),
-                   &Address
-                   );
-  ASSERT_EFI_ERROR (Status);
-
-  mReservedTopOfApStack = (UINTN)Address + ApSafeBufferSize;
-  ASSERT ((mReservedTopOfApStack & (UINTN)(CPU_STACK_ALIGNMENT - 1)) == 0);
-  CopyMem (
-    mReservedApLoopFunc,
-    CpuMpData->AddressMap.RelocateApLoopFuncAddress,
-    CpuMpData->AddressMap.RelocateApLoopFuncSize
-    );
+  PrepareApLoopCode (CpuMpData);
 
   Status = gBS->CreateEvent (
                   EVT_TIMER | EVT_NOTIFY_SIGNAL,
@@ -972,7 +983,7 @@ MpInitLibEnableDisableAP (
 }
 
 /**
-  This funtion will try to invoke platform specific microcode shadow logic to
+  This function will try to invoke platform specific microcode shadow logic to
   relocate microcode update patches into memory.
 
   @param[in, out] CpuMpData  The pointer to CPU MP Data structure.

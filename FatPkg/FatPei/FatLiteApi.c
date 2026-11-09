@@ -426,6 +426,8 @@ GetRecoveryCapsuleInfo (
   PEI_FILE_HANDLE       Handle;
   UINTN                 NumberRecoveryCapsules;
 
+  Handle = NULL;
+
   Status = GetNumberRecoveryCapsules (PeiServices, This, &NumberRecoveryCapsules);
 
   if (EFI_ERROR (Status)) {
@@ -459,7 +461,7 @@ GetRecoveryCapsuleInfo (
       // Find corresponding physical block device
       //
       BlockDeviceNo = PrivateData->Volume[Index].BlockDeviceNo;
-      while (PrivateData->BlockDevice[BlockDeviceNo].Logical && BlockDeviceNo < PrivateData->BlockDeviceCount) {
+      while (BlockDeviceNo < PrivateData->BlockDeviceCount && PrivateData->BlockDevice[BlockDeviceNo].Logical) {
         BlockDeviceNo = PrivateData->BlockDevice[BlockDeviceNo].ParentDevNo;
       }
 
@@ -550,6 +552,8 @@ LoadRecoveryCapsule (
   UINTN                 RecoveryCapsuleCount;
   PEI_FILE_HANDLE       Handle;
   UINTN                 NumberRecoveryCapsules;
+
+  Handle = NULL;
 
   Status = GetNumberRecoveryCapsules (PeiServices, This, &NumberRecoveryCapsules);
 

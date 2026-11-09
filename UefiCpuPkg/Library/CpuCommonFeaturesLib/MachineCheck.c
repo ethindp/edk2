@@ -1,7 +1,7 @@
 /** @file
   Machine Check features.
 
-  Copyright (c) 2017 - 2019, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2017 - 2024, Intel Corporation. All rights reserved.<BR>
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
@@ -174,7 +174,7 @@ McaInitialize (
     }
 
     if (PcdGetBool (PcdIsPowerOnReset)) {
-      for (BankIndex = 0; BankIndex < (UINTN)McgCap.Bits.Count; BankIndex++) {
+      for (BankIndex = 0; BankIndex < (UINT32)McgCap.Bits.Count; BankIndex++) {
         CPU_REGISTER_TABLE_WRITE64 (
           ProcessorNumber,
           Msr,
@@ -289,9 +289,6 @@ LmceSupport (
   }
 
   McgCap.Uint64 = AsmReadMsr64 (MSR_IA32_MCG_CAP);
-  if (ProcessorNumber == 0) {
-    DEBUG ((DEBUG_INFO, "LMCE enable = %x\n", (BOOLEAN)(McgCap.Bits.MCG_LMCE_P != 0)));
-  }
 
   return (BOOLEAN)(McgCap.Bits.MCG_LMCE_P != 0);
 }

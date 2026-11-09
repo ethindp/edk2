@@ -9,8 +9,7 @@
 
 **/
 
-#ifndef __SPI_NOR_FLASH_PROTOCOL_H__
-#define __SPI_NOR_FLASH_PROTOCOL_H__
+#pragma once
 
 #include <Protocol/SpiConfiguration.h>
 
@@ -22,6 +21,14 @@
     { 0x85, 0x78, 0x2a, 0x7d, 0x6a, 0x87, 0x44, 0x4b }}
 
 typedef struct _EFI_SPI_NOR_FLASH_PROTOCOL EFI_SPI_NOR_FLASH_PROTOCOL;
+
+#define EDKII_SPI_NOR_FLASH_PROTOCOL_EX_GUID  \
+  { 0x99def701, 0x7ff9, 0x46b5,             \
+    { 0x84, 0x52, 0x56, 0x8e, 0xfe, 0x5b, 0xa9, 0x9b }}
+
+#define EDKII_SPI_NOR_FLASH_PROTOCOL_EX_VERSION  0x0100
+
+typedef struct _EDKII_SPI_NOR_FLASH_PROTOCOL_EX EDKII_SPI_NOR_FLASH_PROTOCOL_EX;
 
 /**
   Read the 3 byte manufacture and device ID from the SPI flash.
@@ -101,7 +108,7 @@ EFI_STATUS
 /**
   Write the flash status register.
 
-  This routine must be called at or below TPL_N OTIFY.
+  This routine must be called at or below TPL_NOTIFY.
   This routine writes the flash part status register.
 
   @param[in] This           Pointer to an EFI_SPI_NOR_FLASH_PROTOCOL data
@@ -174,6 +181,34 @@ EFI_STATUS
   IN CONST EFI_SPI_NOR_FLASH_PROTOCOL  *This,
   IN UINT32                            FlashAddress,
   IN UINT32                            BlockCount
+  );
+
+/**
+  Switch the SPI NOR flash device to 4-byte address mode.
+
+  @param[in]  This    Pointer to an EDKII_SPI_NOR_FLASH_PROTOCOL_EX data structure.
+
+  @retval EFI_SUCCESS   Device is in 4-byte address mode.
+  @retval Other         Failed to switch address mode.
+**/
+typedef
+EFI_STATUS
+(EFIAPI *EDKII_SPI_NOR_FLASH_PROTOCOL_ENTER_4BYTE)(
+  IN CONST EDKII_SPI_NOR_FLASH_PROTOCOL_EX  *This
+  );
+
+/**
+  Switch the SPI NOR flash device to 3-byte address mode.
+
+  @param[in]  This    Pointer to an EDKII_SPI_NOR_FLASH_PROTOCOL_EX data structure.
+
+  @retval EFI_SUCCESS   Device is in 3-byte address mode.
+  @retval Other         Failed to switch address mode.
+**/
+typedef
+EFI_STATUS
+(EFIAPI *EDKII_SPI_NOR_FLASH_PROTOCOL_EXIT_4BYTE)(
+  IN CONST EDKII_SPI_NOR_FLASH_PROTOCOL_EX  *This
   );
 
 ///
@@ -251,6 +286,22 @@ struct _EFI_SPI_NOR_FLASH_PROTOCOL {
   EFI_SPI_NOR_FLASH_PROTOCOL_ERASE           Erase;
 };
 
-extern EFI_GUID  gEfiSpiNorFlashProtocolGuid;
+struct _EDKII_SPI_NOR_FLASH_PROTOCOL_EX {
+  ///
+  /// Version of this extended protocol.
+  ///
+  UINT16                                      Version;
 
-#endif // __SPI_NOR_FLASH_PROTOCOL_H__
+  ///
+  /// Switch to 4-byte address mode.
+  ///
+  EDKII_SPI_NOR_FLASH_PROTOCOL_ENTER_4BYTE    Enter4Byte;
+
+  ///
+  /// Switch to 3-byte address mode.
+  ///
+  EDKII_SPI_NOR_FLASH_PROTOCOL_EXIT_4BYTE     Exit4Byte;
+};
+
+extern EFI_GUID  gEfiSpiNorFlashProtocolGuid;
+extern EFI_GUID  gEdkiiSpiNorFlashProtocolExGuid;

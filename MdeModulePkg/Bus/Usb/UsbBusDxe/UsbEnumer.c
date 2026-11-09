@@ -233,6 +233,8 @@ UsbCreateDevice (
   Device->ParentIf   = ParentIf;
   Device->ParentPort = ParentPort;
   Device->Tier       = (UINT8)(ParentIf->Device->Tier + 1);
+  Device->EnumScript = 0;
+  Device->IsSSDev    = FALSE;
   return Device;
 }
 
@@ -330,7 +332,7 @@ UsbSelectSetting (
     }
   }
 
-  if (Index == IfDesc->NumOfSetting) {
+  if ((Index == IfDesc->NumOfSetting) || (Setting == NULL)) {
     return EFI_NOT_FOUND;
   }
 
@@ -393,7 +395,7 @@ UsbSelectConfig (
     }
   }
 
-  if (Index == DevDesc->Desc.NumConfigurations) {
+  if ((Index == DevDesc->Desc.NumConfigurations) || (ConfigDesc == NULL)) {
     return EFI_NOT_FOUND;
   }
 
@@ -415,6 +417,19 @@ UsbSelectConfig (
     // the endpoint toggles to zero for its endpoints.
     //
     IfDesc = ConfigDesc->Interfaces[Index];
+
+    //
+    // Protect against hang. This is added to work around faulty device like Digidesign Mbox3 mini
+    //
+    if ((IfDesc == NULL) || (IfDesc->Settings[0] ==  NULL)) {
+      //
+      // If UsbCreateDesc() bailed on an interface or endpoint desc, don't try to
+      // configure that interface here.
+      //
+      DEBUG ((DEBUG_INFO, "UsbSelectConfig: Skipping uninitialized interface %d.\n", Index));
+      continue;
+    }
+
     UsbSelectSetting (IfDesc, IfDesc->Settings[0]->Desc.AlternateSetting);
 
     //
@@ -440,7 +455,7 @@ UsbSelectConfig (
     if (EFI_ERROR (Status)) {
       DEBUG ((
         DEBUG_WARN,
-        "UsbSelectConfig: failed to connect driver %r, ignored\n",
+        "UsbSelectConfig: failed to connect driver - %r, ignored\n",
         Status
         ));
     }
@@ -673,6 +688,8 @@ UsbEnumerateNewDev (
   UINTN                Address;
   UINT8                Config;
   EFI_STATUS           Status;
+  EFI_STATUS           OriginalStatus;
+  UINT8                RetryCount;
 
   Parent  = HubIf->Device;
   Bus     = Parent->Bus;
@@ -706,6 +723,9 @@ UsbEnumerateNewDev (
     return EFI_OUT_OF_RESOURCES;
   }
 
+  RetryCount = 3;
+
+DeviceRetry:
   //
   // OK, now identify the device speed. After reset, hub
   // fully knows the actual device speed.
@@ -717,9 +737,28 @@ UsbEnumerateNewDev (
     goto ON_ERROR;
   }
 
+  //
+  // RetryCount is used to execute the different enum scripts.
+  // Current the diffrence is only for getting Configuration Descriptor.
+  // +--------------------+---+----------------------------------------------------+
+  // | UsbEnumScriptWin   | 3 | UsbGetOneConfig get the descriptor with 255 bytes  |
+  // +--------------------+---+----------------------------------------------------+
+  // | UsbEnumScriptLinux | 2 | UsbGetOneConfig get the descriptor with            |
+  // |                    |   | ConfigurationDescriptor Length.                    |
+  // +--------------------+---+----------------------------------------------------+
+  // | UsbEnumScriptRsrv  | 1 | UsbGetOneConfig get the descriptor with 8 bytes    |
+  // |                    |   | and then get the total length. (Same as Edk2 flow) |
+  // +--------------------+---+----------------------------------------------------+
+  // | UsbEnumScriptEdk2  | 0 | UsbGetOneConfig get the descriptor with 8 bytes    |
+  // |                    |   | and then get the total length.                     |
+  // +--------------------+--------------------------------------------------------+
+  //
+  Child->EnumScript = RetryCount;
+
   if (!USB_BIT_IS_SET (PortState.PortStatus, USB_PORT_STAT_CONNECTION)) {
     DEBUG ((DEBUG_ERROR, "UsbEnumerateNewDev: No device present at port %d\n", Port));
-    Status = EFI_NOT_FOUND;
+    Status     = EFI_NOT_FOUND;
+    RetryCount = 0;
     goto ON_ERROR;
   } else if (USB_BIT_IS_SET (PortState.PortStatus, USB_PORT_STAT_SUPER_SPEED)) {
     Child->Speed      = EFI_USB_SPEED_SUPER;
@@ -773,17 +812,23 @@ UsbEnumerateNewDev (
   // ADDRESS state. Address zero is reserved for root hub.
   //
   ASSERT (Bus->MaxDevices <= 256);
-  for (Address = 1; Address < Bus->MaxDevices; Address++) {
-    if (Bus->Devices[Address] == NULL) {
-      break;
+  if (Child->Address == 0) {
+    for (Address = 1; Address < Bus->MaxDevices; Address++) {
+      if (Bus->Devices[Address] == NULL) {
+        break;
+      }
     }
-  }
 
-  if (Address >= Bus->MaxDevices) {
-    DEBUG ((DEBUG_ERROR, "UsbEnumerateNewDev: address pool is full for port %d\n", Port));
+    if (Address >= Bus->MaxDevices) {
+      DEBUG ((DEBUG_ERROR, "UsbEnumerateNewDev: address pool is full for port %d\n", Port));
 
-    Status = EFI_ACCESS_DENIED;
-    goto ON_ERROR;
+      Status = EFI_ACCESS_DENIED;
+      goto ON_ERROR;
+    }
+  } else {
+    Address               = Child->Address;
+    Child->Address        = 0;
+    Bus->Devices[Address] = NULL;
   }
 
   Status                = UsbSetAddress (Child, (UINT8)Address);
@@ -823,6 +868,19 @@ UsbEnumerateNewDev (
     goto ON_ERROR;
   }
 
+  // Below code is ensuring the device can be executed with SS.
+  // Some device FW might execute with SS later but it would produce failure if the device is already enumerated with HS.
+  if (  (RetryCount > 0)
+     && (Bus->Usb2Hc != NULL)
+     && (Bus->Usb2Hc->MajorRevision >= 0x3)
+     && (Child->IsSSDev)
+     && (Child->Speed < EFI_USB_SPEED_SUPER)
+     && (Child->DevDesc != NULL)
+     && (Child->DevDesc->Desc.DeviceClass != USB_HUB_CLASS_CODE))
+  {
+    goto ON_ERROR;
+  }
+
   //
   // Select a default configuration: UEFI must set the configuration
   // before the driver can connect to the device.
@@ -859,6 +917,32 @@ UsbEnumerateNewDev (
 
 ON_ERROR:
   //
+  // Do the error handling with retry counter.
+  //
+  OriginalStatus = Status;
+  Status         = HubApi->GetPortStatus (HubIf, Port, &PortState);
+  if (EFI_ERROR (Status) || (!USB_BIT_IS_SET (PortState.PortStatus, USB_PORT_STAT_CONNECTION))) {
+    DEBUG ((DEBUG_ERROR, "Device is gone. Don't reset the port\n"));
+    Status = EFI_NOT_FOUND;
+  }
+
+  if (!EFI_ERROR (Status) && (RetryCount > 0)) {
+    RetryCount--;
+    DEBUG ((DEBUG_INFO, "Reset the port due to Error\n"));
+    if ((Child != NULL) && (Child->DevDesc != NULL)) {
+      UsbFreeDevDesc (Child->DevDesc);
+      Child->DevDesc = NULL;
+      Child->IsSSDev = FALSE;
+    }
+
+    Status = HubApi->ResetPort (HubIf, Port);
+    if (!EFI_ERROR (Status)) {
+      gBS->Stall (USB_WAIT_PORT_STABLE_STALL);
+      goto DeviceRetry;
+    }
+  }
+
+  //
   // If reach here, it means the enumeration process on a given port is interrupted due to error.
   // The s/w resources, including the assigned address(Address) and the allocated usb device data
   // structure(Bus->Devices[Address]), will NOT be freed here. These resources will be freed when
@@ -872,7 +956,7 @@ ON_ERROR:
   //
   // EDKII UHCI/EHCI doesn't get impacted as it's make sense to reserve s/w resource till it gets unplugged.
   //
-  return Status;
+  return OriginalStatus;
 }
 
 /**
@@ -900,12 +984,17 @@ UsbEnumeratePort (
   Child  = NULL;
   HubApi = HubIf->HubApi;
 
+  // Zero out PortState in case GetPortStatus does not set
+  // it and we continue on the EFI_DEVICE_ERROR path
+  PortState.PortStatus       = 0;
+  PortState.PortChangeStatus = 0;
+
   //
   // Host learns of the new device by polling the hub for port changes.
   //
   Status = HubApi->GetPortStatus (HubIf, Port, &PortState);
 
-  if (EFI_ERROR (Status)) {
+  if (EFI_ERROR (Status) && (Status != EFI_DEVICE_ERROR)) {
     DEBUG ((DEBUG_ERROR, "UsbEnumeratePort: failed to get state of port %d\n", Port));
     return Status;
   }
@@ -941,7 +1030,7 @@ UsbEnumeratePort (
       //   which probably is caused by short circuit. It has to wait system hardware
       //   to perform recovery.
       //
-      DEBUG ((DEBUG_ERROR, "UsbEnumeratePort: Critical Over Current\n", Port));
+      DEBUG ((DEBUG_ERROR, "UsbEnumeratePort: Critical Over Current (port %d)\n", Port));
       return EFI_DEVICE_ERROR;
     }
 
@@ -951,7 +1040,7 @@ UsbEnumeratePort (
     //   over current. As a result, all ports are nearly power-off, so
     //   it's necessary to detach and enumerate all ports again.
     //
-    DEBUG ((DEBUG_ERROR, "UsbEnumeratePort: 2.0 device Recovery Over Current\n", Port));
+    DEBUG ((DEBUG_ERROR, "UsbEnumeratePort: 2.0 device Recovery Over Current (port %d)\n", Port));
   }
 
   if (USB_BIT_IS_SET (PortState.PortChangeStatus, USB_PORT_STAT_C_ENABLE)) {
@@ -961,7 +1050,7 @@ UsbEnumeratePort (
     //   on 2.0 roothub does. When over-current has influence on 1.1 device, the port
     //   would be disabled, so it's also necessary to detach and enumerate again.
     //
-    DEBUG ((DEBUG_ERROR, "UsbEnumeratePort: 1.1 device Recovery Over Current\n", Port));
+    DEBUG ((DEBUG_ERROR, "UsbEnumeratePort: 1.1 device Recovery Over Current (port %d)\n", Port));
   }
 
   if (USB_BIT_IS_SET (PortState.PortChangeStatus, USB_PORT_STAT_C_CONNECTION)) {
@@ -969,7 +1058,7 @@ UsbEnumeratePort (
     // Case4:
     //   Device connected or disconnected normally.
     //
-    DEBUG ((DEBUG_INFO, "UsbEnumeratePort: Device Connect/Disconnect Normally\n", Port));
+    DEBUG ((DEBUG_INFO, "UsbEnumeratePort: Device Connect/Disconnect Normally (port %d)\n", Port));
   }
 
   //
@@ -987,7 +1076,9 @@ UsbEnumeratePort (
     // Now, new device connected, enumerate and configure the device
     //
     DEBUG ((DEBUG_INFO, "UsbEnumeratePort: new device connected at port %d\n", Port));
-    if (USB_BIT_IS_SET (PortState.PortChangeStatus, USB_PORT_STAT_C_RESET)) {
+    if (USB_BIT_IS_SET (PortState.PortChangeStatus, USB_PORT_STAT_C_RESET) &&
+        (Status != EFI_DEVICE_ERROR))
+    {
       Status = UsbEnumerateNewDev (HubIf, Port, FALSE);
     } else {
       Status = UsbEnumerateNewDev (HubIf, Port, TRUE);

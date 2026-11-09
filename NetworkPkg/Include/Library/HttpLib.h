@@ -8,8 +8,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _HTTP_LIB_H_
-#define _HTTP_LIB_H_
+#pragma once
 
 #include <Protocol/Http.h>
 
@@ -444,6 +443,9 @@ HttpGenRequestMessage (
   Translate the status code in HTTP message to EFI_HTTP_STATUS_CODE defined
   in UEFI 2.5 specification.
 
+  The official HTTP status codes can be found here:
+  https://www.iana.org/assignments/http-status-codes/http-status-codes.xhtml
+
   @param[in]  StatusCode         The status code value in HTTP message.
 
   @return                        Value defined in EFI_HTTP_STATUS_CODE .
@@ -526,5 +528,3 @@ HttpIoSetHeader (
   IN  CHAR8           *FieldName,
   IN  CHAR8           *FieldValue
   );
-
-#endif

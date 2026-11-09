@@ -2,20 +2,24 @@
 
   SEV-SNP Page Validation functions.
 
-  Copyright (c) 2021 AMD Incorporated. All rights reserved.<BR>
+  Copyright (c) 2021 - 2024, AMD Incorporated. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#include <Uefi/UefiBaseType.h>
+#include <PiPei.h>
 #include <Library/BaseLib.h>
 #include <Library/PcdLib.h>
 #include <Library/DebugLib.h>
+#include <Library/HobLib.h>
 #include <Library/MemEncryptSevLib.h>
+#include <IndustryStandard/IgvmData.h>
 
 #include "SnpPageStateChange.h"
 #include "VirtualMemory.h"
+
+STATIC UINT8  mPscBufferPage[EFI_PAGE_SIZE];
 
 typedef struct {
   UINT64    StartAddress;
@@ -44,7 +48,11 @@ DetectPreValidatedOverLap (
   OUT   SNP_PRE_VALIDATED_RANGE  *OverlapRange
   )
 {
-  UINTN  i;
+  EFI_HOB_GUID_TYPE  *Hob;
+  EFI_IGVM_DATA_HOB  *IgvmData;
+  UINT64             IgvmStart;
+  UINT64             IgvmEnd;
+  UINTN              i;
 
   //
   // Check if the specified address range exist in pre-validated array.
@@ -55,6 +63,26 @@ DetectPreValidatedOverLap (
     {
       OverlapRange->StartAddress = mPreValidatedRange[i].StartAddress;
       OverlapRange->EndAddress   = mPreValidatedRange[i].EndAddress;
+      return TRUE;
+    }
+  }
+
+  //
+  // Check if the specified address range exist in igvm data hobs ranges.
+  //
+  for (Hob = GetFirstGuidHob (&gEfiIgvmDataHobGuid);
+       Hob != NULL;
+       Hob = GetNextGuidHob (&gEfiIgvmDataHobGuid, GET_NEXT_HOB (Hob)))
+  {
+    IgvmData  = (VOID *)(Hob + 1);
+    IgvmStart = IgvmData->Address;
+    IgvmEnd   = ALIGN_VALUE (IgvmData->Address + IgvmData->Length, 4096);
+
+    if ((IgvmStart < EndAddress) &&
+        (StartAddress < IgvmEnd))
+    {
+      OverlapRange->StartAddress = IgvmStart;
+      OverlapRange->EndAddress   = IgvmEnd;
       return TRUE;
     }
   }
@@ -113,7 +141,14 @@ MemEncryptSevSnpPreValidateSystemRam (
       if (BaseAddress < OverlapRange.StartAddress) {
         NumPages = EFI_SIZE_TO_PAGES (OverlapRange.StartAddress - BaseAddress);
 
-        InternalSetPageState (BaseAddress, NumPages, SevSnpPagePrivate, TRUE);
+        InternalSetPageState (
+          BaseAddress,
+          NumPages,
+          SevSnpPagePrivate,
+          TRUE,
+          mPscBufferPage,
+          sizeof (mPscBufferPage)
+          );
       }
 
       BaseAddress = OverlapRange.EndAddress;
@@ -122,7 +157,14 @@ MemEncryptSevSnpPreValidateSystemRam (
 
     // Validate the remaining pages.
     NumPages = EFI_SIZE_TO_PAGES (EndAddress - BaseAddress);
-    InternalSetPageState (BaseAddress, NumPages, SevSnpPagePrivate, TRUE);
+    InternalSetPageState (
+      BaseAddress,
+      NumPages,
+      SevSnpPagePrivate,
+      TRUE,
+      mPscBufferPage,
+      sizeof (mPscBufferPage)
+      );
     BaseAddress = EndAddress;
   }
 }

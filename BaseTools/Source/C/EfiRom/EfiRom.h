@@ -6,8 +6,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef __EFI_ROM_H__
-#define __EFI_ROM_H__
+#pragma once
 
 #include <stdio.h>
 #include <string.h>
@@ -16,8 +15,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Common/UefiBaseTypes.h>
 #include <IndustryStandard/PeImage.h> // for PE32 structure definitions
 
-#include <IndustryStandard/pci22.h>  // for option ROM header structures
-#include <IndustryStandard/pci30.h>
+#include <IndustryStandard/Pci22.h>  // for option ROM header structures
+#include <IndustryStandard/Pci30.h>
 
 #include "Compress.h"
 #include "CommonLib.h"
@@ -108,11 +107,12 @@ typedef struct {
 // Machine Types
 //
 static STRING_LOOKUP  mMachineTypes[] = {
-  { EFI_IMAGE_MACHINE_IA32, "IA32" },
-  { EFI_IMAGE_MACHINE_X64, "X64" },
-  { EFI_IMAGE_MACHINE_EBC, "EBC" },
-  { EFI_IMAGE_MACHINE_ARMT, "ARM" },
-  { EFI_IMAGE_MACHINE_AARCH64, "AA64" },
+  { IMAGE_FILE_MACHINE_I386, "IA32" },
+  { IMAGE_FILE_MACHINE_X64, "X64" },
+  { IMAGE_FILE_MACHINE_EBC, "EBC" },
+  { IMAGE_FILE_MACHINE_ARM64, "AA64" },
+  { IMAGE_FILE_MACHINE_LOONGARCH64, "LOONGARCH64" },
+  { IMAGE_FILE_MACHINE_RISCV64, "RISCV64" },
   { 0, NULL }
 };
 
@@ -349,5 +349,3 @@ Returns:
 
 --*/
 ;
-
-#endif

@@ -8,8 +8,8 @@
 
 #include "PrintLibInternal.h"
 
-#define WARNING_STATUS_NUMBER  5
-#define ERROR_STATUS_NUMBER    33
+#define WARNING_STATUS_NUMBER  7
+#define ERROR_STATUS_NUMBER    35
 
 //
 // Safe print checks
@@ -37,6 +37,8 @@ GLOBAL_REMOVE_IF_UNREFERENCED CONST CHAR8  mWarningString[][24+1] = {
   "Warning Write Failure",        //  RETURN_WARN_WRITE_FAILURE     = 3
   "Warning Buffer Too Small",     //  RETURN_WARN_BUFFER_TOO_SMALL  = 4
   "Warning Stale Data",           //  RETURN_WARN_STALE_DATA        = 5
+  "Warning File System",          //  RETURN_WARN_FILE_SYSTEM       = 6
+  "Warning Reset Required",       //  RETURN_WARN_RESET_REQUIRED    = 7
 };
 
 //
@@ -75,7 +77,9 @@ GLOBAL_REMOVE_IF_UNREFERENCED CONST CHAR8  mErrorString[][20+1] = {
   "Reserved (30)",                //  RESERVED                      = 30 | MAX_BIT
   "End of File",                  //  RETURN_END_OF_FILE            = 31 | MAX_BIT
   "Invalid Language",             //  RETURN_INVALID_LANGUAGE       = 32 | MAX_BIT
-  "Compromised Data"              //  RETURN_COMPROMISED_DATA       = 33 | MAX_BIT
+  "Compromised Data",             //  RETURN_COMPROMISED_DATA       = 33 | MAX_BIT
+  "IP Address Conflict",          //  RETURN_IP_ADDRESS_CONFLICT    = 34 | MAX_BIT
+  "HTTP Error"                    //  RETURN_HTTP_ERROR             = 35 | MAX_BIT
 };
 
 /**
@@ -1138,7 +1142,7 @@ BasePrintLibSPrintMarker (
     }
 
     //
-    // Retrieve the ArgumentString attriubutes
+    // Retrieve the ArgumentString attributes
     //
     if ((Flags & ARGUMENT_UNICODE) != 0) {
       ArgumentMask              = 0xffff;
@@ -1225,6 +1229,13 @@ BasePrintLibSPrintMarker (
             (BytesPerArgumentCharacter > 1 && ArgumentString[1] != '\0')))
     {
       ArgumentCharacter = ((*ArgumentString & 0xff) | (((UINT8)*(ArgumentString + 1)) << 8)) & ArgumentMask;
+
+      // UCS-2 characters outside of the Latin-1 range cannot be converted to ASCII/Latin-1
+      // directly and simply truncating them may inject NUL bytes or other control characters
+      // or field delimiters into the output string inadvertently.
+      if ((BytesPerOutputCharacter < 2) && (ArgumentCharacter > MAX_UINT8)) {
+        ArgumentCharacter = (UINTN)L'?';
+      }
 
       LengthToReturn += (1 * BytesPerOutputCharacter);
       if (((Flags & COUNT_ONLY_NO_PRINT) == 0) && (Buffer != NULL)) {

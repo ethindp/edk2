@@ -71,7 +71,10 @@ InstallPreHashFvPpi (
             + HashSize;
 
   PreHashedFvPpi = AllocatePool (PpiSize);
-  ASSERT (PreHashedFvPpi != NULL);
+  if (PreHashedFvPpi == NULL) {
+    ASSERT (PreHashedFvPpi != NULL);
+    return;
+  }
 
   PreHashedFvPpi->FvBase   = (UINT32)(UINTN)FvBuffer;
   PreHashedFvPpi->FvLength = (UINT32)FvLength;
@@ -83,7 +86,11 @@ InstallPreHashFvPpi (
   CopyMem (HASH_VALUE_PTR (HashInfo), HashValue, HashSize);
 
   FvInfoPpiDescriptor = AllocatePool (sizeof (EFI_PEI_PPI_DESCRIPTOR));
-  ASSERT (FvInfoPpiDescriptor != NULL);
+  if (FvInfoPpiDescriptor == NULL) {
+    ASSERT (FvInfoPpiDescriptor != NULL);
+    FreePool (PreHashedFvPpi);
+    return;
+  }
 
   FvInfoPpiDescriptor->Guid  = &gEdkiiPeiFirmwareVolumeInfoPrehashedFvPpiGuid;
   FvInfoPpiDescriptor->Flags = EFI_PEI_PPI_DESCRIPTOR_PPI | EFI_PEI_PPI_DESCRIPTOR_TERMINATE_LIST;
@@ -114,12 +121,13 @@ VerifyHashedFv (
   IN EFI_BOOT_MODE   BootMode
   )
 {
-  UINTN                FvIndex;
-  CONST HASH_ALG_INFO  *AlgInfo;
-  UINT8                *HashValue;
-  UINT8                *FvHashValue;
-  VOID                 *FvBuffer;
-  EFI_STATUS           Status;
+  UINTN                                 FvIndex;
+  CONST HASH_ALG_INFO                   *AlgInfo;
+  UINT8                                 *HashValue;
+  UINT8                                 *FvHashValue;
+  VOID                                  *FvBuffer;
+  EDKII_PEI_FIRMWARE_VOLUME_SHADOW_PPI  *FvShadowPpi;
+  EFI_STATUS                            Status;
 
   if ((HashInfo == NULL) ||
       (HashInfo->HashSize == 0) ||
@@ -148,6 +156,16 @@ VerifyHashedFv (
   //
   HashValue = AllocateZeroPool (AlgInfo->HashSize * (FvNumber + 1));
   ASSERT (HashValue != NULL);
+
+  Status = PeiServicesLocatePpi (
+             &gEdkiiPeiFirmwareVolumeShadowPpiGuid,
+             0,
+             NULL,
+             (VOID **)&FvShadowPpi
+             );
+  if (EFI_ERROR (Status)) {
+    FvShadowPpi = NULL;
+  }
 
   //
   // Calculate hash value for each FV first.
@@ -191,8 +209,27 @@ VerifyHashedFv (
     // Copy FV to permanent memory to avoid potential TOC/TOU.
     //
     FvBuffer = AllocatePages (EFI_SIZE_TO_PAGES ((UINTN)FvInfo[FvIndex].Length));
-    ASSERT (FvBuffer != NULL);
-    CopyMem (FvBuffer, (CONST VOID *)(UINTN)FvInfo[FvIndex].Base, (UINTN)FvInfo[FvIndex].Length);
+    if (FvBuffer == NULL) {
+      ASSERT (FvBuffer != NULL);
+      Status = EFI_OUT_OF_RESOURCES;
+      goto Done;
+    }
+
+    if (FvShadowPpi != NULL) {
+      Status = FvShadowPpi->FirmwareVolumeShadow (
+                              (EFI_PHYSICAL_ADDRESS)FvInfo[FvIndex].Base,
+                              FvBuffer,
+                              (UINTN)FvInfo[FvIndex].Length
+                              );
+    }
+
+    if ((FvShadowPpi == NULL) || (EFI_ERROR (Status))) {
+      CopyMem (
+        FvBuffer,
+        (CONST VOID *)(UINTN)FvInfo[FvIndex].Base,
+        (UINTN)FvInfo[FvIndex].Length
+        );
+    }
 
     if (!AlgInfo->HashAll (FvBuffer, (UINTN)FvInfo[FvIndex].Length, FvHashValue)) {
       Status = EFI_ABORTED;
@@ -316,17 +353,38 @@ GetHashInfo (
 }
 
 /**
-  Verify and report pre-hashed FVs.
+ Verifies and reports pre-hashed Firmware Volumes (FVs).
 
-  Doing this must be at post-memory to make sure there's enough memory to hold
-  all FVs to be verified. This is necessary for mitigating TOCTOU issue.
+  This function should be called after memory initialization (post-memory phase)
+  to ensure sufficient memory is available to hold all FVs for verification.
 
-  This function will never return if the verification is failed.
+  Verifying FVs at this stage is critical to mitigate Time-of-Check to Time-of-Use (TOCTOU) vulnerabilities.
+
+  FV Verification Step:
+
+  This function relies upon an instance of gEdkiiPeiFirmwareVolumeInfoStoredHashFvPpiGuid being installed. If
+  an instance of the PPI is not found, EFI_NOT_FOUND is returned.
+
+  If the gEdkiiPeiFirmwareVolumeInfoStoredHashFvPpiGuid PPI instance does not have valid hash information for the
+  current boot mode (hash info is NULL), verification is treated as successful.
+
+  FV Reporting Step:
+
+  If FV verification is successful, the function reports the FVs to PEI and/or DXE core for further processing by:
+
+  1. Installing a FV HOB.
+  2. Installing a FV Info PPI.
+  3. Reporting a status code with the value from PcdStatusCodeFvVerificationPass to indicate that FV verification
+     passed.
+
+  If FV verification fails, the function reports a status code with the value from PcdStatusCodeFvVerificationFail
+  and returns a failure status code.
 
   @param[in] PeiServices      General purpose services available to every PEIM.
   @param[in] BootMode         Current boot mode.
 
   @retval EFI_SUCCESS         The function completed successfully.
+  @retval EFI_NOT_FOUND       No valid gEdkiiPeiFirmwareVolumeInfoStoredHashFvPpiGuid PPI instance found.
 **/
 STATIC
 EFI_STATUS

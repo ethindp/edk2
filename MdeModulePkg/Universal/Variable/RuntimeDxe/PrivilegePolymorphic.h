@@ -7,13 +7,12 @@
   vs. non-privileged driver code.
 
   Copyright (c) 2017, Red Hat, Inc.<BR>
-  Copyright (c) 2010 - 2018, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2010 - 2024, Intel Corporation. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#ifndef _PRIVILEGE_POLYMORPHIC_H_
-#define _PRIVILEGE_POLYMORPHIC_H_
+#pragma once
 
 #include <Uefi/UefiBaseType.h>
 
@@ -101,6 +100,15 @@ VariableNotifySmmReady (
   );
 
 /**
+  Revert the variable ready notification.
+  This function will be called when an error happens in variable initializing process.
+**/
+VOID
+VariableClearNotifySmmReady (
+  VOID
+  );
+
+/**
   Notify the system that the SMM variable write driver is ready.
 **/
 VOID
@@ -114,12 +122,32 @@ VariableNotifySmmWriteReady (
   for variable read and write services being available. It also registers
   a notification function for an EVT_SIGNAL_VIRTUAL_ADDRESS_CHANGE event.
 
-  @retval EFI_SUCCESS       Variable service successfully initialized.
+  @retval EFI_SUCCESS           Variable service successfully initialized.
+  @retval EFI_OUT_OF_RESOURCES  Insufficient memory to allocate variable
+                                storage or communication buffers.
+  @retval EFI_VOLUME_CORRUPTED  The non-volatile variable store is corrupted.
+  @retval Others                An error from protocol installation, SMI handler
+                                registration, or protocol notification registration.
 **/
 EFI_STATUS
 EFIAPI
 MmVariableServiceInitialize (
   VOID
+  );
+
+/**
+  This function checks if the Primary Buffer (CommBuffer) is valid.
+
+  @param Buffer The buffer start address to be checked.
+  @param Length The buffer length to be checked.
+
+  @retval TRUE  This buffer is valid.
+  @retval FALSE This buffer is not valid.
+**/
+BOOLEAN
+VariableSmmIsPrimaryBufferValid (
+  IN EFI_PHYSICAL_ADDRESS  Buffer,
+  IN UINT64                Length
   );
 
 /**
@@ -135,24 +163,18 @@ MmVariableServiceInitialize (
                 with SMRAM.
 **/
 BOOLEAN
-VariableSmmIsBufferOutsideSmmValid (
+VariableSmmIsNonPrimaryBufferValid (
   IN EFI_PHYSICAL_ADDRESS  Buffer,
   IN UINT64                Length
   );
 
 /**
-  Whether the TCG or TCG2 protocols are installed in the UEFI protocol database.
-  This information is used by the MorLock code to infer whether an existing
-  MOR variable is legitimate or not.
+  Whether the MOR variable is legitimate or not.
 
-  @retval TRUE  Either the TCG or TCG2 protocol is installed in the UEFI
-                protocol database
-  @retval FALSE Neither the TCG nor the TCG2 protocol is installed in the UEFI
-                protocol database
+  @retval TRUE  MOR Variable is legitimate.
+  @retval FALSE MOR Variable in not legitimate.
 **/
 BOOLEAN
-VariableHaveTcgProtocols (
+VariableIsMorVariableLegitimate (
   VOID
   );
-
-#endif

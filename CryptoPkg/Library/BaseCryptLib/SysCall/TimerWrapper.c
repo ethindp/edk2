@@ -9,16 +9,18 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 #include <Uefi.h>
 #include <CrtLibSupport.h>
+#include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiRuntimeServicesTableLib.h>
 
 //
 // -- Time Management Routines --
 //
 
-#define IsLeap(y)  (((y) % 4) == 0 && (((y) % 100) != 0 || ((y) % 400) == 0))
 #define SECSPERMIN   (60)
 #define SECSPERHOUR  (60 * 60)
 #define SECSPERDAY   (24 * SECSPERHOUR)
+
+long  timezone;
 
 //
 //  The arrays give the cumulative number of days up to the first of the
@@ -60,6 +62,57 @@ UINTN  CumulativeDays[2][14] = {
   }
 };
 
+/* Check the year is leap or not. */
+// BOOLEAN IsLeap(
+//  INTN timer
+//  )
+BOOLEAN
+IsLeap (
+  time_t  timer
+  )
+{
+  INT64  Remainder1;
+  INT64  Remainder2;
+  INT64  Remainder3;
+
+  DivS64x64Remainder (timer, 4, &Remainder1);
+  DivS64x64Remainder (timer, 100, &Remainder2);
+  DivS64x64Remainder (timer, 400, &Remainder3);
+
+  return (Remainder1 == 0 && (Remainder2 != 0 || Remainder3 == 0));
+}
+
+STATIC
+time_t
+CalculateTimeT (
+  EFI_TIME  *Time
+  )
+{
+  time_t  CalTime;
+  UINTN   Year;
+
+  //
+  // Years Handling
+  // UTime should now be set to 00:00:00 on Jan 1 of the current year.
+  //
+  for (Year = 1970, CalTime = 0; Year != Time->Year; Year++) {
+    CalTime = CalTime + (time_t)(CumulativeDays[IsLeap (Year)][13] * SECSPERDAY);
+  }
+
+  //
+  // Add in number of seconds for current Month, Day, Hour, Minute, Seconds, and TimeZone adjustment
+  //
+  CalTime = CalTime +
+            (time_t)((Time->TimeZone != EFI_UNSPECIFIED_TIMEZONE) ? (Time->TimeZone * 60) : 0) +
+            (time_t)(CumulativeDays[IsLeap (Time->Year)][Time->Month] * SECSPERDAY) +
+            (time_t)(((Time->Day > 0) ? Time->Day - 1 : 0) * SECSPERDAY) +
+            (time_t)(Time->Hour * SECSPERHOUR) +
+            (time_t)(Time->Minute * 60) +
+            (time_t)Time->Second;
+
+  return CalTime;
+}
+
 /* Get the system time as seconds elapsed since midnight, January 1, 1970. */
 // INTN time(
 //  INTN *timer
@@ -72,7 +125,6 @@ time (
   EFI_STATUS  Status;
   EFI_TIME    Time;
   time_t      CalTime;
-  UINTN       Year;
 
   //
   // Get the current time and date information
@@ -82,30 +134,31 @@ time (
     return 0;
   }
 
-  //
-  // Years Handling
-  // UTime should now be set to 00:00:00 on Jan 1 of the current year.
-  //
-  for (Year = 1970, CalTime = 0; Year != Time.Year; Year++) {
-    CalTime = CalTime + (time_t)(CumulativeDays[IsLeap (Year)][13] * SECSPERDAY);
-  }
-
-  //
-  // Add in number of seconds for current Month, Day, Hour, Minute, Seconds, and TimeZone adjustment
-  //
-  CalTime = CalTime +
-            (time_t)((Time.TimeZone != EFI_UNSPECIFIED_TIMEZONE) ? (Time.TimeZone * 60) : 0) +
-            (time_t)(CumulativeDays[IsLeap (Time.Year)][Time.Month] * SECSPERDAY) +
-            (time_t)(((Time.Day > 0) ? Time.Day - 1 : 0) * SECSPERDAY) +
-            (time_t)(Time.Hour * SECSPERHOUR) +
-            (time_t)(Time.Minute * 60) +
-            (time_t)Time.Second;
+  CalTime = CalculateTimeT (&Time);
 
   if (timer != NULL) {
     *timer = CalTime;
   }
 
   return CalTime;
+}
+
+time_t
+mktime (
+  struct tm  *t
+  )
+{
+  EFI_TIME  Time;
+
+  Time.Year     = (UINT16)t->tm_year;
+  Time.Month    = (UINT8)t->tm_mon;
+  Time.Day      = (UINT8)t->tm_mday;
+  Time.Hour     = (UINT8)t->tm_hour;
+  Time.Minute   = (UINT8)t->tm_min;
+  Time.Second   = (UINT8)t->tm_sec;
+  Time.TimeZone = EFI_UNSPECIFIED_TIMEZONE;
+
+  return CalculateTimeT (&Time);
 }
 
 //
@@ -117,12 +170,13 @@ gmtime (
   )
 {
   struct tm  *GmTime;
-  UINT16     DayNo;
-  UINT16     DayRemainder;
+  UINT64     DayNo;
+  UINT64     DayRemainder;
   time_t     Year;
   time_t     YearNo;
-  UINT16     TotalDays;
-  UINT16     MonthNo;
+  UINT32     TotalDays;
+  UINT32     MonthNo;
+  INT64      Remainder;
 
   if (timer == NULL) {
     return NULL;
@@ -135,18 +189,21 @@ gmtime (
 
   ZeroMem ((VOID *)GmTime, (UINTN)sizeof (struct tm));
 
-  DayNo        = (UINT16)(*timer / SECSPERDAY);
-  DayRemainder = (UINT16)(*timer % SECSPERDAY);
+  DayNo        = (UINT64)DivS64x64Remainder (*timer, SECSPERDAY, &Remainder);
+  DayRemainder = (UINT64)Remainder;
 
-  GmTime->tm_sec  = (int)(DayRemainder % SECSPERMIN);
-  GmTime->tm_min  = (int)((DayRemainder % SECSPERHOUR) / SECSPERMIN);
-  GmTime->tm_hour = (int)(DayRemainder / SECSPERHOUR);
-  GmTime->tm_wday = (int)((DayNo + 4) % 7);
+  DivS64x64Remainder (DayRemainder, SECSPERMIN, &Remainder);
+  GmTime->tm_sec = (int)Remainder;
+  DivS64x64Remainder (DayRemainder, SECSPERHOUR, &Remainder);
+  GmTime->tm_min  = (int)DivS64x64Remainder (Remainder, SECSPERMIN, NULL);
+  GmTime->tm_hour = (int)DivS64x64Remainder (DayRemainder, SECSPERHOUR, NULL);
+  DivS64x64Remainder ((DayNo + 4), 7, &Remainder);
+  GmTime->tm_wday = (int)Remainder;
 
   for (Year = 1970, YearNo = 0; DayNo > 0; Year++) {
-    TotalDays = (UINT16)(IsLeap (Year) ? 366 : 365);
+    TotalDays = (UINT32)(IsLeap (Year) ? 366 : 365);
     if (DayNo >= TotalDays) {
-      DayNo = (UINT16)(DayNo - TotalDays);
+      DayNo = (UINT64)(DayNo - TotalDays);
       YearNo++;
     } else {
       break;
@@ -158,7 +215,7 @@ gmtime (
 
   for (MonthNo = 12; MonthNo > 1; MonthNo--) {
     if (DayNo >= CumulativeDays[IsLeap (Year)][MonthNo]) {
-      DayNo = (UINT16)(DayNo - (UINT16)(CumulativeDays[IsLeap (Year)][MonthNo]));
+      DayNo = (UINT64)(DayNo - (UINT32)(CumulativeDays[IsLeap (Year)][MonthNo]));
       break;
     }
   }
@@ -171,4 +228,24 @@ gmtime (
   GmTime->tm_zone   = NULL;
 
   return GmTime;
+}
+
+unsigned int
+sleep (
+  unsigned int  seconds
+  )
+{
+  gBS->Stall (seconds * 1000 * 1000);
+  return 0;
+}
+
+int
+gettimeofday (
+  struct timeval   *tv,
+  struct timezone  *tz
+  )
+{
+  tv->tv_sec  = (long)time (NULL);
+  tv->tv_usec = 0;
+  return 0;
 }

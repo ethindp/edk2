@@ -227,7 +227,7 @@ PciIoPollMem (
   // If request is not aligned, then convert request to EfiPciIoWithXXXUint8
   //
   if (FeaturePcdGet (PcdUnalignedPciIoEnable)) {
-    if ((Offset & ((1 << (Width & 0x03)) - 1)) != 0) {
+    if (!IS_ALIGNED (Offset, 1 << (Width & 0x03))) {
       Status = PciIoMemRead (This, Width, BarIndex, Offset, 1, Result);
       if (EFI_ERROR (Status)) {
         return Status;
@@ -335,7 +335,7 @@ PciIoPollIo (
   // If request is not aligned, then convert request to EfiPciIoWithXXXUint8
   //
   if (FeaturePcdGet (PcdUnalignedPciIoEnable)) {
-    if ((Offset & ((1 << (Width & 0x03)) - 1)) != 0) {
+    if (!IS_ALIGNED (Offset, 1 << (Width & 0x03))) {
       Status = PciIoIoRead (This, Width, BarIndex, Offset, 1, Result);
       if (EFI_ERROR (Status)) {
         return Status;
@@ -443,7 +443,7 @@ PciIoMemRead (
   // If request is not aligned, then convert request to EfiPciIoWithXXXUint8
   //
   if (FeaturePcdGet (PcdUnalignedPciIoEnable)) {
-    if ((Offset & ((1 << (Width & 0x03)) - 1)) != 0) {
+    if (!IS_ALIGNED (Offset, 1 << (Width & 0x03))) {
       Count *=  (UINTN)(1 << (Width & 0x03));
       Width  = (EFI_PCI_IO_PROTOCOL_WIDTH)(Width & (~0x03));
     }
@@ -521,7 +521,7 @@ PciIoMemWrite (
   // If request is not aligned, then convert request to EfiPciIoWithXXXUint8
   //
   if (FeaturePcdGet (PcdUnalignedPciIoEnable)) {
-    if ((Offset & ((1 << (Width & 0x03)) - 1)) != 0) {
+    if (!IS_ALIGNED (Offset, 1 << (Width & 0x03))) {
       Count *=  (UINTN)(1 << (Width & 0x03));
       Width  = (EFI_PCI_IO_PROTOCOL_WIDTH)(Width & (~0x03));
     }
@@ -599,7 +599,7 @@ PciIoIoRead (
   // If request is not aligned, then convert request to EfiPciIoWithXXXUint8
   //
   if (FeaturePcdGet (PcdUnalignedPciIoEnable)) {
-    if ((Offset & ((1 << (Width & 0x03)) - 1)) != 0) {
+    if (!IS_ALIGNED (Offset, 1 << (Width & 0x03))) {
       Count *=  (UINTN)(1 << (Width & 0x03));
       Width  = (EFI_PCI_IO_PROTOCOL_WIDTH)(Width & (~0x03));
     }
@@ -677,7 +677,7 @@ PciIoIoWrite (
   // If request is not aligned, then convert request to EfiPciIoWithXXXUint8
   //
   if (FeaturePcdGet (PcdUnalignedPciIoEnable)) {
-    if ((Offset & ((1 << (Width & 0x03)) - 1)) != 0) {
+    if (!IS_ALIGNED (Offset, 1 << (Width & 0x03))) {
       Count *=  (UINTN)(1 << (Width & 0x03));
       Width  = (EFI_PCI_IO_PROTOCOL_WIDTH)(Width & (~0x03));
     }
@@ -746,7 +746,7 @@ PciIoConfigRead (
   // If request is not aligned, then convert request to EfiPciIoWithXXXUint8
   //
   if (FeaturePcdGet (PcdUnalignedPciIoEnable)) {
-    if ((Offset & ((1 << (Width & 0x03)) - 1)) != 0) {
+    if (!IS_ALIGNED (Offset, 1 << (Width & 0x03))) {
       Count *=  (UINTN)(1 << (Width & 0x03));
       Width  = (EFI_PCI_IO_PROTOCOL_WIDTH)(Width & (~0x03));
     }
@@ -815,7 +815,7 @@ PciIoConfigWrite (
   // If request is not aligned, then convert request to EfiPciIoWithXXXUint8
   //
   if (FeaturePcdGet (PcdUnalignedPciIoEnable)) {
-    if ((Offset & ((1 << (Width & 0x03)) - 1)) != 0) {
+    if (!IS_ALIGNED (Offset, 1 << (Width & 0x03))) {
       Count *=  (UINTN)(1 << (Width & 0x03));
       Width  = (EFI_PCI_IO_PROTOCOL_WIDTH)(Width & (~0x03));
     }
@@ -915,7 +915,7 @@ PciIoCopyMem (
   // If request is not aligned, then convert request to EfiPciIoWithXXXUint8
   //
   if (FeaturePcdGet (PcdUnalignedPciIoEnable)) {
-    if (((SrcOffset & ((1 << (Width & 0x03)) - 1)) != 0) || ((DestOffset & ((1 << (Width & 0x03)) - 1)) != 0)) {
+    if (!IS_ALIGNED (SrcOffset, 1 << (Width & 0x03)) || !IS_ALIGNED (DestOffset, 1 << (Width & 0x03))) {
       Count *=  (UINTN)(1 << (Width & 0x03));
       Width  = (EFI_PCI_IO_PROTOCOL_WIDTH)(Width & (~0x03));
     }
@@ -1024,12 +1024,12 @@ PciIoMap (
           return EFI_INVALID_PARAMETER;
       }
 
-      mIoMmuProtocol->SetAttribute (
-                        mIoMmuProtocol,
-                        PciIoDevice->Handle,
-                        *Mapping,
-                        IoMmuAttribute
-                        );
+      Status = mIoMmuProtocol->SetAttribute (
+                                 mIoMmuProtocol,
+                                 PciIoDevice->Handle,
+                                 *Mapping,
+                                 IoMmuAttribute
+                                 );
     }
   }
 
@@ -1407,6 +1407,7 @@ SupportPaletteSnoopAttributes (
   IN EFI_PCI_IO_PROTOCOL_ATTRIBUTE_OPERATION  Operation
   )
 {
+  EFI_STATUS     Status;
   PCI_IO_DEVICE  *Temp;
   UINT16         VGACommand;
 
@@ -1444,13 +1445,16 @@ SupportPaletteSnoopAttributes (
   // Check if they are on the same bus
   //
   if (Temp->Parent == PciIoDevice->Parent) {
-    PCI_READ_COMMAND_REGISTER (Temp, &VGACommand);
+    Status = PCI_READ_COMMAND_REGISTER (Temp, &VGACommand);
+    if (EFI_ERROR (Status)) {
+      return EFI_UNSUPPORTED;
+    }
 
     //
     // If they are on the same bus, either one can
     // be set to snoop, the other set to decode
     //
-    if ((VGACommand & EFI_PCI_COMMAND_VGA_PALETTE_SNOOP) != 0) {
+    if (!EFI_ERROR (Status) && ((VGACommand & EFI_PCI_COMMAND_VGA_PALETTE_SNOOP) != 0)) {
       //
       // VGA has set to snoop, so GFX can be only set to disable snoop
       //
@@ -1741,7 +1745,11 @@ PciIoAttributes (
     //
     // Enable relevant attributes to command register and bridge control register
     //
-    Status = PCI_ENABLE_COMMAND_REGISTER (PciIoDevice, Command);
+    Status = EFI_SUCCESS;
+    if (Command != 0) {
+      Status = PCI_ENABLE_COMMAND_REGISTER (PciIoDevice, Command);
+    }
+
     if (BridgeControl != 0) {
       Status = PCI_ENABLE_BRIDGE_CONTROL_REGISTER (PciIoDevice, BridgeControl);
     }
@@ -1751,17 +1759,22 @@ PciIoAttributes (
     //
     // Enable attributes of the upstream bridge
     //
-    Status = UpStreamBridge->PciIo.Attributes (
-                                     &(UpStreamBridge->PciIo),
-                                     EfiPciIoAttributeOperationEnable,
-                                     UpStreamAttributes,
-                                     NULL
-                                     );
+    if (UpStreamAttributes != 0) {
+      Status = UpStreamBridge->PciIo.Attributes (
+                                       &(UpStreamBridge->PciIo),
+                                       EfiPciIoAttributeOperationEnable,
+                                       UpStreamAttributes,
+                                       NULL
+                                       );
+    }
   } else {
     //
     // Disable relevant attributes to command register and bridge control register
     //
-    Status = PCI_DISABLE_COMMAND_REGISTER (PciIoDevice, Command);
+    if (Command != 0) {
+      Status = PCI_DISABLE_COMMAND_REGISTER (PciIoDevice, Command);
+    }
+
     if (BridgeControl != 0) {
       Status = PCI_DISABLE_BRIDGE_CONTROL_REGISTER (PciIoDevice, BridgeControl);
     }
@@ -1827,10 +1840,6 @@ GetMmioAddressTranslationOffset (
     Configuration++;
   }
 
-  //
-  // The resource occupied by BAR should be in the range reported by RootBridge.
-  //
-  ASSERT (FALSE);
   return (UINT64)-1;
 }
 
@@ -1969,8 +1978,27 @@ PciIoGetBarAttributes (
                                             Descriptor->AddrLen
                                             );
       if (Descriptor->AddrTranslationOffset == (UINT64)-1) {
-        FreePool (Descriptor);
-        return EFI_UNSUPPORTED;
+        if (PciIoDevice->PciBar[BarIndex].AddressFixed) {
+          //
+          // Enhanced Allocation BARs are only reported by the root bridge if
+          // the host bridge driver supports fixed resources. Otherwise, assume
+          // that there is no address translation.
+          //
+          DEBUG ((
+            DEBUG_WARN,
+            "%a: fixed BAR[%d] not reported by root bridge, assuming no translation\n",
+            __func__,
+            BarIndex
+            ));
+          Descriptor->AddrTranslationOffset = 0;
+        } else {
+          //
+          // The resource occupied by BAR should be in the range reported by RootBridge.
+          //
+          ASSERT (FALSE);
+          FreePool (Descriptor);
+          return EFI_UNSUPPORTED;
+        }
       }
     }
 

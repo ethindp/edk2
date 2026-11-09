@@ -14,7 +14,11 @@
   MODULE_TYPE    = DXE_DRIVER
   LIBRARY_CLASS  = HwInfoParserLib
 
+[Defines.RISCV64]
+  DESTRUCTOR     = RiscVExtIntcDataDestructor
+
 [Sources]
+  ArchUtility.h
   CmObjectDescUtility.c
   CmObjectDescUtility.h
   FdtHwInfoParserInclude.h
@@ -22,35 +26,70 @@
   FdtHwInfoParser.h
   FdtUtility.c
   FdtUtility.h
-  BootArch/ArmBootArchParser.c
-  BootArch/ArmBootArchParser.h
-  GenericTimer/ArmGenericTimerParser.c
-  GenericTimer/ArmGenericTimerParser.h
-  Gic/ArmGicCParser.c
-  Gic/ArmGicCParser.h
-  Gic/ArmGicDispatcher.c
-  Gic/ArmGicDispatcher.h
-  Gic/ArmGicDParser.c
-  Gic/ArmGicDParser.h
-  Gic/ArmGicItsParser.c
-  Gic/ArmGicItsParser.h
-  Gic/ArmGicMsiFrameParser.c
-  Gic/ArmGicMsiFrameParser.h
-  Gic/ArmGicRParser.c
-  Gic/ArmGicRParser.h
-  Pci/ArmPciConfigSpaceParser.c
-  Pci/ArmPciConfigSpaceParser.h
-  Serial/ArmSerialPortParser.c
-  Serial/ArmSerialPortParser.h
+  Topology/TopologyCacheParser.c
+  Topology/TopologyCacheParser.h
+  Topology/TopologyHierarchyParser.c
+  Topology/TopologyHierarchyParser.h
+  Topology/TopologyParser.c
+  Topology/TopologyParser.h
+  Topology/TopologyUtility.c
+  Topology/TopologyUtility.h
+  Pci/PciConfigSpaceParser.c
+  Pci/PciConfigSpaceParser.h
+  Serial/SerialPortParser.c
+  Serial/SerialPortParser.h
+
+[Sources.AARCH64]
+  Arm/ArmArchUtility.c
+  Arm/ArmFdtInterrupt.c
+  Arm/ArmFdtHwInfoParser.c
+  Arm/BootArch/ArmBootArchParser.c
+  Arm/BootArch/ArmBootArchParser.h
+  Arm/GenericTimer/ArmGenericTimerParser.c
+  Arm/GenericTimer/ArmGenericTimerParser.h
+  Arm/Gic/ArmGicCParser.c
+  Arm/Gic/ArmGicCParser.h
+  Arm/Gic/ArmGicDispatcher.c
+  Arm/Gic/ArmGicDispatcher.h
+  Arm/Gic/ArmGicDParser.c
+  Arm/Gic/ArmGicDParser.h
+  Arm/Gic/ArmGicItsParser.c
+  Arm/Gic/ArmGicItsParser.h
+  Arm/Gic/ArmGicMsiFrameParser.c
+  Arm/Gic/ArmGicMsiFrameParser.h
+  Arm/Gic/ArmGicRParser.c
+  Arm/Gic/ArmGicRParser.h
+  Arm/Gic/ArmTraceExtensionsParser.c
+  Arm/Gic/ArmTraceExtensionsParser.h
+  Arm/Iort/ArmIortParser.c
+  Arm/Iort/RootComplexParser.c
+  Arm/Iort/SmmuV3Parser.c
+
+[Sources.RISCV64]
+  ArchUtility.c
+  RiscV/RiscVFdtInterrupt.c
+  RiscV/RiscVFdtHwInfoParser.c
+  RiscV/Intc/RiscVIntcParser.c
+  RiscV/Intc/RiscVIntcParser.h
+  RiscV/Intc/RiscVExtIntcData.c
+  RiscV/HartInfo/RiscVTimerDispatcher.c
+
+[Packages.ARM, Packages.AARCH64]
+  ArmPkg/ArmPkg.dec
 
 [Packages]
-  ArmPkg/ArmPkg.dec
   DynamicTablesPkg/DynamicTablesPkg.dec
   EmbeddedPkg/EmbeddedPkg.dec
   MdeModulePkg/MdeModulePkg.dec
   MdePkg/MdePkg.dec
 
 [LibraryClasses]
+  BaseLib
+  BaseMemoryLib
   DebugLib
   FdtLib
   MemoryAllocationLib
+
+[LibraryClasses.AARCH64]
+  ArmLib
+  ArmSmcccSocIdLib

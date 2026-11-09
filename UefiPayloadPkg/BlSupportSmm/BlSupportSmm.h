@@ -6,8 +6,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef BL_SUPPORT_SMM_H_
-#define BL_SUPPORT_SMM_H_
+#pragma once
 
 #include <PiDxe.h>
 #include <Library/BaseLib.h>
@@ -22,7 +21,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Library/PciLib.h>
 #include <Protocol/SmmSwDispatch2.h>
 #include <Protocol/SmmAccess2.h>
-#include <protocol/MpService.h>
+#include <Protocol/MpService.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Register/Intel/ArchitecturalMsr.h>
 #include <Guid/SmmRegisterInfoGuid.h>
@@ -37,5 +36,3 @@ typedef struct {
   UINT32    Base;
   UINT32    Mask;
 } SMRR_BASE_MASK;
-
-#endif

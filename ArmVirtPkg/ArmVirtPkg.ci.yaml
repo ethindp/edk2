@@ -24,7 +24,6 @@
         ],
         ## Both file path and directory path are accepted.
         "IgnoreFiles": [
-            "Library/PlatformBootManagerLib/PlatformBm.c"
         ]
     },
     ## options defined .pytool/Plugin/CompilerPlugin
@@ -45,6 +44,7 @@
     ## options defined .pytool/Plugin/DependencyCheck
     "DependencyCheck": {
         "AcceptableDependencies": [
+            "CryptoPkg/CryptoPkg.dec",
             "MdePkg/MdePkg.dec",
             "MdeModulePkg/MdeModulePkg.dec",
             "ArmVirtPkg/ArmVirtPkg.dec",
@@ -56,7 +56,9 @@
             "ArmPlatformPkg/ArmPlatformPkg.dec",
             "PcAtChipsetPkg/PcAtChipsetPkg.dec",
             "SecurityPkg/SecurityPkg.dec",
-            "ShellPkg/ShellPkg.dec"  #Is this ok?
+            "UefiCpuPkg/UefiCpuPkg.dec",
+            "ShellPkg/ShellPkg.dec",  #Is this ok?
+            "CryptoPkg/CryptoPkg.dec"
         ],
         # For host based unit tests
         "AcceptableDependencies-HOST_APPLICATION":[
@@ -96,7 +98,7 @@
 
     ## options defined .pytool/Plugin/SpellCheck
     "SpellCheck": {
-        "AuditOnly": False,           # Fails right now with over 270 errors
+        "AuditOnly": True,
         "IgnoreFiles": [],           # use gitignore syntax to ignore errors in matching files
         "ExtendWords": [
             "acpiview",
@@ -125,5 +127,19 @@
         ],           # words to extend to the dictionary for this package
         "IgnoreStandardPaths": [],   # Standard Plugin defined paths that should be ignore
         "AdditionalIncludePaths": [] # Additional paths to spell check (wildcards supported)
+    },
+
+    "DebugMacroCheck": {
+      "StringSubstitutions": {
+          # DynamicTablesPkg/Include/ConfigurationManagerObject.h
+          # Reason: Expansion of macro that contains a print specifier.
+          "FMT_CM_OBJECT_ID": "0x%lx"
+      }
+    },
+
+    ## options defined .pytool/Plugin/MarkdownLintCheck
+    "MarkdownLintCheck": {
+        "AuditOnly": True,           # If True, log all errors and then mark as skipped
+        "IgnoreFiles": []            # package root relative file, folder, or glob pattern to ignore
     }
 }

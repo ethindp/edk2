@@ -1,10 +1,10 @@
 ;------------------------------------------------------------------------------ ;
-; Copyright (c) 2012 - 2018, Intel Corporation. All rights reserved.<BR>
+; Copyright (c) 2012 - 2022, Intel Corporation. All rights reserved.<BR>
 ; SPDX-License-Identifier: BSD-2-Clause-Patent
 ;
 ; Module Name:
 ;
-;   ExceptionHandlerAsm.Asm
+;   ExceptionHandlerAsm.nasm
 ;
 ; Abstract:
 ;
@@ -12,7 +12,37 @@
 ;
 ; Notes:
 ;
+; This module uses the build options SEC_PEI_NO_ABSOLUTE_RELOCS_IN_TEXT and
+; SMM_DXE_NO_ABSOLUTE_RELOCS_IN_TEXT to work around Xcode’s linker, which
+; disallows absolute references in .text. For SEC/PEI the IDT stubs are
+; emitted into .data (which Xcode accepts). In SMM/DXE, however, .data is
+; not executable, so the IDT stubs remain in .text and are initially patched
+; by GetTemplateAddressMap(). The SMM/DXE method cannot be applied to SEC/PEI
+; because .text cannot be modified in place when the module runs XIP.
+;
 ;------------------------------------------------------------------------------
+%include "Nasm.inc"
+
+;
+; Equivalent NASM structure of IA32_DESCRIPTOR
+;
+struc IA32_DESCRIPTOR
+  .Limit                         CTYPE_UINT16 1
+  .Base                          CTYPE_UINTN  1
+endstruc
+
+;
+; Equivalent NASM structure of IA32_IDT_GATE_DESCRIPTOR
+;
+struc IA32_IDT_GATE_DESCRIPTOR
+  .OffsetLow                     CTYPE_UINT16 1
+  .Selector                      CTYPE_UINT16 1
+  .Reserved_0                    CTYPE_UINT8 1
+  .GateType                      CTYPE_UINT8 1
+  .OffsetHigh                    CTYPE_UINT16 1
+  .OffsetUpper                   CTYPE_UINT32 1
+  .Reserved_1                    CTYPE_UINT32 1
+endstruc
 
 ;
 ; CommonExceptionHandler()
@@ -27,27 +57,42 @@ extern ASM_PFX(CommonExceptionHandler)
 SECTION .data
 
 DEFAULT REL
+%ifndef SEC_PEI_NO_ABSOLUTE_RELOCS_IN_TEXT
 SECTION .text
+%endif
 
 ALIGN   8
 
+; Generate 256 IDT vectors.
 AsmIdtVectorBegin:
-%rep  32
-    db      0x6a        ; push  #VectorNum
-    db      ($ - AsmIdtVectorBegin) / ((AsmIdtVectorEnd - AsmIdtVectorBegin) / 32) ; VectorNum
+%assign Vector 0
+%rep  256
+    push    strict qword %[Vector]
     push    rax
+%ifdef SMM_DXE_NO_ABSOLUTE_RELOCS_IN_TEXT
+    mov     rax, strict qword 0    ; mov     rax, ASM_PFX(CommonInterruptEntry)
+%else
     mov     rax, ASM_PFX(CommonInterruptEntry)
+%endif
     jmp     rax
+%assign Vector Vector+1
 %endrep
 AsmIdtVectorEnd:
 
 HookAfterStubHeaderBegin:
-    db      0x6a        ; push
-@VectorNum:
-    db      0          ; 0 will be fixed
+    push    strict qword 0      ; 0 will be fixed
+VectorNum:
     push    rax
+%ifdef SMM_DXE_NO_ABSOLUTE_RELOCS_IN_TEXT
+    mov     rax, strict qword 0 ;     mov     rax, HookAfterStubHeaderEnd
+JmpAbsoluteAddress:
+%else
     mov     rax, HookAfterStubHeaderEnd
+%endif
     jmp     rax
+
+SECTION .text
+
 HookAfterStubHeaderEnd:
     mov     rax, rsp
     and     sp,  0xfff0        ; make sure 16-byte aligned for exception context
@@ -257,7 +302,7 @@ DrFinish:
 ;; FX_SAVE_STATE_X64 FxSaveState;
     sub rsp, 512
     mov rdi, rsp
-    db 0xf, 0xae, 0x7 ;fxsave [rdi]
+    fxsave [rdi]
 
 ;; UEFI calling convention for x64 requires that Direction flag in EFLAGs is clear
     cld
@@ -273,9 +318,55 @@ DrFinish:
     ; and make sure RSP is 16-byte aligned
     ;
     sub     rsp, 4 * 8 + 8
-    mov     rax, ASM_PFX(CommonExceptionHandler)
-    call    rax
+    call    ASM_PFX(CommonExceptionHandler)
     add     rsp, 4 * 8 + 8
+
+    ; The follow algorithm is used for clear shadow stack token busy bit.
+    ; The comment is based on the sample shadow stack.
+    ; Shadow stack is 32 bytes aligned.
+    ; The sample shadow stack layout :
+    ; Address | Context
+    ;         +-------------------------+
+    ;  0xFB8  |   FREE                  | It is 0xFC0|0x02|(LMA & CS.L), after SAVEPREVSSP.
+    ;         +-------------------------+
+    ;  0xFC0  |  Prev SSP               |
+    ;         +-------------------------+
+    ;  0xFC8  |   RIP                   |
+    ;         +-------------------------+
+    ;  0xFD0  |   CS                    |
+    ;         +-------------------------+
+    ;  0xFD8  |  0xFD8 | BUSY           | BUSY flag cleared after CLRSSBSY
+    ;         +-------------------------+
+    ;  0xFE0  | 0xFC0|0x02|(LMA & CS.L) |
+    ;         +-------------------------+
+    ; Instructions for Intel Control Flow Enforcement Technology (CET) are supported since NASM version 2.15.01.
+    cmp     qword [ASM_PFX(mDoFarReturnFlag)], 0
+    jz      CetDone
+    mov     rax, cr4
+    and     rax, 0x800000       ; Check if CET is enabled
+    jz      CetDone
+    sub     rsp, 0x10
+    sidt    [rsp]
+    mov     rcx, qword [rsp + IA32_DESCRIPTOR.Base]; Get IDT base address
+    add     rsp, 0x10
+    mov     rax, qword [rbp + 8]; Get exception number
+    sal     rax, 0x04           ; Get IDT offset
+    add     rax, rcx            ; Get IDT gate descriptor address
+    mov     al, byte [rax + IA32_IDT_GATE_DESCRIPTOR.Reserved_0]
+    and     rax, 0x01           ; Check IST field
+    jz      CetDone
+                                ; SSP should be 0xFC0 at this point
+    mov     rax, 0x04           ; advance past cs:lip:prevssp;supervisor shadow stack token
+    incsspq rax                 ; After this SSP should be 0xFE0
+    saveprevssp                 ; now the shadow stack restore token will be created at 0xFB8
+    rdsspq  rax                 ; Read new SSP, SSP should be 0xFE8
+    sub     rax, 0x10
+    clrssbsy [rax]              ; Clear token at 0xFD8, SSP should be 0 after this
+    sub     rax, 0x20
+    rstorssp [rax]              ; Restore to token at 0xFB8, new SSP will be 0xFB8
+    mov     rax, 0x01           ; Pop off the new save token created
+    incsspq rax                 ; SSP should be 0xFC0 now
+CetDone:
 
     cli
 ;; UINT64  ExceptionData;
@@ -284,7 +375,7 @@ DrFinish:
 ;; FX_SAVE_STATE_X64 FxSaveState;
 
     mov rsi, rsp
-    db 0xf, 0xae, 0xE ; fxrstor [rsi]
+    fxrstor [rsi]
     add rsp, 512
 
 ;; UINT64  Dr0, Dr1, Dr2, Dr3, Dr6, Dr7;
@@ -371,8 +462,7 @@ DoReturn:
     push    qword [rax + 0x18]       ; save EFLAGS in new location
     mov     rax, [rax]        ; restore rax
     popfq                     ; restore EFLAGS
-    DB      0x48               ; prefix to composite "retq" with next "retf"
-    retf                      ; far return
+    retfq
 DoIret:
     iretq
 
@@ -382,11 +472,26 @@ DoIret:
 ; comments here for definition of address map
 global ASM_PFX(AsmGetTemplateAddressMap)
 ASM_PFX(AsmGetTemplateAddressMap):
-    mov     rax, AsmIdtVectorBegin
+    lea     rax, [AsmIdtVectorBegin]
     mov     qword [rcx], rax
-    mov     qword [rcx + 0x8],  (AsmIdtVectorEnd - AsmIdtVectorBegin) / 32
-    mov     rax, HookAfterStubHeaderBegin
+    mov     qword [rcx + 0x8],  (AsmIdtVectorEnd - AsmIdtVectorBegin) / 256
+    lea     rax, [HookAfterStubHeaderBegin]
     mov     qword [rcx + 0x10], rax
+
+%ifdef SMM_DXE_NO_ABSOLUTE_RELOCS_IN_TEXT
+; Fix up CommonInterruptEntry address
+    lea    rax, [ASM_PFX(CommonInterruptEntry)]
+    lea    rcx, [AsmIdtVectorBegin]
+%rep  256
+    mov    qword [rcx + (JmpAbsoluteAddress - 8 - HookAfterStubHeaderBegin)], rax
+    add    rcx, (AsmIdtVectorEnd - AsmIdtVectorBegin) / 256
+%endrep
+; Fix up HookAfterStubHeaderEnd
+    lea    rax, [HookAfterStubHeaderEnd]
+    lea    rcx, [JmpAbsoluteAddress]
+    mov    qword [rcx - 8], rax
+%endif
+
     ret
 
 ;-------------------------------------------------------------------------------------
@@ -395,6 +500,6 @@ ASM_PFX(AsmGetTemplateAddressMap):
 global ASM_PFX(AsmVectorNumFixup)
 ASM_PFX(AsmVectorNumFixup):
     mov     rax, rdx
-    mov     [rcx + (@VectorNum - HookAfterStubHeaderBegin)], al
+    mov     [rcx + (VectorNum - 4 - HookAfterStubHeaderBegin)], al
     ret
 

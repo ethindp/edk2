@@ -9,8 +9,7 @@
 
 **/
 
-#ifndef __PROCESSOR_BIND_H__
-#define __PROCESSOR_BIND_H__
+#pragma once
 
 ///
 /// Define the processor type so other code can make processor based choices
@@ -179,13 +178,54 @@ typedef INT64 INTN;
 ///
 #define ASM_GLOBAL  .globl
 
+// PE targets (i.e. building with CLANGPDB) do not support the ELF style .type directive
+  #ifdef __ELF__
+#define _ASM_TYPE(Name)  .type Name, %function
+  #else
+#define _ASM_TYPE(Name)
+  #endif // __ELF__
+
 #define GCC_ASM_EXPORT(func__)  \
-         .global  _CONCATENATE (__USER_LABEL_PREFIX__, func__)    ;\
-         .type ASM_PFX(func__), %function
+         .global  ASM_PFX(func__)    ;\
+         _ASM_TYPE(ASM_PFX(func__))
 
 #define GCC_ASM_IMPORT(func__)  \
          .extern  _CONCATENATE (__USER_LABEL_PREFIX__, func__)
 
+  #if defined (__ARM_FEATURE_BTI_DEFAULT) && __ARM_FEATURE_BTI_DEFAULT == 1
+#define AARCH64_BTI_NOTE()                                         \
+    .ifndef       .Lgnu_bti_notesize                              ;\
+    .pushsection  .note.gnu.property, "a"                         ;\
+    .set          NT_GNU_PROPERTY_TYPE_0, 0x5                     ;\
+    .set          GNU_PROPERTY_AARCH64_FEATURE_1_AND, 0xc0000000  ;\
+    .set          GNU_PROPERTY_AARCH64_FEATURE_1_BTI, 0x1         ;\
+    .align        3                                               ;\
+    .long         .Lnamesize                                      ;\
+    .long         .Lgnu_bti_notesize                              ;\
+    .long         NT_GNU_PROPERTY_TYPE_0                          ;\
+0:  .asciz        "GNU"                                           ;\
+    .set          .Lnamesize, . - 0b                              ;\
+    .align        3                                               ;\
+1:  .long         GNU_PROPERTY_AARCH64_FEATURE_1_AND              ;\
+    .long         .Lvalsize                                       ;\
+2:  .long         GNU_PROPERTY_AARCH64_FEATURE_1_BTI              ;\
+    .set          .Lvalsize, . - 2b                               ;\
+    .align        3                                               ;\
+    .set          .Lgnu_bti_notesize, . - 1b                      ;\
+    .popsection                                                   ;\
+    .endif
+
+#define AARCH64_BTI(__type)                                        \
+    AARCH64_BTI_NOTE()                                            ;\
+    bti           __type
+
+  #endif
+
+#endif
+
+#ifndef AARCH64_BTI
+#define AARCH64_BTI_NOTE()
+#define AARCH64_BTI(__type)
 #endif
 
 /**
@@ -202,6 +242,4 @@ typedef INT64 INTN;
 
 #ifndef __USER_LABEL_PREFIX__
 #define __USER_LABEL_PREFIX__
-#endif
-
 #endif

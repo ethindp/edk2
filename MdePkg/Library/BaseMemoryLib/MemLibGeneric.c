@@ -13,6 +13,41 @@
 
 #include "MemLibInternals.h"
 
+#if defined (_MSC_VER) && !defined (__GNUC__) && !defined (__clang__)
+VOID
+_ReadWriteBarrier (
+  VOID
+  );
+
+  #pragma intrinsic(_ReadWriteBarrier)
+#endif
+
+/**
+  Emit a compiler barrier that keeps the compiler from scheduling any later
+  memory access ahead of the preceding buffer clear.
+
+  It emits no instructions; it only constrains compile-time ordering, and the
+  constraint holds even when the caller is inlined under LTO.
+
+**/
+STATIC
+VOID
+InternalMemBarrier (
+  VOID
+  )
+{
+ #if defined (__GNUC__) || defined (__clang__)
+  __asm__ __volatile__ ("" : : : "memory");
+ #elif defined (_MSC_VER)
+  _ReadWriteBarrier ();
+ #else
+  //
+  // No portable compiler barrier is available for this toolchain.
+  //
+  #error "InternalMemBarrier: no compiler barrier is defined for this toolchain."
+ #endif
+}
+
 /**
   Fills a target buffer with a 16-bit value, and returns the target buffer.
 
@@ -32,7 +67,7 @@ InternalMemSetMem16 (
   )
 {
   for ( ; Length != 0; Length--) {
-    ((UINT16 *)Buffer)[Length - 1] = Value;
+    ((volatile UINT16 *)Buffer)[Length - 1] = Value;
   }
 
   return Buffer;
@@ -57,7 +92,7 @@ InternalMemSetMem32 (
   )
 {
   for ( ; Length != 0; Length--) {
-    ((UINT32 *)Buffer)[Length - 1] = Value;
+    ((volatile UINT32 *)Buffer)[Length - 1] = Value;
   }
 
   return Buffer;
@@ -82,7 +117,7 @@ InternalMemSetMem64 (
   )
 {
   for ( ; Length != 0; Length--) {
-    ((UINT64 *)Buffer)[Length - 1] = Value;
+    ((volatile UINT64 *)Buffer)[Length - 1] = Value;
   }
 
   return Buffer;
@@ -104,7 +139,14 @@ InternalMemZeroMem (
   IN      UINTN  Length
   )
 {
-  return InternalMemSetMem (Buffer, Length, 0);
+  //
+  // Zero the buffer through the worker, then emit a compiler barrier so a
+  // caller's subsequent store cannot be scheduled ahead of the clear.
+  //
+  Buffer = InternalMemSetMem (Buffer, Length, 0);
+  InternalMemBarrier ();
+
+  return Buffer;
 }
 
 /**

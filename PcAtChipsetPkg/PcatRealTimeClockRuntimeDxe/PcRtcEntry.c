@@ -16,8 +16,11 @@ EFI_HANDLE  mHandle = NULL;
 
 STATIC EFI_EVENT  mVirtualAddrChangeEvent;
 
-UINTN  mRtcIndexRegister;
-UINTN  mRtcTargetRegister;
+UINTN   mRtcIndexRegister;
+UINTN   mRtcTargetRegister;
+UINT16  mRtcDefaultYear;
+UINT16  mMinimalValidYear;
+UINT16  mMaximalValidYear;
 
 /**
   Returns the current time and date information, and the time-keeping capabilities
@@ -119,9 +122,10 @@ PcRtcEfiSetWakeupTime (
   @param[in]    Event   The Event that is being processed
   @param[in]    Context Event Context
 **/
+STATIC
 VOID
 EFIAPI
-LibRtcVirtualNotifyEvent (
+VirtualNotifyEvent (
   IN EFI_EVENT  Event,
   IN VOID       *Context
   )
@@ -133,6 +137,83 @@ LibRtcVirtualNotifyEvent (
   // mode.
   EfiConvertPointer (0x0, (VOID **)&mRtcIndexRegister);
   EfiConvertPointer (0x0, (VOID **)&mRtcTargetRegister);
+}
+
+/**
+  Callback function invoked when the VariablePolicy protocol is installed.
+
+  This function registers the RTCALARM and RTC variables with the VariablePolicy protocol
+  to set strict requirements for the variables.
+
+  @param[in]  Event    The notification event (non-NULL when called as a notification callback).
+                       NULL if called directly during initialization.
+  @param[in]  Context  The VariablePolicy protocol pointer. Non-NULL when called directly or
+                       when the protocol is available. NULL on the initial notification if
+                       the protocol is not yet installed, in which case this function returns
+                       without error.
+**/
+STATIC
+VOID
+EFIAPI
+OnVariablePolicyProtocolNotification (
+  IN  EFI_EVENT  Event,
+  IN  VOID       *Context
+  )
+{
+  EDKII_VARIABLE_POLICY_PROTOCOL  *VariablePolicy;
+  EFI_STATUS                      Status;
+
+  Status = gBS->LocateProtocol (&gEdkiiVariablePolicyProtocolGuid, NULL, (VOID **)&VariablePolicy);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_VERBOSE, "%a: - Variable Policy not yet available - %r\n", __func__, Status));
+    return;
+  }
+
+  //
+  // Register policy for RTCALARM variable:
+  // - Size must be exactly sizeof(EFI_TIME) bytes (no variable-sized buffers)
+  // - Must have BS_ACCESS, RT_ACCESS, and NON_VOLATILE attributes (required for runtime use)
+  // - Cannot have any other attributes (prevents tampering)
+  //
+  Status = RegisterBasicVariablePolicy (
+             VariablePolicy,
+             &gEfiCallerIdGuid,
+             L"RTCALARM",
+             sizeof (EFI_TIME),
+             sizeof (EFI_TIME),
+             EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS | EFI_VARIABLE_NON_VOLATILE,
+             (UINT32) ~(EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS | EFI_VARIABLE_NON_VOLATILE),
+             VARIABLE_POLICY_TYPE_NO_LOCK
+             );
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "%a: - Error setting policy for RTCALARM - %r\n", __func__, Status));
+    ASSERT_EFI_ERROR (Status);
+  }
+
+  //
+  // Register policy for RTC variable:
+  // - Size must be exactly sizeof(UINT32) bytes (no variable-sized buffers)
+  // - Must have BS_ACCESS, RT_ACCESS, and NON_VOLATILE attributes (required for runtime use)
+  // - Cannot have any other attributes (prevents tampering)
+  //
+  Status = RegisterBasicVariablePolicy (
+             VariablePolicy,
+             &gEfiCallerIdGuid,
+             L"RTC",
+             sizeof (UINT32),
+             sizeof (UINT32),
+             EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS | EFI_VARIABLE_NON_VOLATILE,
+             (UINT32) ~(EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS | EFI_VARIABLE_NON_VOLATILE),
+             VARIABLE_POLICY_TYPE_NO_LOCK
+             );
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "%a: - Error setting policy for RTC - %r\n", __func__, Status));
+    ASSERT_EFI_ERROR (Status);
+  }
+
+  gBS->CloseEvent (Event);
+
+  return;
 }
 
 /**
@@ -157,6 +238,7 @@ InitializePcRtc (
 {
   EFI_STATUS  Status;
   EFI_EVENT   Event;
+  VOID        *ProtocolRegistration;
 
   EfiInitializeLock (&mModuleGlobal.RtcLock, TPL_CALLBACK);
   mModuleGlobal.CenturyRtcAddress = GetCenturyRtcAddress ();
@@ -164,7 +246,14 @@ InitializePcRtc (
   if (FeaturePcdGet (PcdRtcUseMmio)) {
     mRtcIndexRegister  = (UINTN)PcdGet64 (PcdRtcIndexRegister64);
     mRtcTargetRegister = (UINTN)PcdGet64 (PcdRtcTargetRegister64);
+  } else {
+    mRtcIndexRegister  = (UINTN)PcdGet8 (PcdRtcIndexRegister);
+    mRtcTargetRegister = (UINTN)PcdGet8 (PcdRtcTargetRegister);
   }
+
+  mRtcDefaultYear   = PcdGet16 (PcdRtcDefaultYear);
+  mMinimalValidYear = PcdGet16 (PcdMinimalValidYear);
+  mMaximalValidYear = PcdGet16 (PcdMaximalValidYear);
 
   Status = PcRtcInit (&mModuleGlobal);
   ASSERT_EFI_ERROR (Status);
@@ -210,13 +299,21 @@ InitializePcRtc (
     Status = gBS->CreateEventEx (
                     EVT_NOTIFY_SIGNAL,
                     TPL_NOTIFY,
-                    LibRtcVirtualNotifyEvent,
+                    VirtualNotifyEvent,
                     NULL,
                     &gEfiEventVirtualAddressChangeGuid,
                     &mVirtualAddrChangeEvent
                     );
     ASSERT_EFI_ERROR (Status);
   }
+
+  EfiCreateProtocolNotifyEvent (
+    &gEdkiiVariablePolicyProtocolGuid,
+    TPL_CALLBACK,
+    OnVariablePolicyProtocolNotification,
+    NULL,
+    &ProtocolRegistration
+    );
 
   return Status;
 }

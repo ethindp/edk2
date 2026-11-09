@@ -4,7 +4,7 @@
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
-
+#include <Guid/MemoryTypeInformation.h>
 #include "UefiPayloadEntry.h"
 
 #define MEMORY_ATTRIBUTE_MASK  (EFI_RESOURCE_ATTRIBUTE_PRESENT             |        \
@@ -34,6 +34,15 @@ VOID
 PrintHob (
   IN CONST VOID  *HobStart
   );
+
+EFI_MEMORY_TYPE_INFORMATION  mDefaultMemoryTypeInformation[] = {
+  { EfiACPIReclaimMemory,   FixedPcdGet32 (PcdMemoryTypeEfiACPIReclaimMemory)   },
+  { EfiACPIMemoryNVS,       FixedPcdGet32 (PcdMemoryTypeEfiACPIMemoryNVS)       },
+  { EfiReservedMemoryType,  FixedPcdGet32 (PcdMemoryTypeEfiReservedMemoryType)  },
+  { EfiRuntimeServicesData, FixedPcdGet32 (PcdMemoryTypeEfiRuntimeServicesData) },
+  { EfiRuntimeServicesCode, FixedPcdGet32 (PcdMemoryTypeEfiRuntimeServicesCode) },
+  { EfiMaxMemoryType,       0                                                   }
+};
 
 /**
   Some bootloader may pass a pcd database, and UPL also contain a PCD database.
@@ -111,10 +120,12 @@ AddNewHob (
   }
 
   NewHob.Header = CreateHob (Hob->Header->HobType, Hob->Header->HobLength);
-
-  if (NewHob.Header != NULL) {
-    CopyMem (NewHob.Header + 1, Hob->Header + 1, Hob->Header->HobLength - sizeof (EFI_HOB_GENERIC_HEADER));
+  ASSERT (NewHob.Header != NULL);
+  if (NewHob.Header == NULL) {
+    return;
   }
+
+  CopyMem (NewHob.Header + 1, Hob->Header + 1, Hob->Header->HobLength - sizeof (EFI_HOB_GENERIC_HEADER));
 }
 
 /**
@@ -140,7 +151,7 @@ FindResourceDescriptorByRange (
     //
     // Skip all HOBs except Resource Descriptor HOBs
     //
-    if (GET_HOB_TYPE (Hob) != EFI_HOB_TYPE_RESOURCE_DESCRIPTOR) {
+    if (!IS_RESOURCE_DESCRIPTOR_HOB (Hob)) {
       continue;
     }
 
@@ -199,7 +210,7 @@ FindAnotherHighestBelow4GResourceDescriptor (
     //
     // Skip all HOBs except Resource Descriptor HOBs
     //
-    if (GET_HOB_TYPE (Hob) != EFI_HOB_TYPE_RESOURCE_DESCRIPTOR) {
+    if (!IS_RESOURCE_DESCRIPTOR_HOB (Hob)) {
       continue;
     }
 
@@ -309,6 +320,8 @@ BuildHobs (
   EFI_HOB_FIRMWARE_VOLUME       *FvHob;
   UNIVERSAL_PAYLOAD_ACPI_TABLE  *AcpiTable;
   ACPI_BOARD_INFO               *AcpiBoardInfo;
+  EFI_HOB_HANDOFF_INFO_TABLE    *HobInfo;
+  UINT8                         Idx;
 
   Hob.Raw           = (UINT8 *)BootloaderParameter;
   MinimalNeededSize = FixedPcdGet32 (PcdSystemMemoryUefiRegionSize);
@@ -368,7 +381,8 @@ BuildHobs (
     MemoryTop        = FreeMemoryTop;
   }
 
-  HobConstructor ((VOID *)(UINTN)MemoryBottom, (VOID *)(UINTN)MemoryTop, (VOID *)(UINTN)FreeMemoryBottom, (VOID *)(UINTN)FreeMemoryTop);
+  HobInfo           = HobConstructor ((VOID *)(UINTN)MemoryBottom, (VOID *)(UINTN)MemoryTop, (VOID *)(UINTN)FreeMemoryBottom, (VOID *)(UINTN)FreeMemoryTop);
+  HobInfo->BootMode = Hob.HandoffInformationTable->BootMode;
   //
   // From now on, mHobList will point to the new Hob range.
   //
@@ -395,20 +409,36 @@ BuildHobs (
   GuidHob = GetFirstGuidHob (&gUniversalPayloadExtraDataGuid);
   ASSERT (GuidHob != NULL);
   ExtraData = (UNIVERSAL_PAYLOAD_EXTRA_DATA *)GET_GUID_HOB_DATA (GuidHob);
-  ASSERT (ExtraData->Count == 1);
+  DEBUG ((DEBUG_INFO, "Multiple Fv Count=%d\n", ExtraData->Count));
   ASSERT (AsciiStrCmp (ExtraData->Entry[0].Identifier, "uefi_fv") == 0);
 
   *DxeFv = (EFI_FIRMWARE_VOLUME_HEADER *)(UINTN)ExtraData->Entry[0].Base;
   ASSERT ((*DxeFv)->FvLength == ExtraData->Entry[0].Size);
+  //
+  // support multiple FVs provided by UPL
+  //
+  for (Idx = 1; Idx < ExtraData->Count; Idx++) {
+    BuildFvHob (ExtraData->Entry[Idx].Base, ExtraData->Entry[Idx].Size);
+    DEBUG ((
+      DEBUG_INFO,
+      "UPL Multiple fv[%d], Base=0x%x, size=0x%x\n",
+      Idx,
+      ExtraData->Entry[Idx].Base,
+      ExtraData->Entry[Idx].Size
+      ));
+  }
 
   //
   // Create guid hob for acpi board information
   //
   GuidHob = GetFirstGuidHob (&gUniversalPayloadAcpiTableGuid);
   if (GuidHob != NULL) {
-    AcpiTable     = (UNIVERSAL_PAYLOAD_ACPI_TABLE *)GET_GUID_HOB_DATA (GuidHob);
-    AcpiBoardInfo = BuildHobFromAcpi ((UINT64)AcpiTable->Rsdp);
-    ASSERT (AcpiBoardInfo != NULL);
+    AcpiTable = (UNIVERSAL_PAYLOAD_ACPI_TABLE *)GET_GUID_HOB_DATA (GuidHob);
+    GuidHob   = GetFirstGuidHob (&gUefiAcpiBoardInfoGuid);
+    if (GuidHob == NULL) {
+      AcpiBoardInfo = BuildHobFromAcpi ((UINT64)AcpiTable->Rsdp);
+      ASSERT (AcpiBoardInfo != NULL);
+    }
   }
 
   //
@@ -461,15 +491,20 @@ _ModuleEntryPoint (
   Status = BuildHobs (BootloaderParameter, &DxeFv);
   ASSERT_EFI_ERROR (Status);
 
+  //
+  // Create Memory Type Information HOB
+  //
+  if (GetFirstGuidHob (&gEfiMemoryTypeInformationGuid) == NULL) {
+    BuildGuidDataHob (
+      &gEfiMemoryTypeInformationGuid,
+      mDefaultMemoryTypeInformation,
+      sizeof (mDefaultMemoryTypeInformation)
+      );
+  }
+
   FixUpPcdDatabase (DxeFv);
   Status = UniversalLoadDxeCore (DxeFv, &DxeCoreEntryPoint);
   ASSERT_EFI_ERROR (Status);
-
-  //
-  // Mask off all legacy 8259 interrupt sources
-  //
-  IoWrite8 (LEGACY_8259_MASK_REGISTER_MASTER, 0xFF);
-  IoWrite8 (LEGACY_8259_MASK_REGISTER_SLAVE, 0xFF);
 
   Hob.HandoffInformationTable = (EFI_HOB_HANDOFF_INFO_TABLE *)GetFirstHob (EFI_HOB_TYPE_HANDOFF);
   HandOffToDxeCore (DxeCoreEntryPoint, Hob);

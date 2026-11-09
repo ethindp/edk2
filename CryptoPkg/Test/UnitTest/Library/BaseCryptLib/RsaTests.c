@@ -128,7 +128,12 @@ TestVerifyRsaSetGetKeyComponents (
   UT_ASSERT_EQUAL (KeySize, sizeof (RsaN));
 
   KeyBuffer = AllocatePool (KeySize);
-  Status    = RsaGetKey (mRsa, RsaKeyN, KeyBuffer, &KeySize);
+  if (KeyBuffer == NULL) {
+    UT_LOG_ERROR ("Failed to allocate memory for KeyBuffer");
+    return UNIT_TEST_ERROR_TEST_FAILED;
+  }
+
+  Status = RsaGetKey (mRsa, RsaKeyN, KeyBuffer, &KeySize);
   UT_ASSERT_TRUE (Status);
   UT_ASSERT_EQUAL (KeySize, sizeof (RsaN));
 
@@ -148,7 +153,12 @@ TestVerifyRsaSetGetKeyComponents (
   UT_ASSERT_EQUAL (KeySize, sizeof (RsaE));
 
   KeyBuffer = AllocatePool (KeySize);
-  Status    = RsaGetKey (mRsa, RsaKeyE, KeyBuffer, &KeySize);
+  if (KeyBuffer == NULL) {
+    UT_LOG_ERROR ("Failed to allocate memory for KeyBuffer");
+    return UNIT_TEST_ERROR_TEST_FAILED;
+  }
+
+  Status = RsaGetKey (mRsa, RsaKeyE, KeyBuffer, &KeySize);
   UT_ASSERT_TRUE (Status);
   UT_ASSERT_EQUAL (KeySize, sizeof (RsaE));
 
@@ -194,6 +204,9 @@ TestVerifyRsaGenerateKeyComponents (
   BOOLEAN  Status;
   UINTN    KeySize;
   UINT8    *KeyBuffer;
+  UINT8    TestPublicExponent1[] = { 0x03 };
+  UINT8    TestPublicExponent2[] = { 0x01, 0x01 };
+  UINT8    TestPublicExponent3[] = { 0x01, 0x00, 0x01 };
 
   //
   // Generate RSA Key Components
@@ -202,9 +215,21 @@ TestVerifyRsaGenerateKeyComponents (
   Status = RsaGenerateKey (mRsa, RSA_MODULUS_LENGTH, NULL, 0);
   UT_ASSERT_TRUE (Status);
 
+  Status = RsaGenerateKey (mRsa, RSA_MODULUS_LENGTH, TestPublicExponent1, sizeof (TestPublicExponent1));
+  UT_ASSERT_TRUE (Status);
+  Status = RsaGenerateKey (mRsa, RSA_MODULUS_LENGTH, TestPublicExponent2, sizeof (TestPublicExponent2));
+  UT_ASSERT_TRUE (Status);
+  Status = RsaGenerateKey (mRsa, RSA_MODULUS_LENGTH, TestPublicExponent3, sizeof (TestPublicExponent3));
+  UT_ASSERT_TRUE (Status);
+
   KeySize   = RSA_MODULUS_LENGTH / 8;
   KeyBuffer = AllocatePool (KeySize);
-  Status    = RsaGetKey (mRsa, RsaKeyE, KeyBuffer, &KeySize);
+  if (KeyBuffer == NULL) {
+    UT_LOG_ERROR ("Failed to allocate memory for KeyBuffer");
+    return UNIT_TEST_ERROR_TEST_FAILED;
+  }
+
+  Status = RsaGetKey (mRsa, RsaKeyE, KeyBuffer, &KeySize);
   UT_ASSERT_TRUE (Status);
   UT_ASSERT_EQUAL (KeySize, 3);
   UT_ASSERT_MEM_EQUAL (KeyBuffer, DefaultPublicKey, 3);
@@ -283,7 +308,12 @@ TestVerifyRsaPkcs1SignVerify (
   UT_ASSERT_NOT_EQUAL (SigSize, 0);
 
   Signature = AllocatePool (SigSize);
-  Status    = RsaPkcs1Sign (mRsa, HashValue, HashSize, Signature, &SigSize);
+  if (Signature == NULL) {
+    UT_LOG_ERROR ("Failed to allocate memory for Signature");
+    return UNIT_TEST_ERROR_TEST_FAILED;
+  }
+
+  Status = RsaPkcs1Sign (mRsa, HashValue, HashSize, Signature, &SigSize);
   UT_ASSERT_TRUE (Status);
   UT_ASSERT_EQUAL (SigSize, sizeof (RsaPkcs1Signature));
 
@@ -310,3 +340,13 @@ TEST_DESC  mRsaTest[] = {
 };
 
 UINTN  mRsaTestNum = ARRAY_SIZE (mRsaTest);
+
+TEST_DESC  mRsaTestMbedTls[] = {
+  //
+  // -----Description--------------------------------------Class----------------------Function---------------------------------Pre---------------------Post---------Context
+  //
+  { "TestVerifyRsaSetGetKeyComponents()", "CryptoPkg.BaseCryptLib.Rsa", TestVerifyRsaSetGetKeyComponents, TestVerifyRsaPreReq, TestVerifyRsaCleanUp, NULL },
+  { "TestVerifyRsaPkcs1SignVerify()",     "CryptoPkg.BaseCryptLib.Rsa", TestVerifyRsaPkcs1SignVerify,     TestVerifyRsaPreReq, TestVerifyRsaCleanUp, NULL },
+};
+
+UINTN  mRsaTestMbedTlsNum = ARRAY_SIZE (mRsaTestMbedTls);

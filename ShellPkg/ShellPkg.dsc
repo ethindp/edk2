@@ -4,6 +4,7 @@
 # Copyright (c) 2007 - 2021, Intel Corporation. All rights reserved.<BR>
 # Copyright (c) 2018 - 2020, Arm Limited. All rights reserved.<BR>
 # Copyright (c) 2020, Hewlett Packard Enterprise Development LP. All rights reserved.<BR>
+# Copyright (c) 2022, Loongson Technology Corporation Limited. All rights reserved.<BR>
 #
 #    SPDX-License-Identifier: BSD-2-Clause-Patent
 #
@@ -15,7 +16,7 @@
   PLATFORM_VERSION               = 1.02
   DSC_SPECIFICATION              = 0x00010006
   OUTPUT_DIRECTORY               = Build/Shell
-  SUPPORTED_ARCHITECTURES        = IA32|X64|EBC|ARM|AARCH64|RISCV64
+  SUPPORTED_ARCHITECTURES        = IA32|X64|EBC|AARCH64|RISCV64|LOONGARCH64
   BUILD_TARGETS                  = DEBUG|RELEASE|NOOPT
   SKUID_IDENTIFIER               = DEFAULT
 
@@ -64,16 +65,7 @@
   DxeServicesLib|MdePkg/Library/DxeServicesLib/DxeServicesLib.inf
   ReportStatusCodeLib|MdePkg/Library/BaseReportStatusCodeLibNull/BaseReportStatusCodeLibNull.inf
 
-[LibraryClasses.ARM,LibraryClasses.AARCH64]
-  #
-  # It is not possible to prevent the ARM compiler for generic intrinsic functions.
-  # This library provides the instrinsic functions generate by a given compiler.
-  # [LibraryClasses.ARM] and NULL mean link this library into all ARM images.
-  #
-  NULL|ArmPkg/Library/CompilerIntrinsicsLib/CompilerIntrinsicsLib.inf
-
-  # Add support for GCC stack protector
-  NULL|MdePkg/Library/BaseStackCheckLib/BaseStackCheckLib.inf
+  SafeIntLib|MdePkg/Library/BaseSafeIntLib/BaseSafeIntLib.inf
 
 [PcdsFixedAtBuild]
   gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask|0xFF
@@ -138,6 +130,11 @@
       NULL|ShellPkg/Library/UefiShellAcpiViewCommandLib/UefiShellAcpiViewCommandLib.inf
   }
 
+  ShellPkg/Application/AcpiViewApp/AcpiViewApp.inf
+  ShellPkg/Application/ShellCTestApp/ShellCTestApp.inf
+  ShellPkg/Application/ShellExecTestApp/SA.inf
+  ShellPkg/Application/ShellSortTestApp/ShellSortTestApp.inf
+
   ShellPkg/DynamicCommand/TftpDynamicCommand/TftpDynamicCommand.inf {
     <PcdsFixedAtBuild>
       gEfiShellPkgTokenSpaceGuid.PcdShellLibAutoInitialize|FALSE
@@ -153,7 +150,11 @@
       gEfiShellPkgTokenSpaceGuid.PcdShellLibAutoInitialize|FALSE
   }
   ShellPkg/DynamicCommand/DpDynamicCommand/DpApp.inf
-  ShellPkg/Application/AcpiViewApp/AcpiViewApp.inf
+  ShellPkg/DynamicCommand/VariablePolicyDynamicCommand/VariablePolicyDynamicCommand.inf {
+    <PcdsFixedAtBuild>
+      gEfiShellPkgTokenSpaceGuid.PcdShellLibAutoInitialize|FALSE
+  }
+  ShellPkg/DynamicCommand/VariablePolicyDynamicCommand/VariablePolicyApp.inf
 
 [BuildOptions]
   *_*_*_CC_FLAGS = -D DISABLE_NEW_DEPRECATED_INTERFACES

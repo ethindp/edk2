@@ -10,8 +10,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _PARTITION_H_
-#define _PARTITION_H_
+#pragma once
 
 #include <Uefi.h>
 #include <Protocol/BlockIo.h>
@@ -31,6 +30,8 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Library/MemoryAllocationLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/DevicePathLib.h>
+
+#include <Library/GptLib.h>
 
 #include <IndustryStandard/Mbr.h>
 #include <IndustryStandard/ElTorito.h>
@@ -93,15 +94,6 @@ extern EFI_COMPONENT_NAME2_PROTOCOL  gPartitionComponentName2;
                                    (((UINT8 *) a)[1] <<  8) |    \
                                    (((UINT8 *) a)[2] << 16) |    \
                                    (((UINT8 *) a)[3] << 24) )
-
-//
-// GPT Partition Entry Status
-//
-typedef struct {
-  BOOLEAN    OutOfRange;
-  BOOLEAN    Overlap;
-  BOOLEAN    OsSpecific;
-} EFI_PARTITION_ENTRY_STATUS;
 
 //
 // Function Prototypes
@@ -479,5 +471,3 @@ EFI_STATUS
   IN  EFI_BLOCK_IO2_PROTOCOL       *BlockIo2,
   IN  EFI_DEVICE_PATH_PROTOCOL     *DevicePath
   );
-
-#endif

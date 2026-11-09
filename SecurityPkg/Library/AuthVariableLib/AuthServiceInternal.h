@@ -17,8 +17,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _AUTHSERVICE_INTERNAL_H_
-#define _AUTHSERVICE_INTERNAL_H_
+#pragma once
 
 #include <Library/AuthVariableLib.h>
 #include <Library/BaseLib.h>
@@ -92,7 +91,9 @@ extern UINT32  mMaxCertDbSize;
 extern UINT32  mPlatformMode;
 extern UINT8   mVendorKeyState;
 
-extern VOID  *mHashCtx;
+extern VOID  *mHashSha256Ctx;
+extern VOID  *mHashSha384Ctx;
+extern VOID  *mHashSha512Ctx;
 
 extern AUTH_VAR_LIB_CONTEXT_IN  *mAuthVarLibContextIn;
 
@@ -178,6 +179,10 @@ CleanCertsFromDb (
   @param[in]        DataSize      Size of Data buffer.
   @param[in, out]   NewData       Pointer to new EFI_SIGNATURE_LIST.
   @param[in, out]   NewDataSize   Size of NewData buffer.
+
+  @retval EFI_SUCCESS            Duplicated signatures were filtered successfully.
+  @retval EFI_INVALID_PARAMETER  Input signature list data is malformed.
+  @retval EFI_OUT_OF_RESOURCES   Failed to allocate scratch buffer.
 
 **/
 EFI_STATUS
@@ -364,5 +369,3 @@ AuthServiceInternalUpdateVariableWithTimeStamp (
   IN UINT32    Attributes,
   IN EFI_TIME  *TimeStamp
   );
-
-#endif

@@ -12,17 +12,20 @@ import logging
 import os
 import pathlib
 import shutil
+import stat
 import timeit
 from edk2toolext.environment import version_aggregator
 from edk2toolext.environment.plugin_manager import PluginManager
 from edk2toolext.environment.plugintypes.ci_build_plugin import ICiBuildPlugin
 from edk2toolext.environment.plugintypes.uefi_helper_plugin import HelperFunctions
 from edk2toolext.environment.var_dict import VarDict
+from edk2toollib.gitignore_parser import parse_gitignore_lines
 from edk2toollib.log.junit_report_format import JunitReportTestCase
 from edk2toollib.uefi.edk2.path_utilities import Edk2Path
-from edk2toollib.utility_functions import  RunCmd
+from edk2toollib.utility_functions import RunCmd
 from io import StringIO
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
 
 #
 # Provide more user friendly messages for certain scenarios
@@ -57,18 +60,10 @@ class UncrustifyInputFileCreationErrorException(UncrustifyException):
     def __init__(self, message):
         super().__init__(message, -121)
 
+
 class UncrustifyInvalidIgnoreStandardPathsException(UncrustifyException):
     def __init__(self, message):
         super().__init__(message, -122)
-
-class UncrustifyGitIgnoreFileException(UncrustifyException):
-    def __init__(self, message):
-        super().__init__(message, -140)
-
-
-class UncrustifyGitSubmoduleException(UncrustifyException):
-    def __init__(self, message):
-        super().__init__(message, -141)
 
 
 class UncrustifyCheck(ICiBuildPlugin):
@@ -98,7 +93,8 @@ class UncrustifyCheck(ICiBuildPlugin):
     # Note: Values specified via "ConfigFilePath" are relative to the package
     #
     DEFAULT_CONFIG_FILE_PATH = os.path.join(
-        pathlib.Path(__file__).parent.resolve(), "uncrustify.cfg")
+        pathlib.Path(__file__).parent.resolve(), "uncrustify.cfg"
+    )
 
     #
     # The extension used for formatted files produced by this plugin
@@ -109,7 +105,7 @@ class UncrustifyCheck(ICiBuildPlugin):
     # A package can add any additional paths with "AdditionalIncludePaths"
     # A package can remove any of these paths with "IgnoreStandardPaths"
     #
-    STANDARD_PLUGIN_DEFINED_PATHS = ("*.c", "*.h")
+    STANDARD_PLUGIN_DEFINED_PATHS = ("*.c", "*.h", "*.cpp")
 
     #
     # The Uncrustify application path should set in this environment variable
@@ -117,20 +113,33 @@ class UncrustifyCheck(ICiBuildPlugin):
     UNCRUSTIFY_PATH_ENV_KEY = "UNCRUSTIFY_CI_PATH"
 
     def GetTestName(self, packagename: str, environment: VarDict) -> Tuple:
-        """ Provide the testcase name and classname for use in reporting
+        """Provide the testcase name and classname for use in reporting
 
-            Args:
-              packagename: string containing name of package to build
-              environment: The VarDict for the test to run in
-            Returns:
-                A tuple containing the testcase name and the classname
-                (testcasename, classname)
-                testclassname: a descriptive string for the testcase can include whitespace
-                classname: should be patterned <packagename>.<plugin>.<optionally any unique condition>
+        Args:
+          packagename: string containing name of package to build
+          environment: The VarDict for the test to run in
+        Returns:
+            A tuple containing the testcase name and the classname
+            (testcasename, classname)
+            testclassname: a descriptive string for the testcase can include whitespace
+            classname: should be patterned <packagename>.<plugin>.<optionally any unique condition>
         """
-        return ("Check file coding standard compliance in " + packagename, packagename + ".UncrustifyCheck")
+        return (
+            "Check file coding standard compliance in " + packagename,
+            packagename + ".UncrustifyCheck",
+        )
 
-    def RunBuildPlugin(self, package_rel_path: str, edk2_path: Edk2Path, package_config: Dict[str, List[str]], environment_config: Any, plugin_manager: PluginManager, plugin_manager_helper: HelperFunctions, tc: JunitReportTestCase, output_stream=None) -> int:
+    def RunBuildPlugin(
+        self,
+        package_rel_path: str,
+        edk2_path: Edk2Path,
+        package_config: Dict[str, List[str]],
+        environment_config: Any,
+        plugin_manager: PluginManager,
+        plugin_manager_helper: HelperFunctions,
+        tc: JunitReportTestCase,
+        output_stream=None,
+    ) -> int:
         """
         External function of plugin. This function is used to perform the task of the CiBuild Plugin.
 
@@ -151,8 +160,10 @@ class UncrustifyCheck(ICiBuildPlugin):
         """
         try:
             # Initialize plugin and check pre-requisites.
+            self._env = environment_config
             self._initialize_environment_info(
-                package_rel_path, edk2_path, package_config, tc)
+                package_rel_path, edk2_path, package_config, tc
+            )
             self._initialize_configuration()
             self._check_for_preexisting_formatted_files()
 
@@ -173,20 +184,21 @@ class UncrustifyCheck(ICiBuildPlugin):
 
         except UncrustifyException as e:
             self._tc.LogStdError(
-                f"Uncrustify error {e.exit_code}. Details:\n\n{str(e)}")
-            logging.warning(
-                f"Uncrustify error {e.exit_code}. Details:\n\n{str(e)}")
+                f"Uncrustify error {e.exit_code}. Details:\n\n{str(e)}"
+            )
+            logging.warning(f"Uncrustify error {e.exit_code}. Details:\n\n{str(e)}")
             return -1
         else:
             if self._formatted_file_error_count > 0:
                 if self._audit_only_mode:
-                    logging.info(
-                        "Setting test as skipped since AuditOnly is enabled")
+                    logging.info("Setting test as skipped since AuditOnly is enabled")
                     self._tc.SetSkipped()
                     return -1
                 else:
                     self._tc.SetFailed(
-                        f"{self._plugin_name} failed due to {self._formatted_file_error_count} incorrectly formatted files.", "CHECK_FAILED")
+                        f"{self._plugin_name} failed due to {self._formatted_file_error_count} incorrectly formatted files.",
+                        "CHECK_FAILED",
+                    )
             else:
                 self._tc.SetSuccess()
             return self._formatted_file_error_count
@@ -211,11 +223,18 @@ class UncrustifyCheck(ICiBuildPlugin):
         from an error that occurred during a previous run or a premature exit from a debug scenario. In any case, the package should be clean before starting a new run.
         """
         pre_existing_formatted_file_count = len(
-            [str(path.resolve()) for path in pathlib.Path(self._abs_package_path).rglob(f'*{UncrustifyCheck.FORMATTED_FILE_EXTENSION}')])
+            [
+                str(path.resolve())
+                for path in pathlib.Path(self._abs_package_path).rglob(
+                    f"*{UncrustifyCheck.FORMATTED_FILE_EXTENSION}"
+                )
+            ]
+        )
 
         if pre_existing_formatted_file_count > 0:
             raise UncrustifyStalePluginFormattedFilesException(
-                f"{pre_existing_formatted_file_count} formatted files already exist. To prevent overwriting these files, please remove them before running this plugin.")
+                f"{pre_existing_formatted_file_count} formatted files already exist. To prevent overwriting these files, please remove them before running this plugin."
+            )
 
     def _cleanup_temporary_directory(self) -> None:
         """
@@ -223,7 +242,7 @@ class UncrustifyCheck(ICiBuildPlugin):
 
         This removes the directory and all files created during this instance.
         """
-        if hasattr(self, '_working_dir'):
+        if hasattr(self, "_working_dir"):
             self._remove_tree(self._working_dir)
 
     def _cleanup_temporary_formatted_files(self) -> None:
@@ -233,9 +252,13 @@ class UncrustifyCheck(ICiBuildPlugin):
         This will recursively remove all formatted files generated by Uncrustify
         during this execution instance.
         """
-        if hasattr(self, '_abs_package_path'):
-            formatted_files = [str(path.resolve()) for path in pathlib.Path(
-                self._abs_package_path).rglob(f'*{UncrustifyCheck.FORMATTED_FILE_EXTENSION}')]
+        if hasattr(self, "_abs_package_path"):
+            formatted_files = [
+                str(path.resolve())
+                for path in pathlib.Path(self._abs_package_path).rglob(
+                    f"*{UncrustifyCheck.FORMATTED_FILE_EXTENSION}"
+                )
+            ]
 
             for formatted_file in formatted_files:
                 os.remove(formatted_file)
@@ -245,22 +268,29 @@ class UncrustifyCheck(ICiBuildPlugin):
         Creates the temporary directory used for this execution instance.
         """
         self._working_dir = os.path.join(
-            self._abs_workspace_path, "Build", ".pytool", "Plugin", f"{self._plugin_name}")
+            self._abs_workspace_path,
+            "Build",
+            ".pytool",
+            "Plugin",
+            f"{self._plugin_name}",
+        )
 
         try:
             pathlib.Path(self._working_dir).mkdir(parents=True, exist_ok=True)
         except OSError as e:
             raise UncrustifyInputFileCreationErrorException(
-                f"Error creating plugin directory {self._working_dir}.\n\n{repr(e)}.")
+                f"Error creating plugin directory {self._working_dir}.\n\n{repr(e)}."
+            )
 
     def _create_uncrustify_file_list_file(self) -> None:
         """
         Creates the file with the list of source files for Uncrustify to process.
         """
         self._app_input_file_path = os.path.join(
-            self._working_dir, "uncrustify_file_list.txt")
+            self._working_dir, "uncrustify_file_list.txt"
+        )
 
-        with open(self._app_input_file_path, 'w', encoding='utf8') as f:
+        with open(self._app_input_file_path, "w", encoding="utf8") as f:
             f.writelines(f"\n".join(self._abs_file_paths_to_format))
 
     def _execute_uncrustify(self) -> None:
@@ -268,57 +298,137 @@ class UncrustifyCheck(ICiBuildPlugin):
         Executes Uncrustify with the initialized configuration.
         """
         output = StringIO()
-        self._app_exit_code = RunCmd(
-            self._app_path,
-            f"-c {self._app_config_file} -F {self._app_input_file_path} --if-changed --suffix {UncrustifyCheck.FORMATTED_FILE_EXTENSION}", outstream=output)
+        params = ["-c", self._app_config_file]
+        params += ["-F", self._app_input_file_path]
+        params += ["--if-changed"]
+        if self._env.GetValue("UNCRUSTIFY_IN_PLACE", "FALSE") == "TRUE":
+            params += ["--replace", "--no-backup"]
+        else:
+            params += ["--suffix", UncrustifyCheck.FORMATTED_FILE_EXTENSION]
+        self._app_exit_code = RunCmd(self._app_path, " ".join(params), outstream=output)
         self._app_output = output.getvalue().strip().splitlines()
 
+    def _get_files_ignored_in_config(self):
+        """ "
+        Returns a function that returns true if a given file string path is ignored in the plugin configuration file and false otherwise.
+        """
+        ignored_files = []
+        if "IgnoreFiles" in self._package_config:
+            ignored_files = self._package_config["IgnoreFiles"]
+
+        # Pass "Package configuration file" as the source file path since
+        # the actual configuration file name is unknown to this plugin and
+        # this provides a generic description of the file that provided
+        # the ignore file content.
+        #
+        # This information is only used for reporting (not used here) and
+        # the ignore lines are being passed directly as they are given to
+        # this plugin.
+        return parse_gitignore_lines(
+            ignored_files, "Package configuration file", self._abs_package_path
+        )
+
     def _get_git_ignored_paths(self) -> List[str]:
-        """"
+        """
         Returns a list of file absolute path strings to all files ignored in this git repository.
 
-        If git is not found, an empty list will be returned.
+        If the package's git repository could not be determined, or the command otherwise
+        fails, an empty list is returned instead.
         """
-        if not shutil.which("git"):
-            logging.warn(
-                "Git is not found on this system. Git submodule paths will not be considered.")
+        if self._abs_git_repo_path is None:
             return []
 
         outstream_buffer = StringIO()
-        exit_code = RunCmd("git", "ls-files --other",
-                           workingdir=self._abs_workspace_path, outstream=outstream_buffer, logging_level=logging.NOTSET)
-        if (exit_code != 0):
-            raise UncrustifyGitIgnoreFileException(
-                f"An error occurred reading git ignore settings. This will prevent Uncrustify from running against the expected set of files.")
+        exit_code = RunCmd(
+            "git",
+            "ls-files --other",
+            workingdir=self._abs_git_repo_path,
+            outstream=outstream_buffer,
+            logging_level=logging.NOTSET,
+        )
+        if exit_code != 0:
+            logging.warning(
+                "An error occurred reading git ignore settings. Git ignored paths will not be considered."
+            )
+            return []
 
         # Note: This will potentially be a large list, but at least sorted
-        return outstream_buffer.getvalue().strip().splitlines()
+        rel_paths = outstream_buffer.getvalue().strip().splitlines()
+        abs_paths = []
+        for path in rel_paths:
+            abs_paths.append(
+                os.path.normpath(os.path.join(self._abs_git_repo_path, path))
+            )
+        return abs_paths
+
+    def _get_git_repo_path(self) -> Optional[str]:
+        """
+        Returns the absolute path to the root of the git repository that contains the package
+        currently being checked. This is not necessarily the edk2 repository, since the package
+        may belong to a different repository combined into the workspace (e.g. via
+        PACKAGES_PATH).
+
+        Returns None if git is not found or the package is not within a git workspace.
+        """
+        if not shutil.which("git"):
+            logging.warning(
+                "Git is not found on this system. Git exclusions will not be considered."
+            )
+            return None
+
+        outstream_buffer = StringIO()
+        exit_code = RunCmd(
+            "git",
+            "rev-parse --show-toplevel",
+            workingdir=self._abs_package_path,
+            outstream=outstream_buffer,
+            logging_level=logging.NOTSET,
+        )
+        if exit_code != 0:
+            logging.warning(
+                f"{self._package_name} does not appear to be in a git workspace. Git exclusions will not be considered."
+            )
+            return None
+
+        return os.path.normpath(outstream_buffer.getvalue().strip())
 
     def _get_git_submodule_paths(self) -> List[str]:
         """
-        Returns a list of directory absolute path strings to the root of each submodule in the workspace repository.
+        Returns a list of directory absolute path strings to the root of each submodule in the
+        package's git repository.
 
-        If git is not found, an empty list will be returned.
+        If the package's git repository could not be determined, there is no .gitmodules file,
+        or the command otherwise fails, an empty list is returned instead.
         """
-        if not shutil.which("git"):
-            logging.warn(
-                "Git is not found on this system. Git submodule paths will not be considered.")
+        if self._abs_git_repo_path is None:
             return []
 
-        if os.path.isfile(os.path.join(self._abs_workspace_path, ".gitmodules")):
+        if os.path.isfile(os.path.join(self._abs_git_repo_path, ".gitmodules")):
             logging.info(
-                f".gitmodules file found. Excluding submodules in {self._package_name}.")
+                f".gitmodules file found. Excluding submodules in {self._package_name}."
+            )
 
             outstream_buffer = StringIO()
-            exit_code = RunCmd("git", "config --file .gitmodules --get-regexp path", workingdir=self._abs_workspace_path, outstream=outstream_buffer, logging_level=logging.NOTSET)
-            if (exit_code != 0):
-                raise UncrustifyGitSubmoduleException(
-                    f".gitmodule file detected but an error occurred reading the file. Cannot proceed with unknown submodule paths.")
+            exit_code = RunCmd(
+                "git",
+                "config --file .gitmodules --get-regexp path",
+                workingdir=self._abs_git_repo_path,
+                outstream=outstream_buffer,
+                logging_level=logging.NOTSET,
+            )
+            if exit_code != 0:
+                logging.warning(
+                    ".gitmodules file detected but an error occurred reading it. Git submodule paths will not be considered."
+                )
+                return []
 
             submodule_paths = []
             for line in outstream_buffer.getvalue().strip().splitlines():
                 submodule_paths.append(
-                    os.path.normpath(os.path.join(self._abs_workspace_path, line.split()[1])))
+                    os.path.normpath(
+                        os.path.join(self._abs_git_repo_path, line.split()[1])
+                    )
+                )
 
             return submodule_paths
         else:
@@ -336,7 +446,7 @@ class UncrustifyCheck(ICiBuildPlugin):
         # Allow no value to allow "set" statements in the config file which do
         # not specify value assignment
         parser = configparser.ConfigParser(allow_no_value=True)
-        with open(self._app_config_file, 'r') as cf:
+        with open(self._app_config_file, "r") as cf:
             parser.read_string("[dummy_section]\n" + cf.read())
 
         try:
@@ -345,24 +455,30 @@ class UncrustifyCheck(ICiBuildPlugin):
             file_template_path = pathlib.Path(file_template_name)
 
             if not file_template_path.is_file():
-                file_template_path = pathlib.Path(os.path.join(self._plugin_path, file_template_name))
+                file_template_path = pathlib.Path(
+                    os.path.join(self._plugin_path, file_template_name)
+                )
                 self._file_template_contents = file_template_path.read_text()
         except KeyError:
-            logging.warn("A file header template is not specified in the config file.")
+            logging.info("A file header template is not specified in the config file.")
         except FileNotFoundError:
-            logging.warn("The specified file header template file was not found.")
+            logging.info("The specified file header template file was not found.")
         try:
             func_template_name = parser["dummy_section"]["cmt_insert_func_header"]
 
             func_template_path = pathlib.Path(func_template_name)
 
             if not func_template_path.is_file():
-                func_template_path = pathlib.Path(os.path.join(self._plugin_path, func_template_name))
+                func_template_path = pathlib.Path(
+                    os.path.join(self._plugin_path, func_template_name)
+                )
                 self._func_template_contents = func_template_path.read_text()
         except KeyError:
-            logging.warn("A function header template is not specified in the config file.")
+            logging.info(
+                "A function header template is not specified in the config file."
+            )
         except FileNotFoundError:
-            logging.warn("The specified function header template file was not found.")
+            logging.info("The specified function header template file was not found.")
 
     def _initialize_app_info(self) -> None:
         """
@@ -373,32 +489,39 @@ class UncrustifyCheck(ICiBuildPlugin):
         # Verify Uncrustify is specified in the environment.
         if UncrustifyCheck.UNCRUSTIFY_PATH_ENV_KEY not in os.environ:
             raise UncrustifyAppEnvVarNotFoundException(
-                f"Uncrustify environment variable {UncrustifyCheck.UNCRUSTIFY_PATH_ENV_KEY} is not present.")
+                f"Uncrustify environment variable {UncrustifyCheck.UNCRUSTIFY_PATH_ENV_KEY} is not present."
+            )
 
-        self._app_path = shutil.which('uncrustify', path=os.environ[UncrustifyCheck.UNCRUSTIFY_PATH_ENV_KEY])
+        self._app_path = shutil.which(
+            "uncrustify", path=os.environ[UncrustifyCheck.UNCRUSTIFY_PATH_ENV_KEY]
+        )
 
         if self._app_path is None:
             raise FileNotFoundError(
-                errno.ENOENT, os.strerror(errno.ENOENT), self._app_path)
+                errno.ENOENT, os.strerror(errno.ENOENT), self._app_path
+            )
 
         self._app_path = os.path.normcase(os.path.normpath(self._app_path))
 
         if not os.path.isfile(self._app_path):
             raise FileNotFoundError(
-                errno.ENOENT, os.strerror(errno.ENOENT), self._app_path)
+                errno.ENOENT, os.strerror(errno.ENOENT), self._app_path
+            )
 
         # Verify Uncrustify is present at the expected path.
         return_buffer = StringIO()
         ret = RunCmd(self._app_path, "--version", outstream=return_buffer)
-        if (ret != 0):
+        if ret != 0:
             raise UncrustifyAppVersionErrorException(
-                f"Error occurred executing --version: {ret}.")
+                f"Error occurred executing --version: {ret}."
+            )
 
         # Log Uncrustify version information.
         self._app_version = return_buffer.getvalue().strip()
         self._tc.LogStdOut(f"Uncrustify version: {self._app_version}")
         version_aggregator.GetVersionAggregator().ReportVersion(
-            "Uncrustify", self._app_version, version_aggregator.VersionTypes.INFO)
+            "Uncrustify", self._app_version, version_aggregator.VersionTypes.INFO
+        )
 
     def _initialize_config_file_info(self) -> None:
         """
@@ -411,22 +534,30 @@ class UncrustifyCheck(ICiBuildPlugin):
             self._app_config_file = self._package_config["ConfigFilePath"].strip()
 
             self._app_config_file = os.path.normpath(
-                os.path.join(self._abs_package_path, self._app_config_file))
+                os.path.join(self._abs_package_path, self._app_config_file)
+            )
 
         if not os.path.isfile(self._app_config_file):
             raise FileNotFoundError(
-                errno.ENOENT, os.strerror(errno.ENOENT), self._app_config_file)
+                errno.ENOENT, os.strerror(errno.ENOENT), self._app_config_file
+            )
 
-    def _initialize_environment_info(self, package_rel_path: str, edk2_path: Edk2Path, package_config: Dict[str, List[str]], tc: JunitReportTestCase) -> None:
+    def _initialize_environment_info(
+        self,
+        package_rel_path: str,
+        edk2_path: Edk2Path,
+        package_config: Dict[str, List[str]],
+        tc: JunitReportTestCase,
+    ) -> None:
         """
         Initializes plugin environment information.
         """
-        self._abs_package_path = edk2_path.GetAbsolutePathOnThisSytemFromEdk2RelativePath(
-            package_rel_path)
+        self._abs_package_path = (
+            edk2_path.GetAbsolutePathOnThisSystemFromEdk2RelativePath(package_rel_path)
+        )
         self._abs_workspace_path = edk2_path.WorkspacePath
         self._package_config = package_config
-        self._package_name = os.path.basename(
-            os.path.normpath(package_rel_path))
+        self._package_name = os.path.basename(os.path.normpath(package_rel_path))
         self._plugin_name = self.__class__.__name__
         self._plugin_path = os.path.dirname(os.path.realpath(__file__))
         self._rel_package_path = package_rel_path
@@ -437,54 +568,93 @@ class UncrustifyCheck(ICiBuildPlugin):
         Forms the list of source files for Uncrustify to process.
         """
         # Create a list of all the package relative file paths in the package to run against Uncrustify.
-        rel_file_paths_to_format = list(
-            UncrustifyCheck.STANDARD_PLUGIN_DEFINED_PATHS)
+        rel_file_paths_to_format = list(UncrustifyCheck.STANDARD_PLUGIN_DEFINED_PATHS)
 
         # Allow the ci.yaml to remove any of the pre-defined standard paths
         if "IgnoreStandardPaths" in self._package_config:
             for a in self._package_config["IgnoreStandardPaths"]:
                 if a.strip() in rel_file_paths_to_format:
                     self._tc.LogStdOut(
-                        f"Ignoring standard path due to ci.yaml ignore: {a}")
+                        f"Ignoring standard path due to ci.yaml ignore: {a}"
+                    )
                     rel_file_paths_to_format.remove(a.strip())
                 else:
-                    raise UncrustifyInvalidIgnoreStandardPathsException(f"Invalid IgnoreStandardPaths value: {a}")
+                    raise UncrustifyInvalidIgnoreStandardPathsException(
+                        f"Invalid IgnoreStandardPaths value: {a}"
+                    )
 
         # Allow the ci.yaml to specify additional include paths for this package
         if "AdditionalIncludePaths" in self._package_config:
             rel_file_paths_to_format.extend(
-                self._package_config["AdditionalIncludePaths"])
+                self._package_config["AdditionalIncludePaths"]
+            )
 
         self._abs_file_paths_to_format = []
         for path in rel_file_paths_to_format:
             self._abs_file_paths_to_format.extend(
-                [str(path.resolve()) for path in pathlib.Path(self._abs_package_path).rglob(path)])
+                [
+                    str(path.resolve())
+                    for path in pathlib.Path(self._abs_package_path).rglob(path)
+                ]
+            )
 
-        if not "SkipGitExclusions" in self._package_config or not self._package_config["SkipGitExclusions"]:
+        # Remove files ignore in the plugin configuration file
+        plugin_ignored_files = list(
+            filter(self._get_files_ignored_in_config(), self._abs_file_paths_to_format)
+        )
+
+        if plugin_ignored_files:
+            logging.info(
+                f"{self._package_name} file count before plugin ignore file exclusion: {len(self._abs_file_paths_to_format)}"
+            )
+            for path in plugin_ignored_files:
+                if path in self._abs_file_paths_to_format:
+                    logging.info(f"  File ignored in plugin config file: {path}")
+                    self._abs_file_paths_to_format.remove(path)
+            logging.info(
+                f"{self._package_name} file count after plugin ignore file exclusion: {len(self._abs_file_paths_to_format)}"
+            )
+
+        if (
+            not "SkipGitExclusions" in self._package_config
+            or not self._package_config["SkipGitExclusions"]
+        ):
+            # Determine the git repository that contains this package. This is not necessarily
+            # the edk2 repository if the package is in a different repo (e.g. PACKAGES_PATH).
+            self._abs_git_repo_path = self._get_git_repo_path()
+
             # Remove files ignored by git
             logging.info(
-                f"{self._package_name} file count before git ignore file exclusion: {len(self._abs_file_paths_to_format)}")
+                f"{self._package_name} file count before git ignore file exclusion: {len(self._abs_file_paths_to_format)}"
+            )
 
             ignored_paths = self._get_git_ignored_paths()
             self._abs_file_paths_to_format = list(
-                set(self._abs_file_paths_to_format).difference(ignored_paths))
+                set(self._abs_file_paths_to_format).difference(ignored_paths)
+            )
 
             logging.info(
-                f"{self._package_name} file count after git ignore file exclusion: {len(self._abs_file_paths_to_format)}")
+                f"{self._package_name} file count after git ignore file exclusion: {len(self._abs_file_paths_to_format)}"
+            )
 
             # Remove files in submodules
             logging.info(
-                f"{self._package_name} file count before submodule exclusion: {len(self._abs_file_paths_to_format)}")
+                f"{self._package_name} file count before submodule exclusion: {len(self._abs_file_paths_to_format)}"
+            )
 
             submodule_paths = tuple(self._get_git_submodule_paths())
             for path in submodule_paths:
                 logging.info(f"  submodule path: {path}")
 
             self._abs_file_paths_to_format = [
-                f for f in self._abs_file_paths_to_format if not f.startswith(submodule_paths)]
+                f
+                for f in self._abs_file_paths_to_format
+                if not f.startswith(submodule_paths)
+            ]
 
             logging.info(
-                f"{self._package_name} file count after submodule exclusion: {len(self._abs_file_paths_to_format)}")
+                f"{self._package_name} file count after submodule exclusion: {len(self._abs_file_paths_to_format)}"
+            )
 
         # Sort the files for more consistent results
         self._abs_file_paths_to_format.sort()
@@ -494,13 +664,16 @@ class UncrustifyCheck(ICiBuildPlugin):
         Initializes options that influence test case output.
         """
         self._audit_only_mode = False
-        self._output_file_diffs = False
+        self._output_file_diffs = True
 
         if "AuditOnly" in self._package_config and self._package_config["AuditOnly"]:
             self._audit_only_mode = True
 
-        if "OutputFileDiffs" in self._package_config and self._package_config["OutputFileDiffs"]:
-            self._output_file_diffs = True
+        if (
+            "OutputFileDiffs" in self._package_config
+            and not self._package_config["OutputFileDiffs"]
+        ):
+            self._output_file_diffs = False
 
     def _log_uncrustify_app_info(self) -> None:
         """
@@ -508,10 +681,10 @@ class UncrustifyCheck(ICiBuildPlugin):
         """
         self._tc.LogStdOut(f"Found Uncrustify at {self._app_path}")
         self._tc.LogStdOut(f"Uncrustify version: {self._app_version}")
-        self._tc.LogStdOut('\n')
+        self._tc.LogStdOut("\n")
         logging.info(f"Found Uncrustify at {self._app_path}")
         logging.info(f"Uncrustify version: {self._app_version}")
-        logging.info('\n')
+        logging.info("\n")
 
     def _process_uncrustify_results(self) -> None:
         """
@@ -519,49 +692,90 @@ class UncrustifyCheck(ICiBuildPlugin):
 
         Determines whether formatting errors are present and logs failures.
         """
-        formatted_files = [str(path.resolve()) for path in pathlib.Path(
-            self._abs_package_path).rglob(f'*{UncrustifyCheck.FORMATTED_FILE_EXTENSION}')]
+        formatted_files = [
+            str(path.resolve())
+            for path in pathlib.Path(self._abs_package_path).rglob(
+                f"*{UncrustifyCheck.FORMATTED_FILE_EXTENSION}"
+            )
+        ]
 
         self._formatted_file_error_count = len(formatted_files)
 
         if self._formatted_file_error_count > 0:
-            self._tc.LogStdError("Files with formatting errors:\n")
+            logging.error(
+                f"Uncrustify found {self._formatted_file_error_count} files with formatting errors\n"
+            )
+            self._tc.LogStdError(
+                f"Uncrustify found {self._formatted_file_error_count} files with formatting errors:\n"
+            )
+            logging.warning(
+                "Visit the following instructions to learn "
+                "more about uncrustify setup instructions and CI:"
+                "https://www.tianocore.org/tianocore-wiki.github.io/development/coding-standards/edk_ii_code_formatting.html\n"
+            )
 
             if self._output_file_diffs:
                 logging.info("Calculating file diffs. This might take a while...")
 
         for formatted_file in formatted_files:
-            pre_formatted_file = formatted_file[:-
-                                                len(UncrustifyCheck.FORMATTED_FILE_EXTENSION)]
-            logging.error(pre_formatted_file)
+            pre_formatted_file = formatted_file[
+                : -len(UncrustifyCheck.FORMATTED_FILE_EXTENSION)
+            ]
 
-            if (self._output_file_diffs or
-                    self._file_template_contents is not None or
-                    self._func_template_contents is not None):
-                self._tc.LogStdError(
-                    f"Formatting errors in {os.path.relpath(pre_formatted_file, self._abs_package_path)}\n")
+            logging.error(
+                f"Formatting errors in {os.path.relpath(pre_formatted_file, self._abs_package_path)}"
+            )
+            self._tc.LogStdError(
+                f"Formatting errors in {os.path.relpath(pre_formatted_file, self._abs_package_path)}\n"
+            )
+
+            if (
+                self._output_file_diffs
+                or self._file_template_contents is not None
+                or self._func_template_contents is not None
+            ):
 
                 with open(formatted_file) as ff:
                     formatted_file_text = ff.read()
 
-                    if (self._file_template_contents is not None and
-                            self._file_template_contents in formatted_file_text):
-                        self._tc.LogStdError(f"File header is missing in {os.path.relpath(pre_formatted_file, self._abs_package_path)}\n")
+                    if (
+                        self._file_template_contents is not None
+                        and self._file_template_contents in formatted_file_text
+                    ):
+                        logging.info(
+                            f"File header is missing in {os.path.relpath(pre_formatted_file, self._abs_package_path)}"
+                        )
+                        self._tc.LogStdError(
+                            f"File header is missing in {os.path.relpath(pre_formatted_file, self._abs_package_path)}\n"
+                        )
 
-                    if (self._func_template_contents is not None and
-                            self._func_template_contents in formatted_file_text):
-                        self._tc.LogStdError(f"A function header is missing in {os.path.relpath(pre_formatted_file, self._abs_package_path)}\n")
+                    if (
+                        self._func_template_contents is not None
+                        and self._func_template_contents in formatted_file_text
+                    ):
+                        logging.info(
+                            f"A function header is missing in {os.path.relpath(pre_formatted_file, self._abs_package_path)}"
+                        )
+                        self._tc.LogStdError(
+                            f"A function header is missing in {os.path.relpath(pre_formatted_file, self._abs_package_path)}\n"
+                        )
 
                     if self._output_file_diffs:
                         with open(pre_formatted_file) as pf:
                             pre_formatted_file_text = pf.read()
 
-                        for line in difflib.unified_diff(pre_formatted_file_text.split('\n'), formatted_file_text.split('\n'), fromfile=pre_formatted_file, tofile=formatted_file, n=3):
+                        for line in difflib.unified_diff(
+                            pre_formatted_file_text.split("\n"),
+                            formatted_file_text.split("\n"),
+                            fromfile=pre_formatted_file,
+                            tofile=formatted_file,
+                            n=3,
+                        ):
+                            logging.error(line)
                             self._tc.LogStdError(line)
 
-                        self._tc.LogStdError('\n')
-            else:
-                self._tc.LogStdError(pre_formatted_file)
+                        logging.error("\n")
+                        self._tc.LogStdError("\n")
 
     def _remove_tree(self, dir_path: str, ignore_errors: bool = False) -> None:
         """
@@ -586,12 +800,14 @@ class UncrustifyCheck(ICiBuildPlugin):
             """
             Private function to attempt to change permissions on file/folder being deleted.
             """
-            os.chmod(path, os.stat.S_IWRITE)
+            os.chmod(path, stat.S_IWRITE)
             func(path)
 
         for _ in range(3):  # retry up to 3 times
             try:
-                shutil.rmtree(dir_path, ignore_errors=ignore_errors, onerror=_remove_readonly)
+                shutil.rmtree(
+                    dir_path, ignore_errors=ignore_errors, onerror=_remove_readonly
+                )
             except OSError as err:
                 logging.warning(f"Failed to fully remove {dir_path}: {err}")
             else:
@@ -615,4 +831,5 @@ class UncrustifyCheck(ICiBuildPlugin):
 
         if self._app_exit_code != 0 and self._app_exit_code != 1:
             raise UncrustifyAppExecutionException(
-                f"Error {str(self._app_exit_code)} returned from Uncrustify:\n\n{str(self._app_output)}")
+                f"Error {str(self._app_exit_code)} returned from Uncrustify:\n\n{str(self._app_output)}"
+            )

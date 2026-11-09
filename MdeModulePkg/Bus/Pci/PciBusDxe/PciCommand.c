@@ -33,6 +33,14 @@ PciOperateRegister (
   EFI_STATUS           Status;
   EFI_PCI_IO_PROTOCOL  *PciIo;
 
+  //
+  // Enable/disable register have no effect when Command == 0, and the old
+  // value is not being returned.
+  //
+  if ((Command == 0) && (Operation != EFI_SET_REGISTER) && (Operation != EFI_GET_REGISTER)) {
+    return EFI_SUCCESS;
+  }
+
   OldCommand = 0;
   PciIo      = &PciIoDevice->PciIo;
 
@@ -46,14 +54,23 @@ PciOperateRegister (
                           );
 
     if (Operation == EFI_GET_REGISTER) {
+      ASSERT (PtrCommand != NULL);
       *PtrCommand = OldCommand;
       return Status;
     }
   }
 
   if (Operation == EFI_ENABLE_REGISTER) {
+    if ((OldCommand & Command) == Command) {
+      return EFI_SUCCESS;
+    }
+
     OldCommand = (UINT16)(OldCommand | Command);
   } else if (Operation == EFI_DISABLE_REGISTER) {
+    if ((~OldCommand & Command) == Command) {
+      return EFI_SUCCESS;
+    }
+
     OldCommand = (UINT16)(OldCommand & ~(Command));
   } else {
     OldCommand = Command;
@@ -137,7 +154,7 @@ LocateCapabilityRegBlock (
       PciIoDevice->PciIo.Pci.Read (
                                &PciIoDevice->PciIo,
                                EfiPciIoWidthUint8,
-                               PCI_CAPBILITY_POINTER_OFFSET,
+                               PCI_CAPABILITY_POINTER_OFFSET,
                                1,
                                &CapabilityPtr
                                );
@@ -237,7 +254,7 @@ LocatePciExpressCapabilityRegBlock (
       DEBUG ((
         DEBUG_WARN,
         "%a: [%02x|%02x|%02x] failed to access config space at offset 0x%x\n",
-        __FUNCTION__,
+        __func__,
         PciIoDevice->BusNumber,
         PciIoDevice->DeviceNumber,
         PciIoDevice->FunctionNumber,

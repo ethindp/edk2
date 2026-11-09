@@ -6,6 +6,7 @@ This PPI can be consumed by PEIM which produce gEfiPeiDeviceRecoveryModulePpiGui
 for Atapi CD ROM device.
 
 Copyright (c) 2006 - 2018, Intel Corporation. All rights reserved.<BR>
+Copyright (C) 2025 Advanced Micro Devices, Inc. All rights reserved.
 
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -516,7 +517,7 @@ AtapiEnumerateDevices (
   IN  ATAPI_BLK_IO_DEV  *AtapiBlkIoDev
   )
 {
-  UINT8                    Index1;
+  UINT32                   Index1;
   UINT8                    Index2;
   UINTN                    DevicePosition;
   EFI_PEI_BLOCK_IO_MEDIA   MediaInfo;
@@ -1198,7 +1199,7 @@ CheckErrorStatus (
 }
 
 /**
-  Idendify Atapi devices.
+  Identify Atapi devices.
 
   @param[in]  AtapiBlkIoDev     A pointer to atapi block IO device.
   @param[in]  DevicePosition    An integer to signify device position.
@@ -1994,8 +1995,8 @@ RequestSense (
   // fill command packet for Request Sense Packet Command
   //
   ZeroMem (&Packet, sizeof (ATAPI_PACKET_COMMAND));
-  Packet.RequestSence.opcode            = ATA_CMD_REQUEST_SENSE;
-  Packet.RequestSence.allocation_length = (UINT8)sizeof (ATAPI_REQUEST_SENSE_DATA);
+  Packet.RequestSense.opcode            = ATA_CMD_REQUEST_SENSE;
+  Packet.RequestSense.allocation_length = (UINT8)sizeof (ATAPI_REQUEST_SENSE_DATA);
 
   Ptr = (UINT16 *)SenseBuffers;
   //

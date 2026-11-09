@@ -23,31 +23,33 @@
 #                   Comments are used for Keywords and Module Types.
 #
 # Supported Module Types:
-#  BASE SEC PEI_CORE PEIM DXE_CORE DXE_DRIVER DXE_RUNTIME_DRIVER DXE_SMM_DRIVER DXE_SAL_DRIVER UEFI_DRIVER UEFI_APPLICATION
+#  BASE SEC PEI_CORE PEIM DXE_CORE DXE_DRIVER DXE_RUNTIME_DRIVER DXE_SMM_DRIVER UEFI_DRIVER UEFI_APPLICATION
 #
 ################################################################################
 [Includes.common]
   Include                        # Root include for the package
+  Test/Mock/Include
 
 [LibraryClasses.common]
   PrePiLib|Include/Library/PrePiLib.h
   RealTimeClockLib|Include/Library/RealTimeClockLib.h
-  EfiResetSystemLib|Include/Library/EfiResetSystemLib.h
   GdbSerialLib|Include/Library/GdbSerialLib.h
   DebugAgentTimerLib|Include/Library/DebugAgentTimerLib.h
   NorFlashInfoLib|Include/Library/NorFlashInfoLib.h
+  HalRuntimeServicesLib|Include/Library/HalRuntimeServicesLib.h
+  PrePiHobListPointerLib|Include/Library/PrePiHobListPointerLib.h
+  TimeBaseLib|Include/Library/TimeBaseLib.h
+  AcpiLib|Include/Library/AcpiLib.h
+  AndroidBootImgLib|Include/Library/AndroidBootImgLib.h
+  DmaLib|Include/Library/DmaLib.h
+  EfiFileLib|Include/Library/EfiFileLib.h
+  FdtLoadLib|Include/Library/FdtLoadLib.h
 
   DtPlatformDtbLoaderLib|Include/Library/DtPlatformDtbLoaderLib.h
 
 [Guids.common]
   gEmbeddedTokenSpaceGuid       = { 0xe0d8ca17, 0x4276, 0x4386, { 0xbb, 0x79, 0x48, 0xcb, 0x81, 0x3d, 0x3c, 0x4f }}
 
-  ## FDT Configuration Table
-  # Include/Guid/Fdt.h
-  gFdtTableGuid = { 0xb1b621d5, 0xf19c, 0x41a5, { 0x83, 0x0b, 0xd9, 0x15, 0x2c, 0x69, 0xaa, 0xe0 } }
-  # Include/Guid/FdtHob.h
-  gFdtHobGuid   = { 0x16958446, 0x19B7, 0x480B, { 0xB0, 0x47, 0x74, 0x85, 0xAD, 0x3F, 0x71, 0x6D } }
-  gFdtVariableGuid = { 0x25a4fd4a, 0x9703, 0x4ba9, { 0xa1, 0x90, 0xb7, 0xc8, 0x4e, 0xfb, 0x3e, 0x57 } }
 
   ## Include/Guid/PlatformHasDeviceTree.h
   gEdkiiPlatformHasDeviceTreeGuid = { 0x7ebb920d, 0x1aaf, 0x46d9, { 0xb2, 0xaf, 0x54, 0x1e, 0x1d, 0xce, 0x14, 0x8b } }
@@ -63,6 +65,9 @@
 
   ## Include/Guid/NvVarStoreFormatted.h
   gEdkiiNvVarStoreFormattedGuid = { 0xd1a86e3f, 0x0707, 0x4c35, { 0x83, 0xcd, 0xdc, 0x2c, 0x29, 0xc8, 0x91, 0xa3 } }
+
+  # Include/Guid/MemoryAttributeManagerFormSet.h
+  gMemoryAttributeManagerFormSetGuid = { 0xefab3427, 0x4793, 0x4e9e, { 0xaa, 0x29, 0x88, 0x0c, 0x9a, 0x77, 0x5b, 0x5f } }
 
 [Protocols.common]
   gHardwareInterruptProtocolGuid =  { 0x2890B3EA, 0x053D, 0x1643, { 0xAD, 0x0C, 0xD6, 0x48, 0x08, 0xDA, 0x3F, 0xF1 } }
@@ -80,6 +85,14 @@
   gPlatformVirtualKeyboardProtocolGuid = { 0x0e3606d2, 0x1dc3, 0x4e6f, { 0xbe, 0x65, 0x39, 0x49, 0x82, 0xa2, 0x65, 0x47 }}
   gAndroidBootImgProtocolGuid = { 0x9859bb19, 0x407c, 0x4f8b, {0xbc, 0xe1, 0xf8, 0xda, 0x65, 0x65, 0xf4, 0xa5 }}
   gFdtClientProtocolGuid = { 0xE11FACA0, 0x4710, 0x4C8E, { 0xA7, 0xA2, 0x01, 0xBA, 0xA2, 0x59, 0x1B, 0x4C } }
+  gGblEfiAvbProtocolGuid               = { 0x6bc66b9a, 0xd5c9, 0x4c02, { 0x9d, 0xa9, 0x50, 0xaf, 0x19, 0x8d, 0x91, 0x2c } }
+  gGblEfiAvfProtocolGuid               = { 0xe7f1c4a6, 0x0a52, 0x4f61, { 0xbd, 0x98, 0x9e, 0x60, 0xb5, 0x59, 0x45, 0x2a } }
+  gGblEfiBootControlProtocolGuid       = { 0xd382db1b, 0x9ac2, 0x11f0, { 0x84, 0xc7, 0x04, 0x7b, 0xcb, 0xa9, 0x60, 0x19 } }
+  gGblEfiBootMemoryProtocolGuid        = { 0x309f2874, 0xad59, 0x4fd2, { 0xaf, 0x5e, 0xce, 0x0f, 0x4a, 0xb4, 0x01, 0xa6 } }
+  gGblEfiDebugProtocolGuid             = { 0x98ca3da1, 0xc1ac, 0x4402, { 0x9c, 0x16, 0x75, 0x58, 0xd3, 0xed, 0x57, 0x05 } }
+  gGblEfiFastbootProtocolGuid          = { 0xc67e48a0, 0x5eb8, 0x4127, { 0xbe, 0x89, 0xdf, 0x2e, 0xd9, 0x3d, 0x8a, 0x9a } }
+  gGblEfiFastbootTransportProtocolGuid = { 0xedade92c, 0x5c48, 0x440d, { 0x84, 0x9c, 0xe2, 0xa0, 0xc7, 0xe5, 0x51, 0x43 } }
+  gGblEfiOsConfigurationProtocolGuid   = { 0xdda0d135, 0xaa5b, 0x42ff, { 0x85, 0xac, 0xe3, 0xad, 0x6e, 0xfb, 0x46, 0x19 } }
 
 [Ppis]
   gEdkiiEmbeddedGpioPpiGuid = { 0x21c3b115, 0x4e0b, 0x470c, { 0x85, 0xc7, 0xe1, 0x05, 0xa5, 0x75, 0xc9, 0x7b }}
@@ -145,9 +158,6 @@
 
   gEmbeddedTokenSpaceGuid.PcdAndroidBootDevicePath|L""|VOID*|0x00000057
 
-[PcdsFixedAtBuild.ARM]
-  gEmbeddedTokenSpaceGuid.PcdPrePiCpuIoSize|0|UINT8|0x00000011
-
 [PcdsFixedAtBuild.AARCH64]
   gEmbeddedTokenSpaceGuid.PcdPrePiCpuIoSize|0|UINT8|0x00000011
 
@@ -155,6 +165,9 @@
   gEmbeddedTokenSpaceGuid.PcdPrePiCpuIoSize|16|UINT8|0x00000011
 
 [PcdsFixedAtBuild.X64]
+  gEmbeddedTokenSpaceGuid.PcdPrePiCpuIoSize|16|UINT8|0x00000011
+
+[PcdsFixedAtBuild.LOONGARCH64]
   gEmbeddedTokenSpaceGuid.PcdPrePiCpuIoSize|16|UINT8|0x00000011
 
 [PcdsFixedAtBuild.common, PcdsDynamic.common]
@@ -175,3 +188,13 @@
   # Selection between DT and ACPI as a default
   #
   gEmbeddedTokenSpaceGuid.PcdDefaultDtPref|TRUE|BOOLEAN|0x0000059
+
+  #
+  # Expected Overflow Android Kernel Command Line Characters
+  #
+  gEmbeddedTokenSpaceGuid.PcdAndroidKernelCommandLineOverflow|0|UINT32|0x000005C
+
+  #
+  # EFI Memory Attribute Protocol default enable state
+  #
+  gEmbeddedTokenSpaceGuid.PcdMemoryAttributeEnabledDefault|TRUE|BOOLEAN|0x00000060

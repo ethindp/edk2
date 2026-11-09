@@ -10,9 +10,13 @@
 #include <Guid/RootBridgesConnectedEventGroup.h>
 #include <Guid/SerialPortLibVendor.h>
 #include <Protocol/FirmwareVolume2.h>
+#include <Protocol/VirtioDevice.h>
 #include <Library/PlatformBmPrintScLib.h>
 #include <Library/Tcg2PhysicalPresenceLib.h>
 #include <Library/XenPlatformLib.h>
+
+#include <Library/QemuFwCfgSimpleParserLib.h>
+#include <Library/PlatformBootManagerCommonLib.h>
 
 //
 // Global data
@@ -82,86 +86,7 @@ InstallDevicePathCallback (
   );
 
 VOID
-PlatformRegisterFvBootOption (
-  EFI_GUID  *FileGuid,
-  CHAR16    *Description,
-  UINT32    Attributes
-  )
-{
-  EFI_STATUS                         Status;
-  INTN                               OptionIndex;
-  EFI_BOOT_MANAGER_LOAD_OPTION       NewOption;
-  EFI_BOOT_MANAGER_LOAD_OPTION       *BootOptions;
-  UINTN                              BootOptionCount;
-  MEDIA_FW_VOL_FILEPATH_DEVICE_PATH  FileNode;
-  EFI_LOADED_IMAGE_PROTOCOL          *LoadedImage;
-  EFI_DEVICE_PATH_PROTOCOL           *DevicePath;
-
-  Status = gBS->HandleProtocol (
-                  gImageHandle,
-                  &gEfiLoadedImageProtocolGuid,
-                  (VOID **)&LoadedImage
-                  );
-  ASSERT_EFI_ERROR (Status);
-
-  EfiInitializeFwVolDevicepathNode (&FileNode, FileGuid);
-  DevicePath = DevicePathFromHandle (LoadedImage->DeviceHandle);
-  ASSERT (DevicePath != NULL);
-  DevicePath = AppendDevicePathNode (
-                 DevicePath,
-                 (EFI_DEVICE_PATH_PROTOCOL *)&FileNode
-                 );
-  ASSERT (DevicePath != NULL);
-
-  Status = EfiBootManagerInitializeLoadOption (
-             &NewOption,
-             LoadOptionNumberUnassigned,
-             LoadOptionTypeBoot,
-             Attributes,
-             Description,
-             DevicePath,
-             NULL,
-             0
-             );
-  ASSERT_EFI_ERROR (Status);
-  FreePool (DevicePath);
-
-  BootOptions = EfiBootManagerGetLoadOptions (
-                  &BootOptionCount,
-                  LoadOptionTypeBoot
-                  );
-
-  OptionIndex = EfiBootManagerFindLoadOption (
-                  &NewOption,
-                  BootOptions,
-                  BootOptionCount
-                  );
-
-  if (OptionIndex == -1) {
-    Status = EfiBootManagerAddLoadOptionVariable (&NewOption, MAX_UINTN);
-    ASSERT_EFI_ERROR (Status);
-  }
-
-  EfiBootManagerFreeLoadOption (&NewOption);
-  EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
-}
-
-/**
-  Remove all MemoryMapped(...)/FvFile(...) and Fv(...)/FvFile(...) boot options
-  whose device paths do not resolve exactly to an FvFile in the system.
-
-  This removes any boot options that point to binaries built into the firmware
-  and have become stale due to any of the following:
-  - DXEFV's base address or size changed (historical),
-  - DXEFV's FvNameGuid changed,
-  - the FILE_GUID of the pointed-to binary changed,
-  - the referenced binary is no longer built into the firmware.
-
-  EfiBootManagerFindLoadOption() used in PlatformRegisterFvBootOption() only
-  avoids exact duplicates.
-**/
-VOID
-RemoveStaleFvFileOptions (
+RestrictBootOptionsToFirmware (
   VOID
   )
 {
@@ -175,116 +100,26 @@ RemoveStaleFvFileOptions (
                   );
 
   for (Index = 0; Index < BootOptionCount; ++Index) {
-    EFI_DEVICE_PATH_PROTOCOL  *Node1, *Node2, *SearchNode;
-    EFI_STATUS                Status;
-    EFI_HANDLE                FvHandle;
+    EFI_DEVICE_PATH_PROTOCOL  *Node1;
 
     //
-    // If the device path starts with neither MemoryMapped(...) nor Fv(...),
+    // If the device path starts with Fv(...),
     // then keep the boot option.
     //
     Node1 = BootOptions[Index].FilePath;
-    if (!((DevicePathType (Node1) == HARDWARE_DEVICE_PATH) &&
-          (DevicePathSubType (Node1) == HW_MEMMAP_DP)) &&
-        !((DevicePathType (Node1) == MEDIA_DEVICE_PATH) &&
-          (DevicePathSubType (Node1) == MEDIA_PIWG_FW_VOL_DP)))
+    if (((DevicePathType (Node1) == MEDIA_DEVICE_PATH) &&
+         (DevicePathSubType (Node1) == MEDIA_PIWG_FW_VOL_DP)))
     {
       continue;
-    }
-
-    //
-    // If the second device path node is not FvFile(...), then keep the boot
-    // option.
-    //
-    Node2 = NextDevicePathNode (Node1);
-    if ((DevicePathType (Node2) != MEDIA_DEVICE_PATH) ||
-        (DevicePathSubType (Node2) != MEDIA_PIWG_FW_FILE_DP))
-    {
-      continue;
-    }
-
-    //
-    // Locate the Firmware Volume2 protocol instance that is denoted by the
-    // boot option. If this lookup fails (i.e., the boot option references a
-    // firmware volume that doesn't exist), then we'll proceed to delete the
-    // boot option.
-    //
-    SearchNode = Node1;
-    Status     = gBS->LocateDevicePath (
-                        &gEfiFirmwareVolume2ProtocolGuid,
-                        &SearchNode,
-                        &FvHandle
-                        );
-
-    if (!EFI_ERROR (Status)) {
-      //
-      // The firmware volume was found; now let's see if it contains the FvFile
-      // identified by GUID.
-      //
-      EFI_FIRMWARE_VOLUME2_PROTOCOL      *FvProtocol;
-      MEDIA_FW_VOL_FILEPATH_DEVICE_PATH  *FvFileNode;
-      UINTN                              BufferSize;
-      EFI_FV_FILETYPE                    FoundType;
-      EFI_FV_FILE_ATTRIBUTES             FileAttributes;
-      UINT32                             AuthenticationStatus;
-
-      Status = gBS->HandleProtocol (
-                      FvHandle,
-                      &gEfiFirmwareVolume2ProtocolGuid,
-                      (VOID **)&FvProtocol
-                      );
-      ASSERT_EFI_ERROR (Status);
-
-      FvFileNode = (MEDIA_FW_VOL_FILEPATH_DEVICE_PATH *)Node2;
-      //
-      // Buffer==NULL means we request metadata only: BufferSize, FoundType,
-      // FileAttributes.
-      //
-      Status = FvProtocol->ReadFile (
-                             FvProtocol,
-                             &FvFileNode->FvFileName, // NameGuid
-                             NULL,                    // Buffer
-                             &BufferSize,
-                             &FoundType,
-                             &FileAttributes,
-                             &AuthenticationStatus
-                             );
-      if (!EFI_ERROR (Status)) {
-        //
-        // The FvFile was found. Keep the boot option.
-        //
-        continue;
-      }
     }
 
     //
     // Delete the boot option.
     //
-    Status = EfiBootManagerDeleteLoadOptionVariable (
-               BootOptions[Index].OptionNumber,
-               LoadOptionTypeBoot
-               );
-    DEBUG_CODE_BEGIN ();
-    CHAR16  *DevicePathString;
-
-    DevicePathString = ConvertDevicePathToText (
-                         BootOptions[Index].FilePath,
-                         FALSE,
-                         FALSE
-                         );
-    DEBUG ((
-      EFI_ERROR (Status) ? DEBUG_WARN : DEBUG_VERBOSE,
-      "%a: removing stale Boot#%04x %s: %r\n",
-      __FUNCTION__,
-      (UINT32)BootOptions[Index].OptionNumber,
-      DevicePathString == NULL ? L"<unavailable>" : DevicePathString,
-      Status
-      ));
-    if (DevicePathString != NULL) {
-      FreePool (DevicePathString);
-    }
-
-    DEBUG_CODE_END ();
+    EfiBootManagerDeleteLoadOptionVariable (
+      BootOptions[Index].OptionNumber,
+      LoadOptionTypeBoot
+      );
   }
 
   EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
@@ -317,23 +152,24 @@ PlatformRegisterOptionsAndKeys (
   Esc.ScanCode    = SCAN_ESC;
   Esc.UnicodeChar = CHAR_NULL;
   Status          = EfiBootManagerGetBootManagerMenu (&BootOption);
-  ASSERT_EFI_ERROR (Status);
-  Status = EfiBootManagerAddKeyOptionVariable (
-             NULL,
-             (UINT16)BootOption.OptionNumber,
-             0,
-             &F2,
-             NULL
-             );
-  ASSERT (Status == EFI_SUCCESS || Status == EFI_ALREADY_STARTED);
-  Status = EfiBootManagerAddKeyOptionVariable (
-             NULL,
-             (UINT16)BootOption.OptionNumber,
-             0,
-             &Esc,
-             NULL
-             );
-  ASSERT (Status == EFI_SUCCESS || Status == EFI_ALREADY_STARTED);
+  if (!EFI_ERROR (Status)) {
+    Status = EfiBootManagerAddKeyOptionVariable (
+               NULL,
+               (UINT16)BootOption.OptionNumber,
+               0,
+               &F2,
+               NULL
+               );
+    ASSERT (Status == EFI_SUCCESS || Status == EFI_ALREADY_STARTED);
+    Status = EfiBootManagerAddKeyOptionVariable (
+               NULL,
+               (UINT16)BootOption.OptionNumber,
+               0,
+               &Esc,
+               NULL
+               );
+    ASSERT (Status == EFI_SUCCESS || Status == EFI_ALREADY_STARTED);
+  }
 }
 
 EFI_STATUS
@@ -386,6 +222,7 @@ PlatformBootManagerBeforeConsole (
   EFI_STATUS     Status;
   UINT16         FrontPageTimeout;
   RETURN_STATUS  PcdStatus;
+  BOOLEAN        FirmwareSetupEnabled;
 
   DEBUG ((DEBUG_INFO, "PlatformBootManagerBeforeConsole\n"));
   InstallDevicePathCallback ();
@@ -452,14 +289,15 @@ PlatformBootManagerBeforeConsole (
   // Dispatch deferred images after EndOfDxe event and ReadyToLock
   // installation.
   //
-  EfiBootManagerDispatchDeferredImages ();
-
-  //
-  // GPU passthrough only allows Console enablement after ROM image load
-  //
-  PlatformInitializeConsole (
-    XenDetected () ? gXenPlatformConsole : gPlatformConsole
-    );
+  Status = EfiBootManagerDispatchDeferredImages ();
+  if (!EFI_ERROR (Status)) {
+    //
+    // GPU passthrough only allows Console enablement after ROM image load
+    //
+    PlatformInitializeConsole (
+      XenDetected () ? gXenPlatformConsole : gPlatformConsole
+      );
+  }
 
   FrontPageTimeout = GetFrontPageTimeoutFromQemu ();
   PcdStatus        = PcdSet16S (PcdPlatformBootTimeOut, FrontPageTimeout);
@@ -479,13 +317,31 @@ PlatformBootManagerBeforeConsole (
   DEBUG ((
     EFI_ERROR (Status) ? DEBUG_ERROR : DEBUG_VERBOSE,
     "%a: SetVariable(%s, %u): %r\n",
-    __FUNCTION__,
+    __func__,
     EFI_TIME_OUT_VARIABLE_NAME,
     FrontPageTimeout,
     Status
     ));
 
-  PlatformRegisterOptionsAndKeys ();
+  Status = QemuFwCfgParseBool (
+             "opt/org.tianocore/FirmwareSetupSupport",
+             &FirmwareSetupEnabled
+             );
+
+  if (RETURN_ERROR (Status)) {
+    FirmwareSetupEnabled = TRUE;
+  }
+
+  PlatformRegisterFvBootOption (
+    &gUiAppFileGuid,
+    L"EFI Firmware Setup",
+    LOAD_OPTION_ACTIVE | LOAD_OPTION_CATEGORY_APP,
+    FirmwareSetupEnabled
+    );
+
+  if (!FeaturePcdGet (PcdBootRestrictToFirmware)) {
+    PlatformRegisterOptionsAndKeys ();
+  }
 
   //
   // Install both VIRTIO_DEVICE_PROTOCOL and (dependent) EFI_RNG_PROTOCOL
@@ -627,12 +483,14 @@ ConnectVirtioPciRng (
     if (EFI_ERROR (Status)) {
       goto Error;
     }
+
+    gDS->Dispatch ();
   }
 
   return EFI_SUCCESS;
 
 Error:
-  DEBUG ((DEBUG_ERROR, "%a: %r\n", __FUNCTION__, Status));
+  DEBUG ((DEBUG_ERROR, "%a: %r\n", __func__, Status));
   return Status;
 }
 
@@ -927,6 +785,7 @@ PreparePciDisplayDevicePath (
   DevicePath = GopDevicePath;
 
   EfiBootManagerUpdateConsoleVariable (ConOut, DevicePath, NULL);
+  EfiBootManagerUpdateConsoleVariable (ErrOut, DevicePath, NULL);
 
   return EFI_SUCCESS;
 }
@@ -973,6 +832,67 @@ PreparePciSerialDevicePath (
   EfiBootManagerUpdateConsoleVariable (ConIn, DevicePath, NULL);
   EfiBootManagerUpdateConsoleVariable (ErrOut, DevicePath, NULL);
 
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS
+PrepareVirtioSerialDevicePath (
+  IN EFI_HANDLE  DeviceHandle
+  )
+{
+  EFI_STATUS                Status;
+  EFI_DEVICE_PATH_PROTOCOL  *DevicePath;
+
+  DevicePath = NULL;
+  Status     = gBS->HandleProtocol (
+                      DeviceHandle,
+                      &gEfiDevicePathProtocolGuid,
+                      (VOID *)&DevicePath
+                      );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  gPnp16550ComPortDeviceNode.UID = 0;
+  DevicePath                     = AppendDevicePathNode (
+                                     DevicePath,
+                                     (EFI_DEVICE_PATH_PROTOCOL *)&gPnp16550ComPortDeviceNode
+                                     );
+  DevicePath = AppendDevicePathNode (
+                 DevicePath,
+                 (EFI_DEVICE_PATH_PROTOCOL *)&gUartDeviceNode
+                 );
+  DevicePath = AppendDevicePathNode (
+                 DevicePath,
+                 (EFI_DEVICE_PATH_PROTOCOL *)&gTerminalTypeDeviceNode
+                 );
+
+  EfiBootManagerUpdateConsoleVariable (ConOut, DevicePath, NULL);
+  EfiBootManagerUpdateConsoleVariable (ConIn, DevicePath, NULL);
+  EfiBootManagerUpdateConsoleVariable (ErrOut, DevicePath, NULL);
+
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS
+PrepareVirtioInputDevicePath (
+  IN EFI_HANDLE  DeviceHandle
+  )
+{
+  EFI_STATUS                Status;
+  EFI_DEVICE_PATH_PROTOCOL  *DevicePath;
+
+  DevicePath = NULL;
+  Status     = gBS->HandleProtocol (
+                      DeviceHandle,
+                      &gEfiDevicePathProtocolGuid,
+                      (VOID *)&DevicePath
+                      );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  EfiBootManagerUpdateConsoleVariable (ConIn, DevicePath, NULL);
   return EFI_SUCCESS;
 }
 
@@ -1038,14 +958,15 @@ VisitingAPciInstance (
   PciIo = (EFI_PCI_IO_PROTOCOL *)Instance;
 
   //
-  // Check for all PCI device
+  // Read the device-independent PCI header region
   //
+  ZeroMem (&Pci, sizeof (Pci));
   Status = PciIo->Pci.Read (
                         PciIo,
                         EfiPciIoWidthUint32,
                         0,
-                        sizeof (Pci) / sizeof (UINT32),
-                        &Pci
+                        sizeof (Pci.Hdr) / sizeof (UINT32),
+                        &Pci.Hdr
                         );
   if (EFI_ERROR (Status)) {
     return Status;
@@ -1093,14 +1014,6 @@ DetectAndPreparePlatformPciDevicePath (
 {
   EFI_STATUS  Status;
 
-  Status = PciIo->Attributes (
-                    PciIo,
-                    EfiPciIoAttributeOperationEnable,
-                    EFI_PCI_DEVICE_ENABLE,
-                    NULL
-                    );
-  ASSERT_EFI_ERROR (Status);
-
   //
   // Here we decide whether it is LPC Bridge
   //
@@ -1116,6 +1029,13 @@ DetectAndPreparePlatformPciDevicePath (
     // add IsaSerial to ConOut, ConIn, ErrOut
     //
     DEBUG ((DEBUG_INFO, "Found LPC Bridge device\n"));
+    Status = PciIo->Attributes (
+                      PciIo,
+                      EfiPciIoAttributeOperationEnable,
+                      EFI_PCI_DEVICE_ENABLE,
+                      NULL
+                      );
+    ASSERT_EFI_ERROR (Status);
     PrepareLpcBridgeDevicePath (Handle);
     return EFI_SUCCESS;
   }
@@ -1144,7 +1064,45 @@ DetectAndPreparePlatformPciDevicePath (
     return EFI_SUCCESS;
   }
 
-  return Status;
+  if (((Pci->Hdr.VendorId == 0x1af4) && (Pci->Hdr.DeviceId == 0x1003)) ||
+      ((Pci->Hdr.VendorId == 0x1af4) && (Pci->Hdr.DeviceId == 0x1043)))
+  {
+    DEBUG ((DEBUG_INFO, "Found virtio serial device\n"));
+    PrepareVirtioSerialDevicePath (Handle);
+    return EFI_SUCCESS;
+  }
+
+  if ((Pci->Hdr.VendorId == 0x1af4) && (Pci->Hdr.DeviceId == 0x1052)) {
+    DEBUG ((DEBUG_INFO, "Found virtio input device\n"));
+    PrepareVirtioInputDevicePath (Handle);
+    return EFI_SUCCESS;
+  }
+
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS
+EFIAPI
+DetectAndPreparePlatformVirtioDevicePath (
+  IN EFI_HANDLE  Handle,
+  IN VOID        *Instance,
+  IN VOID        *Context
+  )
+{
+  VIRTIO_DEVICE_PROTOCOL  *VirtIo = (VIRTIO_DEVICE_PROTOCOL *)Instance;
+
+  DEBUG ((DEBUG_INFO, "%a:%d: id %d\n", __func__, __LINE__, VirtIo->SubSystemDeviceId));
+
+  switch (VirtIo->SubSystemDeviceId) {
+    case VIRTIO_SUBSYSTEM_CONSOLE:
+      PrepareVirtioSerialDevicePath (Handle);
+      break;
+    default:
+      /* nothing */
+      break;
+  }
+
+  return EFI_SUCCESS;
 }
 
 /**
@@ -1166,6 +1124,12 @@ PlatformInitializeConsole (
   // ErrOut
   //
   VisitAllPciInstances (DetectAndPreparePlatformPciDevicePath);
+
+  VisitAllInstancesOfProtocol (
+    &gVirtioDeviceProtocolGuid,
+    DetectAndPreparePlatformVirtioDevicePath,
+    NULL
+    );
 
   PrepareMicrovmDevicePath ();
 
@@ -1209,8 +1173,8 @@ PlatformInitializeConsole (
   Ported from SeaBIOS, src/fw/pciinit.c, *_pci_slot_get_irq()
 
   @param[in]  Handle - Handle of PCI device instance
-  @param[in]  PciIo - PCI IO protocol instance
-  @param[in]  PciHdr - PCI Header register block
+  @param[in]  Instance - PCI IO protocol instance
+  @param[in]  Context - Context pointer (unused)
 
   @retval EFI_SUCCESS - PCI Interrupt Line register configured successfully.
 
@@ -1218,22 +1182,35 @@ PlatformInitializeConsole (
 EFI_STATUS
 EFIAPI
 SetPciIntLine (
-  IN EFI_HANDLE           Handle,
-  IN EFI_PCI_IO_PROTOCOL  *PciIo,
-  IN PCI_TYPE00           *PciHdr
+  IN EFI_HANDLE  Handle,
+  IN VOID        *Instance,
+  IN VOID        *Context
   )
 {
+  EFI_PCI_IO_PROTOCOL       *PciIo;
   EFI_DEVICE_PATH_PROTOCOL  *DevPathNode;
   EFI_DEVICE_PATH_PROTOCOL  *DevPath;
   UINTN                     RootSlot;
   UINTN                     Idx;
+  UINT8                     InterruptPin;
   UINT8                     IrqLine;
   EFI_STATUS                Status;
   UINT32                    RootBusNumber;
 
-  Status = EFI_SUCCESS;
+  PciIo = (EFI_PCI_IO_PROTOCOL *)Instance;
 
-  if (PciHdr->Device.InterruptPin != 0) {
+  Status = PciIo->Pci.Read (
+                        PciIo,
+                        EfiPciIoWidthUint8,
+                        PCI_INT_PIN_OFFSET,
+                        1,
+                        &InterruptPin
+                        );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  if (InterruptPin != 0) {
     DevPathNode = DevicePathFromHandle (Handle);
     ASSERT (DevPathNode != NULL);
     DevPath = DevPathNode;
@@ -1252,7 +1229,7 @@ SetPciIntLine (
     //
     Status   = EFI_NOT_FOUND;
     RootSlot = 0;
-    Idx      = PciHdr->Device.InterruptPin - 1;
+    Idx      = InterruptPin - 1;
     while (!IsDevicePathEnd (DevPathNode)) {
       if ((DevicePathType (DevPathNode) == HARDWARE_DEVICE_PATH) &&
           (DevicePathSubType (DevPathNode) == HW_PCI_DP))
@@ -1283,7 +1260,7 @@ SetPciIntLine (
       DEBUG ((
         DEBUG_ERROR,
         "%a: PCI host bridge (00:00.0) should have no interrupts!\n",
-        __FUNCTION__
+        __func__
         ));
       ASSERT (FALSE);
     }
@@ -1338,7 +1315,7 @@ SetPciIntLine (
       DEBUG ((
         DEBUG_VERBOSE,
         "%a: [%02x:%02x.%x] %s -> 0x%02x\n",
-        __FUNCTION__,
+        __func__,
         (UINT32)Bus,
         (UINT32)Device,
         (UINT32)Function,
@@ -1416,7 +1393,7 @@ PciAcpiInitialization (
       DEBUG ((
         DEBUG_ERROR,
         "%a: Unknown Host Bridge Device ID: 0x%04x\n",
-        __FUNCTION__,
+        __func__,
         mHostBridgeDevId
         ));
       ASSERT (FALSE);
@@ -1426,7 +1403,11 @@ PciAcpiInitialization (
   //
   // Initialize PCI_INTERRUPT_LINE for applicable present PCI devices
   //
-  VisitAllPciInstances (SetPciIntLine);
+  VisitAllInstancesOfProtocol (
+    &gEfiPciIoProtocolGuid,
+    SetPciIntLine,
+    NULL
+    );
 
   //
   // Set ACPI SCI_EN bit in PMCNTRL
@@ -1695,6 +1676,11 @@ PlatformBootManagerAfterConsole (
   PciAcpiInitialization ();
 
   //
+  // Write qemu bootorder to efi variables
+  //
+  StoreQemuBootOrder ();
+
+  //
   // Process QEMU's -kernel command line option
   //
   TryRunningQemuKernel ();
@@ -1702,9 +1688,24 @@ PlatformBootManagerAfterConsole (
   //
   // Perform some platform specific connect sequence
   //
-  PlatformBdsConnectSequence ();
+  if (FeaturePcdGet (PcdBootRestrictToFirmware)) {
+    RestrictBootOptionsToFirmware ();
+  } else {
+    PlatformBdsConnectSequence ();
+    EfiBootManagerRefreshAllBootOption ();
+  }
 
-  EfiBootManagerRefreshAllBootOption ();
+  BOOLEAN        ShellEnabled;
+  RETURN_STATUS  RetStatus;
+
+  RetStatus = QemuFwCfgParseBool (
+                "opt/org.tianocore/EFIShellSupport",
+                &ShellEnabled
+                );
+
+  if (RETURN_ERROR (RetStatus)) {
+    ShellEnabled = TRUE;
+  }
 
   //
   // Register UEFI Shell
@@ -1712,7 +1713,18 @@ PlatformBootManagerAfterConsole (
   PlatformRegisterFvBootOption (
     &gUefiShellFileGuid,
     L"EFI Internal Shell",
-    LOAD_OPTION_ACTIVE
+    LOAD_OPTION_ACTIVE | LOAD_OPTION_CATEGORY_APP,
+    ShellEnabled
+    );
+
+  //
+  // Register Grub
+  //
+  PlatformRegisterFvBootOption (
+    &gGrubFileGuid,
+    L"Grub Bootloader",
+    LOAD_OPTION_ACTIVE,
+    TRUE
     );
 
   RemoveStaleFvFileOptions ();
@@ -1882,6 +1894,14 @@ PlatformBootManagerUnableToBoot (
   EFI_INPUT_KEY                 Key;
   EFI_BOOT_MANAGER_LOAD_OPTION  BootManagerMenu;
   UINTN                         Index;
+
+  if (FeaturePcdGet (PcdBootRestrictToFirmware)) {
+    AsciiPrint (
+      "%a: No bootable option was found.\n",
+      gEfiCallerBaseName
+      );
+    CpuDeadLoop ();
+  }
 
   //
   // BootManagerMenu doesn't contain the correct information when return status

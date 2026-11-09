@@ -7,8 +7,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _PCI_HOST_BRIDGE_H_
-#define _PCI_HOST_BRIDGE_H_
+#pragma once
 
 #include <PiDxe.h>
 #include <IndustryStandard/Acpi.h>
@@ -16,6 +15,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PciHostBridgeLib.h>
 #include <Protocol/PciHostBridgeResourceAllocation.h>
+#include <Protocol/PciHostBridgeFixedResource.h>
 #include <Protocol/IoMmu.h>
 
 #include "PciRootBridge.h"
@@ -27,9 +27,12 @@ typedef struct {
   LIST_ENTRY                                          RootBridges;
   BOOLEAN                                             CanRestarted;
   EFI_PCI_HOST_BRIDGE_RESOURCE_ALLOCATION_PROTOCOL    ResAlloc;
+  EDKII_PCI_HOST_BRIDGE_FIXED_RESOURCE_PROTOCOL       FixedRes;
 } PCI_HOST_BRIDGE_INSTANCE;
 
 #define PCI_HOST_BRIDGE_FROM_THIS(a)  CR (a, PCI_HOST_BRIDGE_INSTANCE, ResAlloc, PCI_HOST_BRIDGE_SIGNATURE)
+#define PCI_HOST_BRIDGE_FROM_FIXED_RES(a) \
+  CR (a, PCI_HOST_BRIDGE_INSTANCE, FixedRes, PCI_HOST_BRIDGE_SIGNATURE)
 
 //
 // Macros to translate device address to host address and vice versa. According
@@ -241,6 +244,32 @@ PreprocessController (
   );
 
 /**
+  Submit the fixed I/O and memory ranges decoded by devices below the
+  specified PCI root bridge.
+
+  @param[in] This              The EDKII_PCI_HOST_BRIDGE_FIXED_RESOURCE_PROTOCOL
+                               instance.
+  @param[in] RootBridgeHandle  The PCI root bridge below which the fixed ranges
+                               are decoded.
+  @param[in] Configuration     A list of ACPI QWORD address space descriptors,
+                               terminated by an end tag descriptor.
+
+  @retval EFI_SUCCESS            The fixed ranges were accepted.
+  @retval EFI_INVALID_PARAMETER  RootBridgeHandle or Configuration is invalid.
+  @retval EFI_ACCESS_DENIED      Fixed ranges were already claimed for this root
+                                 bridge, and have not been released yet.
+  @retval EFI_OUT_OF_RESOURCES   Memory allocation failed.
+
+**/
+EFI_STATUS
+EFIAPI
+SubmitFixedResources (
+  IN EDKII_PCI_HOST_BRIDGE_FIXED_RESOURCE_PROTOCOL  *This,
+  IN EFI_HANDLE                                     RootBridgeHandle,
+  IN VOID                                           *Configuration
+  );
+
+/**
   This routine constructs the resource descriptors for all root bridges and call PciHostBridgeResourceConflict().
 
   @param HostBridge The Host Bridge Instance where the resource adjustment happens.
@@ -266,5 +295,3 @@ GetTranslationByResourceType (
 
 extern EFI_CPU_IO2_PROTOCOL  *mCpuIo;
 extern EDKII_IOMMU_PROTOCOL  *mIoMmu;
-
-#endif

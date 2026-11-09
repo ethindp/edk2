@@ -1,8 +1,8 @@
 /** @file
   Support routines for memory allocation routines based on Standalone MM Core internal functions.
 
-  Copyright (c) 2015, Intel Corporation. All rights reserved.<BR>
-  Copyright (c) 2016 - 2021, ARM Limited. All rights reserved.<BR>
+  Copyright (c) 2015 - 2025, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2016 - 2026, Arm Limited. All rights reserved.<BR>
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -10,14 +10,11 @@
 
 #include <PiMm.h>
 
-#include <Guid/MmramMemoryReserve.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
-#include <Library/HobLib.h>
-#include "StandaloneMmCoreMemoryAllocationServices.h"
 
-EFI_MM_SYSTEM_TABLE  *gMmst = NULL;
+EFI_MM_SYSTEM_TABLE  *mMemoryAllocationMmst = NULL;
 
 /**
   Allocates one or more 4KB pages of a certain memory type.
@@ -45,7 +42,7 @@ InternalAllocatePages (
     return NULL;
   }
 
-  Status = gMmst->MmAllocatePages (AllocateAnyPages, MemoryType, Pages, &Memory);
+  Status = mMemoryAllocationMmst->MmAllocatePages (AllocateAnyPages, MemoryType, Pages, &Memory);
   if (EFI_ERROR (Status)) {
     return NULL;
   }
@@ -146,7 +143,7 @@ FreePages (
   EFI_STATUS  Status;
 
   ASSERT (Pages != 0);
-  Status = gMmst->MmFreePages ((EFI_PHYSICAL_ADDRESS)(UINTN)Buffer, Pages);
+  Status = mMemoryAllocationMmst->MmFreePages ((EFI_PHYSICAL_ADDRESS)(UINTN)Buffer, Pages);
   ASSERT_EFI_ERROR (Status);
 }
 
@@ -158,7 +155,7 @@ FreePages (
   If there is not enough memory at the specified alignment remaining to satisfy the request, then
   NULL is returned.
   If Alignment is not a power of two and Alignment is not zero, then ASSERT().
-  If Pages plus EFI_SIZE_TO_PAGES (Alignment) overflows, then ASSERT().
+  If the total number of pages required overflows, then NULL is returned.
 
   @param  MemoryType            The type of memory to allocate.
   @param  Pages                 The number of 4 KB pages to allocate.
@@ -168,6 +165,7 @@ FreePages (
   @return A pointer to the allocated buffer or NULL if allocation fails.
 
 **/
+STATIC
 VOID *
 InternalAllocateAlignedPages (
   IN EFI_MEMORY_TYPE  MemoryType,
@@ -187,22 +185,24 @@ InternalAllocateAlignedPages (
   //
   ASSERT ((Alignment & (Alignment - 1)) == 0);
 
-  if (Pages == 0) {
+  if ((Pages == 0) ||
+      ((Alignment & (Alignment - 1)) != 0))
+  {
     return NULL;
   }
 
   if (Alignment > EFI_PAGE_SIZE) {
     //
-    // Calculate the total number of pages since alignment is larger than page size.
+    // Check for overflow before calculating the total page count.
     //
+    if (Pages > (MAX_UINTN - EFI_SIZE_TO_PAGES (Alignment))) {
+      return NULL;
+    }
+
     AlignmentMask = Alignment - 1;
     RealPages     = Pages + EFI_SIZE_TO_PAGES (Alignment);
-    //
-    // Make sure that Pages plus EFI_SIZE_TO_PAGES (Alignment) does not overflow.
-    //
-    ASSERT (RealPages > Pages);
 
-    Status = gMmst->MmAllocatePages (AllocateAnyPages, MemoryType, RealPages, &Memory);
+    Status = mMemoryAllocationMmst->MmAllocatePages (AllocateAnyPages, MemoryType, RealPages, &Memory);
     if (EFI_ERROR (Status)) {
       return NULL;
     }
@@ -213,7 +213,7 @@ InternalAllocateAlignedPages (
       //
       // Free first unaligned page(s).
       //
-      Status = gMmst->MmFreePages (Memory, UnalignedPages);
+      Status = mMemoryAllocationMmst->MmFreePages (Memory, UnalignedPages);
       ASSERT_EFI_ERROR (Status);
     }
 
@@ -223,14 +223,14 @@ InternalAllocateAlignedPages (
       //
       // Free last unaligned page(s).
       //
-      Status = gMmst->MmFreePages (Memory, UnalignedPages);
+      Status = mMemoryAllocationMmst->MmFreePages (Memory, UnalignedPages);
       ASSERT_EFI_ERROR (Status);
     }
   } else {
     //
     // Do not over-allocate pages in this case.
     //
-    Status = gMmst->MmAllocatePages (AllocateAnyPages, MemoryType, Pages, &Memory);
+    Status = mMemoryAllocationMmst->MmAllocatePages (AllocateAnyPages, MemoryType, Pages, &Memory);
     if (EFI_ERROR (Status)) {
       return NULL;
     }
@@ -250,7 +250,7 @@ InternalAllocateAlignedPages (
   request, then NULL is returned.
 
   If Alignment is not a power of two and Alignment is not zero, then ASSERT().
-  If Pages plus EFI_SIZE_TO_PAGES (Alignment) overflows, then ASSERT().
+  If the total number of pages required overflows, then NULL is returned.
 
   @param  Pages                 The number of 4 KB pages to allocate.
   @param  Alignment             The requested alignment of the allocation.  Must be a power of two.
@@ -278,7 +278,7 @@ AllocateAlignedPages (
   request, then NULL is returned.
 
   If Alignment is not a power of two and Alignment is not zero, then ASSERT().
-  If Pages plus EFI_SIZE_TO_PAGES (Alignment) overflows, then ASSERT().
+  If the total number of pages required overflows, then NULL is returned.
 
   @param  Pages                 The number of 4 KB pages to allocate.
   @param  Alignment             The requested alignment of the allocation.  Must be a power of two.
@@ -306,7 +306,7 @@ AllocateAlignedRuntimePages (
   request, then NULL is returned.
 
   If Alignment is not a power of two and Alignment is not zero, then ASSERT().
-  If Pages plus EFI_SIZE_TO_PAGES (Alignment) overflows, then ASSERT().
+  If the total number of pages required overflows, then NULL is returned.
 
   @param  Pages                 The number of 4 KB pages to allocate.
   @param  Alignment             The requested alignment of the allocation.  Must be a power of two.
@@ -352,7 +352,7 @@ FreeAlignedPages (
   EFI_STATUS  Status;
 
   ASSERT (Pages != 0);
-  Status = gMmst->MmFreePages ((EFI_PHYSICAL_ADDRESS)(UINTN)Buffer, Pages);
+  Status = mMemoryAllocationMmst->MmFreePages ((EFI_PHYSICAL_ADDRESS)(UINTN)Buffer, Pages);
   ASSERT_EFI_ERROR (Status);
 }
 
@@ -380,7 +380,7 @@ InternalAllocatePool (
 
   Memory = NULL;
 
-  Status = gMmst->MmAllocatePool (MemoryType, AllocationSize, &Memory);
+  Status = mMemoryAllocationMmst->MmAllocatePool (MemoryType, AllocationSize, &Memory);
   if (EFI_ERROR (Status)) {
     Memory = NULL;
   }
@@ -824,93 +824,6 @@ FreePool (
 {
   EFI_STATUS  Status;
 
-  Status = gMmst->MmFreePool (Buffer);
+  Status = mMemoryAllocationMmst->MmFreePool (Buffer);
   ASSERT_EFI_ERROR (Status);
-}
-
-/**
-  The constructor function calls MmInitializeMemoryServices to initialize
-  memory in MMRAM and caches EFI_MM_SYSTEM_TABLE pointer.
-
-  @param  [in]  ImageHandle     The firmware allocated handle for the EFI image.
-  @param  [in]  MmSystemTable   A pointer to the Management mode System Table.
-
-  @retval EFI_SUCCESS   The constructor always returns EFI_SUCCESS.
-
-**/
-EFI_STATUS
-EFIAPI
-MemoryAllocationLibConstructor (
-  IN EFI_HANDLE           ImageHandle,
-  IN EFI_MM_SYSTEM_TABLE  *MmSystemTable
-  )
-{
-  MM_CORE_PRIVATE_DATA            *MmCorePrivate;
-  EFI_HOB_GUID_TYPE               *GuidHob;
-  MM_CORE_DATA_HOB_DATA           *DataInHob;
-  VOID                            *HobStart;
-  EFI_MMRAM_HOB_DESCRIPTOR_BLOCK  *MmramRangesHobData;
-  EFI_MMRAM_DESCRIPTOR            *MmramRanges;
-  UINTN                           MmramRangeCount;
-  EFI_HOB_GUID_TYPE               *MmramRangesHob;
-
-  HobStart = GetHobList ();
-  DEBUG ((DEBUG_INFO, "StandaloneMmCoreMemoryAllocationLibConstructor - 0x%x\n", HobStart));
-
-  //
-  // Extract MM Core Private context from the Hob. If absent search for
-  // a Hob containing the MMRAM ranges
-  //
-  GuidHob = GetNextGuidHob (&gMmCoreDataHobGuid, HobStart);
-  if (GuidHob == NULL) {
-    MmramRangesHob = GetNextGuidHob (&gEfiMmPeiMmramMemoryReserveGuid, HobStart);
-    if (MmramRangesHob == NULL) {
-      return EFI_UNSUPPORTED;
-    }
-
-    MmramRangesHobData = GET_GUID_HOB_DATA (MmramRangesHob);
-    if (MmramRangesHobData == NULL) {
-      return EFI_UNSUPPORTED;
-    }
-
-    MmramRanges = MmramRangesHobData->Descriptor;
-    if (MmramRanges == NULL) {
-      return EFI_UNSUPPORTED;
-    }
-
-    MmramRangeCount = (UINTN)MmramRangesHobData->NumberOfMmReservedRegions;
-    if (MmramRanges == NULL) {
-      return EFI_UNSUPPORTED;
-    }
-  } else {
-    DataInHob       = GET_GUID_HOB_DATA (GuidHob);
-    MmCorePrivate   = (MM_CORE_PRIVATE_DATA *)(UINTN)DataInHob->Address;
-    MmramRanges     = (EFI_MMRAM_DESCRIPTOR *)(UINTN)MmCorePrivate->MmramRanges;
-    MmramRangeCount = (UINTN)MmCorePrivate->MmramRangeCount;
-  }
-
-  {
-    UINTN  Index;
-
-    DEBUG ((DEBUG_INFO, "MmramRangeCount - 0x%x\n", MmramRangeCount));
-    for (Index = 0; Index < MmramRangeCount; Index++) {
-      DEBUG ((
-        DEBUG_INFO,
-        "MmramRanges[%d]: 0x%016lx - 0x%016lx\n",
-        Index,
-        MmramRanges[Index].CpuStart,
-        MmramRanges[Index].PhysicalSize
-        ));
-    }
-  }
-
-  //
-  // Initialize memory service using free MMRAM
-  //
-  DEBUG ((DEBUG_INFO, "MmInitializeMemoryServices\n"));
-  MmInitializeMemoryServices ((UINTN)MmramRangeCount, (VOID *)(UINTN)MmramRanges);
-
-  // Initialize MM Services Table
-  gMmst = MmSystemTable;
-  return EFI_SUCCESS;
 }

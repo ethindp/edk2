@@ -73,7 +73,7 @@ class SpellCheck(ICiBuildPlugin):
     def RunBuildPlugin(self, packagename, Edk2pathObj, pkgconfig, environment, PLM, PLMHelper, tc, output_stream=None):
         Errors = []
 
-        abs_pkg_path = Edk2pathObj.GetAbsolutePathOnThisSytemFromEdk2RelativePath(
+        abs_pkg_path = Edk2pathObj.GetAbsolutePathOnThisSystemFromEdk2RelativePath(
             packagename)
 
         if abs_pkg_path is None:
@@ -148,36 +148,39 @@ class SpellCheck(ICiBuildPlugin):
 
         if("ExtendWords" in pkgconfig):
             config["words"].extend(pkgconfig["ExtendWords"])
-        with open(config_file_path, "w") as o:
-            json.dump(config, o)  # output as json so compat with cspell
 
-        All_Ignores = []
-        # Parse the config for other ignores
+        # Parse the config for other ignored paths and use os separator.
         if "IgnoreFiles" in pkgconfig:
-            All_Ignores.extend(pkgconfig["IgnoreFiles"])
+            pkgfiles = [os.path.join(packagename, x).replace(os.sep, "/")
+                        for x in pkgconfig["IgnoreFiles"]]
+            config["ignorePaths"].extend(pkgfiles)
 
-        # spell check all the files
-        ignore = parse_gitignore_lines(All_Ignores, os.path.join(
-            abs_pkg_path, "nofile.txt"), abs_pkg_path)
+        with open(config_file_path, "w") as o:
+            json.dump(config, o)  # output as json to have compat with cspell
 
         # result is a list of strings like this
         #  C:\src\sp-edk2\edk2\FmpDevicePkg\FmpDevicePkg.dec:53:9 - Unknown word (Capule)
         EasyFix = []
+        MisspelledWordFound = False
         results = self._check_spelling(cpsell_paths, config_file_path)
         for r in results:
             path, _, word = r.partition(" - Unknown word ")
             if len(word) == 0:
                 # didn't find pattern
                 continue
-
-            pathinfo = path.rsplit(":", 2)  # remove the line no info
-            if(ignore(pathinfo[0])):  # check against ignore list
-                tc.LogStdOut(f"ignoring error due to ci.yaml ignore: {r}")
-                continue
+            MisspelledWordFound = True
 
             # real error
             EasyFix.append(word.strip().strip("()"))
             Errors.append(r)
+
+        # _check_spelling reported errors lines, but none of them were misspelled words
+        # This indicates a different kind of error occured, e.g. an error in running cspell
+        if len(results) > 0 and not MisspelledWordFound:
+            tc.LogStdError("Error running cspell. See output below:")
+            tc.LogStdError("\n".join(results))
+            tc.SetFailed(f"SpellCheck for {packagename} Failed to run cspell.", "CHECK_FAILED")
+            return -1
 
         # Log all errors tc StdError
         for l in Errors:
@@ -186,13 +189,14 @@ class SpellCheck(ICiBuildPlugin):
         # Helper - Log the syntax needed to add these words to dictionary
         if len(EasyFix) > 0:
             EasyFix = sorted(set(a.lower() for a in EasyFix))
+            logging.error(f'SpellCheck found {len(EasyFix)} failing words. See CI log for details.')
             tc.LogStdOut("\n Easy fix:")
             OneString = "If these are not errors add this to your ci.yaml file.\n"
             OneString += '"SpellCheck": {\n  "ExtendWords": ['
             for a in EasyFix:
                 tc.LogStdOut(f'\n"{a}",')
                 OneString += f'\n    "{a}",'
-            logging.info(OneString.rstrip(",") + '\n  ]\n}')
+            logging.critical(OneString.rstrip(",") + '\n ]\n}')
 
         # add result to test case
         overall_status = len(Errors)

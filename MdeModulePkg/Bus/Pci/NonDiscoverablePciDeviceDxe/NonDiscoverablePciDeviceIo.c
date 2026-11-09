@@ -960,12 +960,24 @@ NonCoherentPciIoFreeBuffer (
   LIST_ENTRY                                   *Entry;
   EFI_STATUS                                   Status;
   NON_DISCOVERABLE_DEVICE_UNCACHED_ALLOCATION  *Alloc;
+  NON_DISCOVERABLE_DEVICE_UNCACHED_ALLOCATION  *AllocHead;
+  NON_DISCOVERABLE_DEVICE_UNCACHED_ALLOCATION  *AllocTail;
   BOOLEAN                                      Found;
+  UINTN                                        StartPages;
+  UINTN                                        EndPages;
+
+  if (HostAddress != ALIGN_POINTER (HostAddress, EFI_PAGE_SIZE)) {
+    ASSERT_EFI_ERROR (EFI_INVALID_PARAMETER);
+    return EFI_INVALID_PARAMETER;
+  }
 
   Dev = NON_DISCOVERABLE_PCI_DEVICE_FROM_PCI_IO (This);
 
   Found = FALSE;
   Alloc = NULL;
+
+  AllocHead = NULL;
+  AllocTail = NULL;
 
   //
   // Find the uncached allocation list entry associated
@@ -976,9 +988,19 @@ NonCoherentPciIoFreeBuffer (
        Entry = Entry->ForwardLink)
   {
     Alloc = BASE_CR (Entry, NON_DISCOVERABLE_DEVICE_UNCACHED_ALLOCATION, List);
-    if ((Alloc->HostAddress == HostAddress) && (Alloc->NumPages == Pages)) {
+
+    StartPages = 0;
+    if (Alloc->HostAddress < HostAddress) {
+      StartPages = EFI_SIZE_TO_PAGES (
+                     (UINTN)HostAddress - (UINTN)Alloc->HostAddress
+                     );
+    }
+
+    if ((Alloc->HostAddress <= HostAddress) &&
+        (Alloc->NumPages >= (Pages + StartPages)))
+    {
       //
-      // We are freeing the exact allocation we were given
+      // We are freeing at least part of what we were given
       // before by AllocateBuffer()
       //
       Found = TRUE;
@@ -986,12 +1008,50 @@ NonCoherentPciIoFreeBuffer (
     }
   }
 
-  if (!Found) {
+  if (!Found || (Alloc == NULL)) {
     ASSERT_EFI_ERROR (EFI_NOT_FOUND);
     return EFI_NOT_FOUND;
   }
 
+  EndPages = Alloc->NumPages - (Pages + StartPages);
+
+  if (StartPages != 0) {
+    AllocHead = AllocatePool (sizeof *AllocHead);
+    if (AllocHead == NULL) {
+      return EFI_OUT_OF_RESOURCES;
+    }
+
+    AllocHead->HostAddress = Alloc->HostAddress;
+
+    AllocHead->NumPages   = StartPages;
+    AllocHead->Attributes = Alloc->Attributes;
+  }
+
+  if (EndPages != 0) {
+    AllocTail = AllocatePool (sizeof *AllocTail);
+    if (AllocTail == NULL) {
+      return EFI_OUT_OF_RESOURCES;
+    }
+
+    AllocTail->HostAddress = (UINT8 *)Alloc->HostAddress +
+                             EFI_PAGES_TO_SIZE (Pages + StartPages);
+
+    AllocTail->NumPages   = EndPages;
+    AllocTail->Attributes = Alloc->Attributes;
+  }
+
   RemoveEntryList (&Alloc->List);
+  //
+  // Record this new sub allocations in the linked list, so we
+  // can restore the memory space attributes later
+  //
+  if (AllocHead != NULL) {
+    InsertHeadList (&Dev->UncachedAllocationList, &AllocHead->List);
+  }
+
+  if (AllocTail != NULL) {
+    InsertHeadList (&Dev->UncachedAllocationList, &AllocTail->List);
+  }
 
   Status = gDS->SetMemorySpaceAttributes (
                   (EFI_PHYSICAL_ADDRESS)(UINTN)HostAddress,
@@ -1051,6 +1111,8 @@ NonCoherentPciIoAllocateBuffer (
   NON_DISCOVERABLE_DEVICE_UNCACHED_ALLOCATION  *Alloc;
   VOID                                         *AllocAddress;
 
+  MemType = EFI_MEMORY_XP;
+
   if (HostAddress == NULL) {
     return EFI_INVALID_PARAMETER;
   }
@@ -1092,9 +1154,9 @@ NonCoherentPciIoAllocateBuffer (
     // Use write combining if it was requested, or if it is the only
     // type supported by the region.
     //
-    MemType = EFI_MEMORY_WC;
+    MemType |= EFI_MEMORY_WC;
   } else {
-    MemType = EFI_MEMORY_UC;
+    MemType |= EFI_MEMORY_UC;
   }
 
   Alloc = AllocatePool (sizeof *Alloc);
@@ -1111,6 +1173,34 @@ NonCoherentPciIoAllocateBuffer (
   // can restore the memory space attributes later
   //
   InsertHeadList (&Dev->UncachedAllocationList, &Alloc->List);
+
+  //
+  // Ensure that EFI_MEMORY_XP is in the capability set
+  //
+  if ((GcdDescriptor.Capabilities & EFI_MEMORY_XP) != EFI_MEMORY_XP) {
+    Status = gDS->SetMemorySpaceCapabilities (
+                    (PHYSICAL_ADDRESS)(UINTN)AllocAddress,
+                    EFI_PAGES_TO_SIZE (Pages),
+                    GcdDescriptor.Capabilities | EFI_MEMORY_XP
+                    );
+
+    // if we were to fail setting the capability, this would indicate an internal failure of the GCD code. We should
+    // assert here to let a platform know something went crazy, but for a release build we can let the allocation occur
+    // without the EFI_MEMORY_XP bit set, as that was the existing behavior
+    if (EFI_ERROR (Status)) {
+      DEBUG ((
+        DEBUG_ERROR,
+        "%a failed to set EFI_MEMORY_XP capability on 0x%llx for length 0x%llx. Attempting to allocate without XP set.\n",
+        __func__,
+        AllocAddress,
+        EFI_PAGES_TO_SIZE (Pages)
+        ));
+
+      ASSERT_EFI_ERROR (Status);
+
+      MemType &= ~EFI_MEMORY_XP;
+    }
+  }
 
   Status = gDS->SetMemorySpaceAttributes (
                   (EFI_PHYSICAL_ADDRESS)(UINTN)AllocAddress,
@@ -1783,7 +1873,7 @@ InitializePciIoProtocol (
       DEBUG ((
         DEBUG_ERROR,
         "%a: resource count exceeds number of emulated BARs\n",
-        __FUNCTION__
+        __func__
         ));
       ASSERT (FALSE);
       break;

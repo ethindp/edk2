@@ -610,7 +610,6 @@ PxeBcDhcp6BootInfo (
 
   PxeBc       = &Private->PxeBc;
   Mode        = PxeBc->Mode;
-  Status      = EFI_SUCCESS;
   *BufferSize = 0;
 
   //
@@ -1266,6 +1265,20 @@ ON_EXIT:
     AsciiPrint ("\n  PXE-E53: No boot filename received.\n");
   } else if (Status != EFI_BUFFER_TOO_SMALL) {
     AsciiPrint ("\n  PXE-E99: Unexpected network error.\n");
+  }
+
+  //
+  // Report status code for all errors printed above.
+  // Skip reporting when Buffer is NULL and Status is EFI_BUFFER_TOO_SMALL,
+  // as this is an expected size query, not an error.
+  //
+  if ((Status != EFI_BUFFER_TOO_SMALL) || (Buffer != NULL)) {
+    REPORT_STATUS_CODE_WITH_EXTENDED_DATA (
+      EFI_ERROR_CODE,
+      (EFI_STATUS_CODE_VALUE)(EFI_IO_BUS_IP_NETWORK | EFI_OEM_SPECIFIC | ((EFI_STATUS_CODE_VALUE)(Status & 0x1F))),
+      (VOID *)&(PxeBcMode->UsingIpv6),
+      sizeof (PxeBcMode->UsingIpv6)
+      );
   }
 
   return Status;

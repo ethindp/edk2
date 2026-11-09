@@ -1,13 +1,12 @@
 /** @file
   This library is used by other modules to send TPM2 command.
 
-Copyright (c) 2013 - 2021, Intel Corporation. All rights reserved. <BR>
+Copyright (c) 2013 - 2024, Intel Corporation. All rights reserved. <BR>
 SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _TPM2_COMMAND_LIB_H_
-#define _TPM2_COMMAND_LIB_H_
+#pragma once
 
 #include <IndustryStandard/Tpm20.h>
 
@@ -465,6 +464,27 @@ EFIAPI
 Tpm2NvGlobalWriteLock (
   IN      TPMI_RH_PROVISION  AuthHandle,
   IN      TPMS_AUTH_COMMAND  *AuthSession OPTIONAL
+  );
+
+/**
+  This command extends a value to an area in NV memory that was previously defined by TPM2_NV_DefineSpace().
+
+  @param[in]  AuthHandle         the handle indicating the source of the authorization value.
+  @param[in]  NvIndex            The NV Index of the area to extend.
+  @param[in]  AuthSession        Auth Session context
+  @param[in]  InData             The data to extend.
+
+  @retval EFI_SUCCESS            Operation completed successfully.
+  @retval EFI_DEVICE_ERROR       The command was unsuccessful.
+  @retval EFI_NOT_FOUND          The command was returned successfully, but NvIndex is not found.
+**/
+EFI_STATUS
+EFIAPI
+Tpm2NvExtend (
+  IN      TPMI_RH_NV_AUTH    AuthHandle,
+  IN      TPMI_RH_NV_INDEX   NvIndex,
+  IN      TPMS_AUTH_COMMAND  *AuthSession  OPTIONAL,
+  IN      TPM2B_MAX_BUFFER   *InData
   );
 
 /**
@@ -1083,6 +1103,27 @@ CopyDigestListToBuffer (
   );
 
 /**
+  Copy a buffer into a TPML_DIGEST_VALUES structure.
+
+  @param[in]     Buffer             Buffer to hold TPML_DIGEST_VALUES compact binary.
+  @param[in]     BufferSize         Size of Buffer.
+  @param[out]    DigestList         TPML_DIGEST_VALUES.
+
+  @retval EFI_SUCCESS               Buffer was succesfully copied to DigestList.
+  @retval EFI_BAD_BUFFER_SIZE       A bad buffer size passed to the function.
+  @retval EFI_INVALID_PARAMETER     An invalid parameter passed to the function: NULL pointer or
+                                    BufferSize bigger than TPML_DIGEST_VALUES.
+
+**/
+EFI_STATUS
+EFIAPI
+CopyBufferToDigestList (
+  IN CONST  VOID                *Buffer,
+  IN        UINTN               BufferSize,
+  OUT       TPML_DIGEST_VALUES  *DigestList
+  );
+
+/**
   Get TPML_DIGEST_VALUES data size.
 
   @param[in]     DigestList    TPML_DIGEST_VALUES data.
@@ -1093,6 +1134,19 @@ UINT32
 EFIAPI
 GetDigestListSize (
   IN TPML_DIGEST_VALUES  *DigestList
+  );
+
+/**
+  Get the total digest size from a hash algorithm mask.
+
+  @param[in]     HashAlgorithmMask.
+
+  @return Digest size in bytes.
+**/
+UINT32
+EFIAPI
+GetDigestListSizeFromHashAlgorithmMask (
+  IN UINT32  HashAlgorithmMask
   );
 
 /**
@@ -1129,5 +1183,3 @@ Tpm2PcrReadForActiveBank (
   IN      TPMI_DH_PCR  PcrHandle,
   OUT     TPML_DIGEST  *HashList
   );
-
-#endif

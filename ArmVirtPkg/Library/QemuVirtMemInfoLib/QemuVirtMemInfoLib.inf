@@ -14,6 +14,7 @@
   MODULE_TYPE                    = BASE
   VERSION_STRING                 = 1.0
   LIBRARY_CLASS                  = ArmVirtMemInfoLib
+  CONSTRUCTOR                    = QemuVirtMemInfoLibConstructor
 
 [Sources]
   QemuVirtMemInfoLib.c
@@ -24,18 +25,27 @@
   EmbeddedPkg/EmbeddedPkg.dec
   MdeModulePkg/MdeModulePkg.dec
   MdePkg/MdePkg.dec
+  OvmfPkg/OvmfPkg.dec
+  UefiCpuPkg/UefiCpuPkg.dec
 
 [LibraryClasses]
   ArmLib
+  ArmMmuLib
+  BaseLib
   BaseMemoryLib
   DebugLib
+  FdtLib
+  FdtSerialPortAddressLib
   MemoryAllocationLib
-  PcdLib
+
+[Guids]
+  gArmVirtSystemMemorySizeGuid
 
 [Pcd]
   gArmTokenSpaceGuid.PcdFvBaseAddress
   gArmTokenSpaceGuid.PcdSystemMemoryBase
   gArmTokenSpaceGuid.PcdSystemMemorySize
+  gUefiOvmfPkgTokenSpaceGuid.PcdDeviceTreeInitialBaseAddress
 
 [FixedPcd]
   gArmTokenSpaceGuid.PcdFvSize

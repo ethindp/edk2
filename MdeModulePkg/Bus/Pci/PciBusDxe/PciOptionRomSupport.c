@@ -18,7 +18,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
                        On output with a return code of EFI_BUFFER_TOO_SMALL,
                        the size of Buffer required to retrieve the requested file.
   @param Buffer        The memory buffer to transfer the file to. If Buffer is NULL,
-                       then no the size of the requested file is returned in BufferSize.
+                       then the size of the requested file is returned in BufferSize.
 
   @retval EFI_SUCCESS           The file was loaded.
   @retval EFI_INVALID_PARAMETER FilePath is not a valid device path, or
@@ -179,7 +179,7 @@ InitializePciLoadFile2 (
                      On output with a return code of EFI_BUFFER_TOO_SMALL,
                      the size of Buffer required to retrieve the requested file.
   @param Buffer      The memory buffer to transfer the file to. If Buffer is NULL,
-                     then no the size of the requested file is returned in BufferSize.
+                     then the size of the requested file is returned in BufferSize.
 
   @retval EFI_SUCCESS           The file was loaded.
   @retval EFI_UNSUPPORTED       BootPolicy is TRUE.
@@ -371,7 +371,7 @@ ContainEfiImage (
   @param RomBase   Base address of Option Rom.
 
   @retval EFI_OUT_OF_RESOURCES No enough memory to hold image.
-  @retval EFI_SUCESS           Successfully loaded Option Rom.
+  @retval EFI_SUCCESS          Successfully loaded Option Rom.
 
 **/
 EFI_STATUS
@@ -506,13 +506,13 @@ LoadOpRomImage (
     Indicator    = RomPcir->Indicator;
     RomImageSize = RomImageSize + RomPcir->ImageLength * 512;
     RomBarOffset = RomBarOffset + RomPcir->ImageLength * 512;
-  } while (((Indicator & 0x80) == 0x00) && ((RomBarOffset - RomBar) < RomSize));
+  } while (((Indicator & 0x80) == 0x00) && ((RomBarOffset - RomBar) < RomSize) && (RomImageSize > 0));
 
   //
   // Some Legacy Cards do not report the correct ImageLength so used the maximum
   // of the legacy length and the PCIR Image Length
   //
-  if (CodeType == PCI_CODE_TYPE_PCAT_IMAGE) {
+  if ((RomImageSize > 0) && (CodeType == PCI_CODE_TYPE_PCAT_IMAGE)) {
     RomImageSize = MAX (RomImageSize, LegacyImageLength);
   }
 
@@ -598,7 +598,7 @@ RomDecode (
     Value32 = RomBar | 0x1;
     PciIo->Pci.Write (
                  PciIo,
-                 (EFI_PCI_IO_PROTOCOL_WIDTH)EfiPciWidthUint32,
+                 EfiPciIoWidthUint32,
                  RomBarIndex,
                  1,
                  &Value32
@@ -630,7 +630,7 @@ RomDecode (
     Value32 = 0xFFFFFFFE;
     PciIo->Pci.Write (
                  PciIo,
-                 (EFI_PCI_IO_PROTOCOL_WIDTH)EfiPciWidthUint32,
+                 EfiPciIoWidthUint32,
                  RomBarIndex,
                  1,
                  &Value32
@@ -642,6 +642,7 @@ RomDecode (
   Load and start the Option Rom image.
 
   @param PciDevice       Pci device instance.
+  @param NativeOnly      Whether to consider only the native image.
 
   @retval EFI_SUCCESS    Successfully loaded and started PCI Option Rom image.
   @retval EFI_NOT_FOUND  Failed to process PCI Option Rom image.
@@ -649,7 +650,8 @@ RomDecode (
 **/
 EFI_STATUS
 ProcessOpRomImage (
-  IN  PCI_IO_DEVICE  *PciDevice
+  IN  PCI_IO_DEVICE  *PciDevice,
+  IN  BOOLEAN        NativeOnly
   )
 {
   UINT8                                    Indicator;
@@ -701,6 +703,14 @@ ProcessOpRomImage (
     }
 
     //
+    // Skip the EFI PCI Option ROM image if it's machine type is not supported
+    // and the native image is only considered.
+    //
+    if (EFI_IMAGE_MACHINE_TYPE_SUPPORTED (EfiRomHeader->EfiMachineType) ^ (NativeOnly == TRUE)) {
+      goto NextImage;
+    }
+
+    //
     // Ignore the EFI PCI Option ROM image if it is an EFI application
     //
     if (EfiRomHeader->EfiSubsystem == EFI_IMAGE_SUBSYSTEM_EFI_APPLICATION) {
@@ -717,7 +727,9 @@ ProcessOpRomImage (
     EfiOpRomImageNode.EndingOffset   = (UINTN)RomBarOffset + ImageSize - 1 - (UINTN)RomBar;
 
     PciOptionRomImageDevicePath = AppendDevicePathNode (PciDevice->DevicePath, &EfiOpRomImageNode.Header);
-    ASSERT (PciOptionRomImageDevicePath != NULL);
+    if (PciOptionRomImageDevicePath == NULL) {
+      return EFI_NOT_FOUND;
+    }
 
     //
     // load image and start image

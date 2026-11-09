@@ -7,8 +7,9 @@
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#ifndef AML_PRINT_H_
-#define AML_PRINT_H_
+#pragma once
+
+#include <Library/DebugLib.h>
 
 /* This header file does not include internal Node definition,
    i.e. AML_ROOT_NODE, AML_OBJECT_NODE, etc. The node definitions
@@ -37,18 +38,6 @@
      - The AML NameSpace from the root node.
   @}
 */
-
-/** This function performs a raw data dump of the ACPI table.
-
-  @param  [in]  Ptr     Pointer to the start of the table buffer.
-  @param  [in]  Length  The length of the buffer.
-**/
-VOID
-EFIAPI
-AmlDbgDumpRaw (
-  IN  CONST UINT8   *Ptr,
-  IN        UINT32  Length
-  );
 
 /** Print Size chars at Buffer address.
 
@@ -136,9 +125,6 @@ AmlDbgPrintNameSpace (
 /* Macros to encapsulate Aml Debug Print APIs.
 */
 
-#define AMLDBG_DUMP_RAW(Ptr, Length)                  \
-          AmlDbgDumpRaw (Ptr, Length)
-
 #define AMLDBG_PRINT_CHARS(ErrorLevel, Buffer, Size)  \
           AmlDbgPrintChars (ErrorLevel, Buffer, Size)
 
@@ -159,8 +145,6 @@ AmlDbgPrintNameSpace (
 
 #else
 
-#define AMLDBG_DUMP_RAW(Ptr, Length)
-
 #define AMLDBG_PRINT_CHARS(ErrorLevel, Buffer, Size)
 
 #define AMLDBG_PRINT_NAMESEG(Buffer)
@@ -174,5 +158,3 @@ AmlDbgPrintNameSpace (
 #define AMLDBG_PRINT_NAMESPACE(RootNode)
 
 #endif // MDEPKG_NDEBUG
-
-#endif // AML_PRINT_H_

@@ -1,6 +1,8 @@
 /** @file
 
-  Copyright (c) 2017 - 2021, Arm Limited. All rights reserved.<BR>
+  Copyright (c) 2017 - 2026, Arm Limited. All rights reserved.<BR>
+  Copyright (c) 2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.<BR>
+  Copyright (C) 2024 - 2025 Advanced Micro Devices, Inc. All rights reserved.
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -10,8 +12,7 @@
     - Std or STD - Standard
 **/
 
-#ifndef ACPI_TABLE_GENERATOR_H_
-#define ACPI_TABLE_GENERATOR_H_
+#pragma once
 
 #include <IndustryStandard/Acpi.h>
 
@@ -59,18 +60,57 @@ The Dynamic Tables Framework implements the following ACPI table generators:
             The SSDT Serial generator collates the Serial port information
             from the Configuration Manager and patches the SSDT Serial Port
             template to build the SSDT Serial port table.
-  - SSDT CMN-600:
-            The SSDT CMN-600 generator collates the CMN-600 information
-            from the Configuration Manager and patches the SSDT CMN-600
-            template to build the SSDT CMN-600 table.
+  - SSDT CMN:
+            The SSDT CMN generator collates the CMN information
+            from the Configuration Manager and patches the SSDT CMN
+            template to build the SSDT CMN table.
   - SSDT Cpu-Topology:
             The SSDT Cpu-Topology generator collates the cpu and LPI
             information from the Configuration Manager and generates a
             SSDT table describing the CPU hierarchy.
+  - SSDT DMC PMU:
+            The SSDT DMC PMU generator collates the PMU specific information
+            from the Configuration Manager and uses the Dynamic AML CodeGen
+            API's to build the SSDT DMC PMU table.
+  - SSDT PL050:
+            The SSDT PL050 generator collates keyboard and mouse interface
+            information from the Configuration Manager and uses the Dynamic
+            AML CodeGen APIs to build the SSDT PL050 table.
   - SSDT Pci-Express:
             The SSDT Pci Express generator collates the Pci Express
             information from the Configuration Manager and generates a
             SSDT table describing a Pci Express bus.
+  - WSMT  : The WSMT generator collates the WSMT protection flag information
+            from the Configuration Manager and builds the WSMT table.
+  - SPMI  : The SPMI generator collects the SPMI interface and
+            optionally SPMI interrupt and deviceid (or uid) information from the
+            Configuration Manager and builds the SPMI table.
+  - FACS  : The FACS generator collates the FACS information from the
+            Configuration Manager and builds the FACS table.
+  - CEDT  : The CEDT generator collates the CEDT information from the
+            Configuration Manager and builds the CEDT table.
+  - SLIT  : The SLIT generator collates the SLIT information from the
+            Configuration Manager and builds the SLIT table.
+  - HEST  : The HEST generator collates the HEST information from the
+            Configuration Manager and builds the HEST table.
+  - EINJ  : The EINJ generator collates the required platform information from
+            the Configuration Manager and builds the EINJ table.
+  - MSCT  : The MSCT (Maximum System Characteristics Table) generator collates
+            the Maximum System Characteristics information from the
+            Configuration Manager and builds the MSCT table.
+  - BERT  : The BERT generator collates the boot error region information from
+            the Configuration Manager and builds the BERT table.
+  - ERST  : The ERST generator collates the error record serialization
+            instructions from the Configuration Manager and builds the ERST
+            table.
+  - SSDT BMU:
+            The SSDT BMU generator collates the BMU specific information
+            from the Configuration Manager and uses the Dynamic AML CodeGen
+            API's to build the SSDT BMU table.
+  - SSDT SCMI:
+            The SSDT SCMI generator collates the SCMI device, protocol, and
+            PCC transport information from the Configuration Manager and uses
+            the Dynamic AML CodeGen APIs to build the SSDT SCMI table.
 */
 
 /** The ACPI_TABLE_GENERATOR_ID type describes ACPI table generator ID.
@@ -95,9 +135,33 @@ typedef enum StdAcpiTableId {
   EStdAcpiTableIdPptt,                          ///< PPTT Generator
   EStdAcpiTableIdSrat,                          ///< SRAT Generator
   EStdAcpiTableIdSsdtSerialPort,                ///< SSDT Serial-Port Generator
-  EStdAcpiTableIdSsdtCmn600,                    ///< SSDT Cmn-600 Generator
+  EStdAcpiTableIdSsdtCmn,                       ///< SSDT Cmn Generator
   EStdAcpiTableIdSsdtCpuTopology,               ///< SSDT Cpu Topology
   EStdAcpiTableIdSsdtPciExpress,                ///< SSDT Pci Express Generator
+  EStdAcpiTableIdSsdtPlicAplic,                 ///< SSDT Plic/Aplic Generator
+  EStdAcpiTableIdPcct,                          ///< PCCT Generator
+  EStdAcpiTableIdTpm2,                          ///< TPM2 Generator
+  EStdAcpiTableIdWsmt,                          ///< WSMT Generator
+  EStdAcpiTableIdHpet,                          ///< HPET Generator
+  EStdAcpiTableIdSsdtHpet,                      ///< SSDT HPET Generator
+  EStdAcpiTableIdSpmi,                          ///< SPMI Generator
+  EStdAcpiTableIdFacs,                          ///< FACS Generator
+  EStdAcpiTableIdCedt,                          ///< CEDT Generator
+  EStdAcpiTableIdSlit,                          ///< SLIT Generator
+  EStdAcpiTableIdRhct,                          ///< RHCT Generator
+  EStdAcpiTableIdSsdtDmcPmu,                    ///< SSDT DMC PMU Generator
+  EStdAcpiTableIdHest,                          ///< Hest Generator
+  EStdAcpiTableIdEinj,                          ///< EINJ Generator
+  EStdAcpiTableIdHmat,                          ///< HMAT Generator
+  EStdAcpiTableIdApmt,                          ///< APMT Generator
+  EStdAcpiTableIdMsct,                          ///< MSCT Generator
+  EStdAcpiTableIdBert,                          ///< BERT Generator
+  EStdAcpiTableIdErst,                          ///< ERST Generator
+  EStdAcpiTableIdSsdtBmu,                       ///< SSDT BMU Generator
+  EStdAcpiTableIdSsdtPl050,                     ///< SSDT PL050 Generator
+  EStdAcpiTableIdSsdtSmc91x,                    ///< SSDT SMC91X Network Device Generator
+  EStdAcpiTableIdSsdtVirtioMmioDevice,          ///< SSDT Virtio MMIO Device Generator
+  EStdAcpiTableIdSsdtScmi,                      ///< SSDT SCMI Generator
   EStdAcpiTableIdMax
 } ESTD_ACPI_TABLE_ID;
 
@@ -153,8 +217,13 @@ typedef enum StdAcpiTableId {
             TableId                           \
             )
 
-/** The Creator ID for the ACPI tables generated using
+/** The generic creator ID for the ACPI tables generated using
   the standard ACPI table generators.
+*/
+#define TABLE_GENERATOR_CREATOR_ID  SIGNATURE_32('D', 'Y', 'N', 'T')
+
+/** The Creator ID for the ACPI tables generated using
+  the standard ACPI table generators for ARM.
 */
 #define TABLE_GENERATOR_CREATOR_ID_ARM  SIGNATURE_32('A', 'R', 'M', 'H')
 
@@ -213,7 +282,7 @@ typedef struct AcpiTableGenerator           ACPI_TABLE_GENERATOR;
   @return  EFI_SUCCESS If the table is generated successfully or other
                         failure codes as returned by the generator.
 **/
-typedef EFI_STATUS (*ACPI_TABLE_GENERATOR_BUILD_TABLE) (
+typedef EFI_STATUS (EFIAPI *ACPI_TABLE_GENERATOR_BUILD_TABLE)(
   IN  CONST ACPI_TABLE_GENERATOR                           *This,
   IN  CONST CM_STD_OBJ_ACPI_TABLE_INFO             *CONST  AcpiTableInfo,
   IN  CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL   *CONST  CfgMgrProtocol,
@@ -233,7 +302,7 @@ typedef EFI_STATUS (*ACPI_TABLE_GENERATOR_BUILD_TABLE) (
   @return EFI_SUCCESS  If freed successfully or other failure codes
                         as returned by the generator.
 **/
-typedef EFI_STATUS (*ACPI_TABLE_GENERATOR_FREE_TABLE) (
+typedef EFI_STATUS (EFIAPI *ACPI_TABLE_GENERATOR_FREE_TABLE)(
   IN      CONST ACPI_TABLE_GENERATOR                   *CONST  This,
   IN      CONST CM_STD_OBJ_ACPI_TABLE_INFO             *CONST  AcpiTableInfo,
   IN      CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL   *CONST  CfgMgrProtocol,
@@ -256,7 +325,7 @@ typedef EFI_STATUS (*ACPI_TABLE_GENERATOR_FREE_TABLE) (
   @return  EFI_SUCCESS If the table is generated successfully or other
                         failure codes as returned by the generator.
 **/
-typedef EFI_STATUS (*ACPI_TABLE_GENERATOR_BUILD_TABLEEX) (
+typedef EFI_STATUS (EFIAPI *ACPI_TABLE_GENERATOR_BUILD_TABLEEX)(
   IN  CONST ACPI_TABLE_GENERATOR                           *This,
   IN  CONST CM_STD_OBJ_ACPI_TABLE_INFO             *CONST  AcpiTableInfo,
   IN  CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL   *CONST  CfgMgrProtocol,
@@ -279,7 +348,7 @@ typedef EFI_STATUS (*ACPI_TABLE_GENERATOR_BUILD_TABLEEX) (
   @return EFI_SUCCESS  If freed successfully or other failure codes
                         as returned by the generator.
 **/
-typedef EFI_STATUS (*ACPI_TABLE_GENERATOR_FREE_TABLEEX) (
+typedef EFI_STATUS (EFIAPI *ACPI_TABLE_GENERATOR_FREE_TABLEEX)(
   IN      CONST ACPI_TABLE_GENERATOR                   *CONST  This,
   IN      CONST CM_STD_OBJ_ACPI_TABLE_INFO             *CONST  AcpiTableInfo,
   IN      CONST EDKII_CONFIGURATION_MANAGER_PROTOCOL   *CONST  CfgMgrProtocol,
@@ -375,5 +444,3 @@ DeregisterAcpiTableGenerator (
   );
 
 #pragma pack()
-
-#endif // ACPI_TABLE_GENERATOR_H_

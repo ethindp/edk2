@@ -17,8 +17,7 @@ Revision History:
 
 **/
 
-#ifndef _NVDATASTRUC_H_
-#define _NVDATASTRUC_H_
+#pragma once
 
 #include <Guid/HiiPlatformSetupFormset.h>
 #include <Guid/HiiFormMapMethodGuid.h>
@@ -95,6 +94,7 @@ typedef struct {
   MY_EFI_UNION_DATA    MyUnionData;
   UINT8                QuestionXUefiKeywordRestStyle;
   UINT8                QuestionNonXUefiKeywordRestStyle;
+  UINT8                QuestionApply;
 } DRIVER_SAMPLE_CONFIGURATION;
 
 //
@@ -128,5 +128,3 @@ typedef struct {
 #define LABEL_END      0x2223
 
 #pragma pack()
-
-#endif

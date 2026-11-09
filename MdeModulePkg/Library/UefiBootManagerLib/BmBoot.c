@@ -147,6 +147,11 @@ BmFindBootOptionInVariable (
   if (OptionNumber == LoadOptionNumberUnassigned) {
     BootOptions = EfiBootManagerGetLoadOptions (&BootOptionCount, LoadOptionTypeBoot);
 
+    // If no boot options found
+    if (BootOptions == NULL) {
+      return LoadOptionNumberUnassigned;
+    }
+
     Index = EfiBootManagerFindLoadOption (OptionToFind, BootOptions, BootOptionCount);
     if (Index != -1) {
       OptionNumber = BootOptions[Index].OptionNumber;
@@ -208,7 +213,12 @@ BmAdjustFvFilePath (
          (VOID **)&LoadedImage
          );
   NewDevicePath = AppendDevicePathNode (DevicePathFromHandle (LoadedImage->DeviceHandle), FvFileNode);
-  FullPath      = BmAdjustFvFilePath (NewDevicePath);
+  if (NewDevicePath == NULL) {
+    ASSERT (NewDevicePath != NULL);
+    return NULL;
+  }
+
+  FullPath = BmAdjustFvFilePath (NewDevicePath);
   FreePool (NewDevicePath);
   if (FullPath != NULL) {
     return FullPath;
@@ -233,7 +243,13 @@ BmAdjustFvFilePath (
     }
 
     NewDevicePath = AppendDevicePathNode (DevicePathFromHandle (FvHandles[Index]), FvFileNode);
-    FullPath      = BmAdjustFvFilePath (NewDevicePath);
+    if (NewDevicePath == NULL) {
+      ASSERT (NewDevicePath != NULL);
+      FreePool (FvHandles);
+      return NULL;
+    }
+
+    FullPath = BmAdjustFvFilePath (NewDevicePath);
     FreePool (NewDevicePath);
     if (FullPath != NULL) {
       break;
@@ -518,7 +534,10 @@ BmFindUsbDevice (
   UINTN                     Index;
   BOOLEAN                   Matched;
 
-  ASSERT (UsbIoHandleCount != NULL);
+  if (UsbIoHandleCount == NULL) {
+    ASSERT (UsbIoHandleCount != NULL);
+    return NULL;
+  }
 
   //
   // Get all UsbIo Handles.
@@ -532,7 +551,7 @@ BmFindUsbDevice (
                   );
   if (EFI_ERROR (Status)) {
     *UsbIoHandleCount = 0;
-    UsbIoHandles      = NULL;
+    return NULL;
   }
 
   for (Index = 0; Index < *UsbIoHandleCount; ) {
@@ -616,6 +635,10 @@ BmExpandUsbDevicePath (
   ParentDevicePathSize = (UINTN)ShortformNode - (UINTN)FilePath;
   RemainingDevicePath  = NextDevicePathNode (ShortformNode);
   Handles              = BmFindUsbDevice (FilePath, ParentDevicePathSize, &HandleCount);
+  if (Handles == NULL) {
+    ASSERT (Handles != NULL);
+    return NULL;
+  }
 
   for (Index = 0; Index < HandleCount; Index++) {
     FilePath = AppendDevicePath (DevicePathFromHandle (Handles[Index]), RemainingDevicePath);
@@ -680,8 +703,7 @@ BmExpandFileDevicePath (
   EfiBootManagerConnectAll ();
   Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiSimpleFileSystemProtocolGuid, NULL, &HandleCount, &Handles);
   if (EFI_ERROR (Status)) {
-    HandleCount = 0;
-    Handles     = NULL;
+    return NULL;
   }
 
   GetNext      = (BOOLEAN)(FullPath == NULL);
@@ -703,6 +725,10 @@ BmExpandFileDevicePath (
           )
       {
         NextFullPath = AppendDevicePath (DevicePathFromHandle (Handles[Index]), FilePath);
+        if (NextFullPath == NULL) {
+          goto Exit;
+        }
+
         if (GetNext) {
           break;
         } else {
@@ -718,6 +744,7 @@ BmExpandFileDevicePath (
     }
   }
 
+Exit:
   if (Handles != NULL) {
     FreePool (Handles);
   }
@@ -753,8 +780,7 @@ BmExpandUriDevicePath (
   EfiBootManagerConnectAll ();
   Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiLoadFileProtocolGuid, NULL, &HandleCount, &Handles);
   if (EFI_ERROR (Status)) {
-    HandleCount = 0;
-    Handles     = NULL;
+    return NULL;
   }
 
   NextFullPath = NULL;
@@ -880,6 +906,8 @@ BmExpandPartitionDevicePath (
   BOOLEAN                   NeedAdjust;
   EFI_DEVICE_PATH_PROTOCOL  *Instance;
   UINTN                     Size;
+  BOOLEAN                   MatchFound;
+  BOOLEAN                   ConnectAllAttempted;
 
   //
   // Check if there is prestore 'HDDP' variable.
@@ -915,6 +943,11 @@ BmExpandPartitionDevicePath (
       // partial partition boot option. Second, check whether the instance could be connected.
       //
       Instance = GetNextDevicePathInstance (&TempNewDevicePath, &Size);
+      if (Instance == NULL) {
+        FreePool (CachedDevicePath);
+        return NULL;
+      }
+
       if (BmMatchPartitionDevicePathNode (Instance, (HARDDRIVE_DEVICE_PATH *)FilePath)) {
         //
         // Connect the device path instance, the device path point to hard drive media device path node
@@ -933,6 +966,11 @@ BmExpandPartitionDevicePath (
           //   2. ACPI()/PCI()/ATA()/Partition()/Partition(A2)/EFI/BootX64.EFI
           // For simplicity, only #1 is returned.
           //
+          if (TempDevicePath == NULL) {
+            FreePool (CachedDevicePath);
+            return NULL;
+          }
+
           FullPath = BmGetNextLoadOptionDevicePath (TempDevicePath, NULL);
           FreePool (TempDevicePath);
 
@@ -974,49 +1012,79 @@ BmExpandPartitionDevicePath (
   // If we get here we fail to find or 'HDDP' not exist, and now we need
   // to search all devices in the system for a matched partition
   //
-  EfiBootManagerConnectAll ();
-  Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiBlockIoProtocolGuid, NULL, &BlockIoHandleCount, &BlockIoBuffer);
-  if (EFI_ERROR (Status)) {
-    BlockIoHandleCount = 0;
-    BlockIoBuffer      = NULL;
-  }
-
-  //
-  // Loop through all the device handles that support the BLOCK_IO Protocol
-  //
-  for (Index = 0; Index < BlockIoHandleCount; Index++) {
-    BlockIoDevicePath = DevicePathFromHandle (BlockIoBuffer[Index]);
-    if (BlockIoDevicePath == NULL) {
-      continue;
+  BlockIoBuffer       = NULL;
+  BlockIoHandleCount  = 0;
+  MatchFound          = FALSE;
+  ConnectAllAttempted = FALSE;
+  do {
+    if (BlockIoBuffer != NULL) {
+      FreePool (BlockIoBuffer);
     }
 
-    if (BmMatchPartitionDevicePathNode (BlockIoDevicePath, (HARDDRIVE_DEVICE_PATH *)FilePath)) {
+    Status = gBS->LocateHandleBuffer (ByProtocol, &gEfiBlockIoProtocolGuid, NULL, &BlockIoHandleCount, &BlockIoBuffer);
+    if (EFI_ERROR (Status)) {
       //
-      // Find the matched partition device path
+      // No Block I/O handles found.  Set count to 0 and buffer to NULL and
+      // continue to allow search for Block I/O handles to be tried again after
+      // attempting a ConnectAll.
       //
-      TempDevicePath = AppendDevicePath (BlockIoDevicePath, NextDevicePathNode (FilePath));
-      FullPath       = BmGetNextLoadOptionDevicePath (TempDevicePath, NULL);
-      FreePool (TempDevicePath);
+      BlockIoHandleCount = 0;
+      BlockIoBuffer      = NULL;
+    }
 
-      if (FullPath != NULL) {
-        BmCachePartitionDevicePath (&CachedDevicePath, BlockIoDevicePath);
+    //
+    // Loop through all the device handles that support the BLOCK_IO Protocol
+    //
+    for (Index = 0; Index < BlockIoHandleCount; Index++) {
+      BlockIoDevicePath = DevicePathFromHandle (BlockIoBuffer[Index]);
+      if (BlockIoDevicePath == NULL) {
+        continue;
+      }
 
+      if (BmMatchPartitionDevicePathNode (BlockIoDevicePath, (HARDDRIVE_DEVICE_PATH *)FilePath)) {
         //
-        // Save the matching Device Path so we don't need to do a connect all next time
-        // Failing to save only impacts performance next time expanding the short-form device path
+        // Find the matched partition device path
         //
-        Status = gRT->SetVariable (
-                        L"HDDP",
-                        &mBmHardDriveBootVariableGuid,
-                        EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_NON_VOLATILE,
-                        GetDevicePathSize (CachedDevicePath),
-                        CachedDevicePath
-                        );
+        TempDevicePath = AppendDevicePath (BlockIoDevicePath, NextDevicePathNode (FilePath));
+        if (TempDevicePath == NULL) {
+          continue;
+        }
 
-        break;
+        FullPath = BmGetNextLoadOptionDevicePath (TempDevicePath, NULL);
+        FreePool (TempDevicePath);
+
+        if (FullPath != NULL) {
+          BmCachePartitionDevicePath (&CachedDevicePath, BlockIoDevicePath);
+
+          //
+          // Save the matching Device Path so we don't need to do a connect all next time
+          // Failing to save only impacts performance next time expanding the short-form device path
+          //
+          Status = gRT->SetVariable (
+                          L"HDDP",
+                          &mBmHardDriveBootVariableGuid,
+                          EFI_VARIABLE_BOOTSERVICE_ACCESS |
+                          EFI_VARIABLE_NON_VOLATILE,
+                          GetDevicePathSize (CachedDevicePath),
+                          CachedDevicePath
+                          );
+          MatchFound = TRUE;
+          break;
+        }
       }
     }
-  }
+
+    //
+    // If we found a matching BLOCK_IO handle or we've already
+    // tried a ConnectAll, we are done searching.
+    //
+    if (MatchFound || ConnectAllAttempted) {
+      break;
+    }
+
+    EfiBootManagerConnectAll ();
+    ConnectAllAttempted = TRUE;
+  } while (1);
 
   if (CachedDevicePath != NULL) {
     FreePool (CachedDevicePath);
@@ -1075,7 +1143,10 @@ BmExpandMediaDevicePath (
     if (GetNext) {
       return NextFullPath;
     } else {
-      FreePool (NextFullPath);
+      if (NextFullPath != NULL) {
+        FreePool (NextFullPath);
+      }
+
       return NULL;
     }
   }
@@ -1132,7 +1203,11 @@ BmExpandMediaDevicePath (
     // Get the device path size of SimpleFileSystem handle
     //
     TempDevicePath = DevicePathFromHandle (SimpleFileSystemHandles[Index]);
-    TempSize       = GetDevicePathSize (TempDevicePath) - END_DEVICE_PATH_LENGTH;
+    if (TempDevicePath == NULL) {
+      goto Exit;
+    }
+
+    TempSize = GetDevicePathSize (TempDevicePath) - END_DEVICE_PATH_LENGTH;
     //
     // Check whether the device path of boot option is part of the SimpleFileSystem handle's device path
     //
@@ -1141,13 +1216,16 @@ BmExpandMediaDevicePath (
       if (GetNext) {
         break;
       } else {
-        GetNext = (BOOLEAN)(CompareMem (NextFullPath, FullPath, GetDevicePathSize (NextFullPath)) == 0);
-        FreePool (NextFullPath);
-        NextFullPath = NULL;
+        if (NextFullPath != NULL) {
+          GetNext = (BOOLEAN)(CompareMem (NextFullPath, FullPath, GetDevicePathSize (NextFullPath)) == 0);
+          FreePool (NextFullPath);
+          NextFullPath = NULL;
+        }
       }
     }
   }
 
+Exit:
   if (SimpleFileSystemHandles != NULL) {
     FreePool (SimpleFileSystemHandles);
   }
@@ -1228,8 +1306,7 @@ BmExpandNetworkFileSystem (
                   &Handles
                   );
   if (EFI_ERROR (Status)) {
-    Handles     = NULL;
-    HandleCount = 0;
+    return NULL;
   }
 
   Handle = NULL;
@@ -1376,7 +1453,7 @@ BmDestroyRamDisk (
 
   Status = mRamDisk->Unregister (RamDiskDevicePath);
   ASSERT_EFI_ERROR (Status);
-  FreePages (RamDiskBuffer, RamDiskSizeInPages);
+  FreeAlignedPages (RamDiskBuffer, RamDiskSizeInPages);
 }
 
 /**
@@ -1426,8 +1503,12 @@ BmExpandLoadFile (
 
   //
   // The load option resides in a RAM disk.
+  // Use a reasonable default of 2MB for alignment as the ramdisk device is
+  // implemented as an NVDIMM persistent memory and operating systems may
+  // wish to map this with huge page support.
   //
-  FileBuffer = AllocateReservedPages (EFI_SIZE_TO_PAGES (BufferSize));
+
+  FileBuffer = AllocateAlignedReservedPages (EFI_SIZE_TO_PAGES (BufferSize), SIZE_2MB);
   if (FileBuffer == NULL) {
     DEBUG_CODE_BEGIN ();
     EFI_DEVICE_PATH  *LoadFilePath;
@@ -1448,7 +1529,7 @@ BmExpandLoadFile (
       "%a:%a: failed to allocate reserved pages: "
       "BufferSize=%Lu LoadFile=\"%s\" FilePath=\"%s\"\n",
       gEfiCallerBaseName,
-      __FUNCTION__,
+      __func__,
       (UINT64)BufferSize,
       LoadFileText,
       FileText
@@ -1468,7 +1549,7 @@ BmExpandLoadFile (
 
   Status = LoadFile->LoadFile (LoadFile, FilePath, TRUE, &BufferSize, FileBuffer);
   if (EFI_ERROR (Status)) {
-    FreePages (FileBuffer, EFI_SIZE_TO_PAGES (BufferSize));
+    FreeAlignedPages (FileBuffer, EFI_SIZE_TO_PAGES (BufferSize));
     return NULL;
   }
 
@@ -1513,6 +1594,11 @@ BmExpandLoadFiles (
   UINTN                     HandleCount;
   UINTN                     Index;
   EFI_DEVICE_PATH_PROTOCOL  *Node;
+  EFI_DEVICE_PATH_PROTOCOL  *NewDevicePath;
+  EFI_DEVICE_PATH_PROTOCOL  *HttpPath;
+  URI_DEVICE_PATH           *NullUriPath;
+
+  NullUriPath = NULL;
 
   //
   // Get file buffer from load file instance.
@@ -1544,12 +1630,51 @@ BmExpandLoadFiles (
     }
 
     for (Index = 0; Index < HandleCount; Index++) {
-      if (BmMatchHttpBootDevicePath (DevicePathFromHandle (Handles[Index]), FilePath)) {
+      if ((Handles != NULL) && BmMatchHttpBootDevicePath (DevicePathFromHandle (Handles[Index]), FilePath)) {
+        //
+        // Matches HTTP Boot Device Path described as
+        //   ....../Mac(...)[/Vlan(...)][/Wi-Fi(...)]/IPv4(...)[/Dns(...)]/Uri(...)
+        //   ....../Mac(...)[/Vlan(...)][/Wi-Fi(...)]/IPv6(...)[/Dns(...)]/Uri(...)
+        //
+        Handle = Handles[Index];
+        goto Done;
+      }
+    }
+
+    NullUriPath = (URI_DEVICE_PATH *)CreateDeviceNode (
+                                       MESSAGING_DEVICE_PATH,
+                                       MSG_URI_DP,
+                                       (UINT16)(sizeof (URI_DEVICE_PATH))
+                                       );
+    for (Index = 0; Index < HandleCount; Index++) {
+      if ((Handles == NULL) || (Handles[Index] == NULL)) {
+        continue;
+      }
+
+      NewDevicePath = DevicePathFromHandle (Handles[Index]);
+      if (NewDevicePath == NULL) {
+        continue;
+      }
+
+      HttpPath = AppendDevicePathNode (NewDevicePath, (EFI_DEVICE_PATH_PROTOCOL *)NullUriPath);
+      if (HttpPath == NULL) {
+        continue;
+      }
+
+      if (BmMatchHttpBootDevicePath (HttpPath, FilePath)) {
+        //
+        // Matches HTTP Boot Device Path described as
+        //   ....../Mac(...)[/Vlan(...)][/Wi-Fi(...)]/IPv4(...)[/Dns(...)]/Uri(...)/Uri(...)
+        //   ....../Mac(...)[/Vlan(...)][/Wi-Fi(...)]/IPv6(...)[/Dns(...)]/Uri(...)/Uri(...)
+        //
         Handle = Handles[Index];
         break;
       }
     }
 
+    FreePool (NullUriPath);
+
+Done:
     if (Handles != NULL) {
       FreePool (Handles);
     }
@@ -1996,13 +2121,14 @@ EfiBootManagerBoot (
                    );
         ASSERT_EFI_ERROR (Status);
         );
-
       mBmLegacyBoot (BootOption);
     } else {
       BootOption->Status = EFI_UNSUPPORTED;
     }
 
     PERF_END_EX (gImageHandle, "BdsAttempt", NULL, 0, (UINT32)OptionNumber);
+    PERF_CROSSMODULE_END ("BDS");   // BEGIN is in MdeModulePkg\Universal\BdsDxe\BdsEntry.c
+    PERF_CROSSMODULE_BEGIN ("BDS"); // Keep logging BDS in case of reentry
     return;
   }
 
@@ -2033,6 +2159,8 @@ EfiBootManagerBoot (
   PERF_CODE (
     BmEndOfBdsPerfCode (NULL, NULL);
     );
+  PERF_CROSSMODULE_END ("BDS");     // BEGIN is in MdeModulePkg\Universal\BdsDxe\BdsEntry.c
+  PERF_CROSSMODULE_BEGIN ("BDS");   // Keep logging BDS in case of reentry
 
   REPORT_STATUS_CODE (EFI_PROGRESS_CODE, PcdGet32 (PcdProgressCodeOsLoaderStart));
 
@@ -2053,6 +2181,8 @@ EfiBootManagerBoot (
     // Report Status Code with the failure status to indicate that boot failure
     //
     BmReportLoadFailure (EFI_SW_DXE_BS_EC_BOOT_OPTION_FAILED, Status);
+  } else {
+    REPORT_STATUS_CODE (EFI_PROGRESS_CODE, (EFI_SOFTWARE_DXE_BS_DRIVER | EFI_SW_DXE_BS_PC_BOOT_OPTION_COMPLETE));
   }
 
   PERF_END_EX (gImageHandle, "BdsAttempt", NULL, 0, (UINT32)OptionNumber);
@@ -2218,13 +2348,30 @@ BmEnumerateBootOptions (
         continue;
       }
 
+      //
+      // Skip removable media if not present
+      //
+      if ((BlkIo->Media->RemovableMedia == TRUE) &&
+          (BlkIo->Media->MediaPresent == FALSE))
+      {
+        continue;
+      }
+
       Description = BmGetBootDescription (Handles[Index]);
+      if (Description == NULL) {
+        continue;
+      }
+
       BootOptions = ReallocatePool (
                       sizeof (EFI_BOOT_MANAGER_LOAD_OPTION) * (*BootOptionCount),
                       sizeof (EFI_BOOT_MANAGER_LOAD_OPTION) * (*BootOptionCount + 1),
                       BootOptions
                       );
-      ASSERT (BootOptions != NULL);
+      if (BootOptions == NULL) {
+        ASSERT (BootOptions != NULL);
+        FreePool (Description);
+        goto Exit;
+      }
 
       Status = EfiBootManagerInitializeLoadOption (
                  &BootOptions[(*BootOptionCount)++],
@@ -2270,12 +2417,20 @@ BmEnumerateBootOptions (
     }
 
     Description = BmGetBootDescription (Handles[Index]);
+    if (Description == NULL) {
+      continue;
+    }
+
     BootOptions = ReallocatePool (
                     sizeof (EFI_BOOT_MANAGER_LOAD_OPTION) * (*BootOptionCount),
                     sizeof (EFI_BOOT_MANAGER_LOAD_OPTION) * (*BootOptionCount + 1),
                     BootOptions
                     );
-    ASSERT (BootOptions != NULL);
+    if (BootOptions == NULL) {
+      ASSERT (BootOptions != NULL);
+      FreePool (Description);
+      goto Exit;
+    }
 
     Status = EfiBootManagerInitializeLoadOption (
                &BootOptions[(*BootOptionCount)++],
@@ -2314,12 +2469,20 @@ BmEnumerateBootOptions (
     }
 
     Description = BmGetBootDescription (Handles[Index]);
+    if (Description == NULL) {
+      continue;
+    }
+
     BootOptions = ReallocatePool (
                     sizeof (EFI_BOOT_MANAGER_LOAD_OPTION) * (*BootOptionCount),
                     sizeof (EFI_BOOT_MANAGER_LOAD_OPTION) * (*BootOptionCount + 1),
                     BootOptions
                     );
-    ASSERT (BootOptions != NULL);
+    if (BootOptions == NULL) {
+      ASSERT (BootOptions != NULL);
+      FreePool (Description);
+      goto Exit;
+    }
 
     Status = EfiBootManagerInitializeLoadOption (
                &BootOptions[(*BootOptionCount)++],
@@ -2335,11 +2498,15 @@ BmEnumerateBootOptions (
     FreePool (Description);
   }
 
+Exit:
   if (HandleCount != 0) {
     FreePool (Handles);
   }
 
-  BmMakeBootOptionDescriptionUnique (BootOptions, *BootOptionCount);
+  if (BootOptions != NULL) {
+    BmMakeBootOptionDescriptionUnique (BootOptions, *BootOptionCount);
+  }
+
   return BootOptions;
 }
 
@@ -2406,6 +2573,9 @@ EfiBootManagerRefreshAllBootOption (
   }
 
   NvBootOptions = EfiBootManagerGetLoadOptions (&NvBootOptionCount, LoadOptionTypeBoot);
+  if (NvBootOptions == NULL) {
+    goto Exit;
+  }
 
   //
   // Remove invalid EFI boot options from NV
@@ -2442,8 +2612,14 @@ EfiBootManagerRefreshAllBootOption (
     }
   }
 
-  EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
-  EfiBootManagerFreeLoadOptions (NvBootOptions, NvBootOptionCount);
+Exit:
+  if (BootOptions != NULL) {
+    EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
+  }
+
+  if (NvBootOptions != NULL) {
+    EfiBootManagerFreeLoadOptions (NvBootOptions, NvBootOptionCount);
+  }
 }
 
 /**
@@ -2547,8 +2723,11 @@ BmRegisterBootManagerMenu (
     UINTN                           BootOptionCount;
 
     BootOptions = EfiBootManagerGetLoadOptions (&BootOptionCount, LoadOptionTypeBoot);
+    if (BootOptions != NULL) {
     ASSERT (EfiBootManagerFindLoadOption (BootOption, BootOptions, BootOptionCount) == -1);
     EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
+  }
+
     );
 
   return EfiBootManagerAddLoadOptionVariable (BootOption, (UINTN)-1);
@@ -2578,6 +2757,11 @@ EfiBootManagerGetBootManagerMenu (
   UINTN                         Index;
 
   BootOptions = EfiBootManagerGetLoadOptions (&BootOptionCount, LoadOptionTypeBoot);
+  if ((BootOptions == NULL) || (BootOptionCount == 0)) {
+    BootOptionCount = 0;
+    Index           = 0;
+    goto Exit;
+  }
 
   for (Index = 0; Index < BootOptionCount; Index++) {
     if (BmIsBootManagerMenuFilePath (BootOptions[Index].FilePath)) {
@@ -2601,6 +2785,7 @@ EfiBootManagerGetBootManagerMenu (
   //
   // Automatically create the Boot#### for Boot Manager Menu when not found.
   //
+Exit:
   if (Index == BootOptionCount) {
     return BmRegisterBootManagerMenu (BootOption);
   } else {
@@ -2630,4 +2815,81 @@ EfiBootManagerGetNextLoadOptionDevicePath (
   )
 {
   return BmGetNextLoadOptionDevicePath (FilePath, FullPath);
+}
+
+/**
+  Variable policy protocol installation notification.
+
+  @param[in]    Event           The notification event.
+  @param[in]    Context         Pointer to the context registered when the event is created. Not used.
+
+**/
+VOID
+EFIAPI
+OnVariablePolicyNotification (
+  IN  EFI_EVENT  Event,
+  IN  VOID       *Context
+  )
+{
+  EFI_STATUS                      Status;
+  EDKII_VARIABLE_POLICY_PROTOCOL  *VariablePolicy = NULL;
+
+  Status = gBS->LocateProtocol (&gEdkiiVariablePolicyProtocolGuid, NULL, (VOID **)&VariablePolicy);
+  if (!EFI_ERROR (Status)) {
+    Status = RegisterBasicVariablePolicy (
+               VariablePolicy,
+               &mBmHardDriveBootVariableGuid,
+               L"HDDP",
+               sizeof (EFI_DEVICE_PATH_PROTOCOL),
+               VARIABLE_POLICY_NO_MAX_SIZE,
+               EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_NON_VOLATILE,
+               (UINT32) ~(EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_NON_VOLATILE),
+               VARIABLE_POLICY_TYPE_NO_LOCK
+               );
+
+    // Multiple modules link to UefiBootManagerLib. There are a couple of cases that need to be ignored.
+    // 1. Write Protected.  Write Protected occurs after Ready to Boot.  Some modules, such as the Shell, run
+    //                      after Ready To Boot.
+    // 2. Already Started.  Only the first module to register a variable policy will successfully register
+    //                      a policy. The subsequent modules will get EFI_ALREADY_STARTED.
+    if (EFI_ERROR (Status) && (Status != EFI_ALREADY_STARTED) && (Status != EFI_WRITE_PROTECTED)) {
+      DEBUG ((DEBUG_ERROR, "%a: - Error setting policy for HDDP - Status=%r\n", __func__, Status));
+      ASSERT_EFI_ERROR (Status);
+    }
+
+    if (Event != NULL) {
+      gBS->CloseEvent (Event);
+    }
+  } else {
+    DEBUG ((DEBUG_ERROR, "%a: - Unable to locate variable policy protocol - Status=%r\n", __func__, Status));
+  }
+}
+
+/**
+  Constructor for UefiBootMangerLib.
+
+  @param[in] ImageHandle  The handle of the loaded image.
+  @param[in] SystemTable  System resources and configuration
+
+  @retval EFI_SUCCESS   The constructor set the variable policy if implemented
+  @retval others        The constructor did not succeed and one or more variable policy are not set
+**/
+EFI_STATUS
+EFIAPI
+UefiBootManagerLibConstructor (
+  IN EFI_HANDLE        ImageHandle,
+  IN EFI_SYSTEM_TABLE  *SystemTable
+  )
+{
+  VOID  *Registration;
+
+  EfiCreateProtocolNotifyEvent (
+    &gEdkiiVariablePolicyProtocolGuid,
+    TPL_CALLBACK,
+    OnVariablePolicyNotification,
+    NULL,
+    &Registration
+    );
+
+  return EFI_SUCCESS;
 }
