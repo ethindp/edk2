@@ -1,0 +1,68 @@
+## @file
+#  The audio output manager publishes a default audio output that plays
+#  through the user's preferred device, fails over when a device fails or
+#  disappears, and saves the preferred device, volume and mute state.
+#
+#  Copyright (c) 2026, Ethin Probst. All rights reserved.<BR>
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = AudioOutputManagerDxe
+  MODULE_UNI_FILE                = AudioOutputManagerDxe.uni
+  FILE_GUID                      = 6BD86F9D-007A-4C27-B091-43A8788434FF
+  MODULE_TYPE                    = UEFI_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = AudioOutputManagerEntryPoint
+
+#
+# The following information is for reference only and not required by the build tools.
+#
+#  VALID_ARCHITECTURES           = IA32 X64 AARCH64 RISCV64 LOONGARCH64
+#
+#  DRIVER_BINDING                =  gAomDriverBinding
+#  COMPONENT_NAME                =  gAomComponentName
+#  COMPONENT_NAME2               =  gAomComponentName2
+#
+
+[Sources]
+  AudioOutputManagerDxe.c
+  AudioOutputManagerDxe.h
+  ComponentName.c
+  DefaultOutput.c
+  Policy.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  DevicePathLib
+  MemoryAllocationLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+  UefiRuntimeServicesTableLib
+
+[Protocols]
+  gEdkiiSimpleAudioOutputProtocolGuid    ## TO_START
+  gEdkiiSimpleAudioOutputProtocolGuid    ## PRODUCES
+  gEdkiiAudioOutputManagerProtocolGuid   ## PRODUCES
+  gEfiDevicePathProtocolGuid             ## SOMETIMES_CONSUMES
+
+[Guids]
+  ## SOMETIMES_CONSUMES ## Variable:L"AudioOutputSettings"
+  ## SOMETIMES_PRODUCES ## Variable:L"AudioOutputSettings"
+  gEdkiiAudioOutputSettingsVariableGuid
+
+# [Event]
+# EVENT_TYPE_PERIODIC_TIMER ## CONSUMES
+
+[UserExtensions.TianoCore."ExtraFiles"]
+  AudioOutputManagerDxeExtra.uni

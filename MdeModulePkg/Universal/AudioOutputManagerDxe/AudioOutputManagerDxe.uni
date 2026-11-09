@@ -1,0 +1,16 @@
+// /** @file
+// The audio output manager publishes a default audio output that plays
+// through the user's preferred device, fails over when a device fails or
+// disappears, and saves the preferred device, volume and mute state.
+//
+// Copyright (c) 2026, Ethin Probst. All rights reserved.<BR>
+//
+// SPDX-License-Identifier: BSD-2-Clause-Patent
+//
+// **/
+
+
+#string STR_MODULE_ABSTRACT             #language en-US "Audio output device selection and failover"
+
+#string STR_MODULE_DESCRIPTION          #language en-US "This driver tracks every EDK II Simple Audio Output Protocol instance and produces a default output and the EDK II Audio Output Manager Protocol."
+
