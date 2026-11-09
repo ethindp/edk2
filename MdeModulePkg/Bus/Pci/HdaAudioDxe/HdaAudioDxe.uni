@@ -1,0 +1,15 @@
+// /** @file
+// HdaAudioDxe supports Intel High Definition Audio controllers. It produces
+// the EDK II Simple Audio Output Protocol on a child handle for each output.
+//
+// Copyright (c) 2026, Ethin Probst. All rights reserved.<BR>
+//
+// SPDX-License-Identifier: BSD-2-Clause-Patent
+//
+// **/
+
+
+#string STR_MODULE_ABSTRACT             #language en-US "Intel High Definition Audio controller driver"
+
+#string STR_MODULE_DESCRIPTION          #language en-US "This driver follows the UEFI driver model and produces the EDK II Simple Audio Output Protocol on a child handle for each output of an Intel High Definition Audio controller."
+

@@ -1,0 +1,68 @@
+## @file
+#  HdaAudioDxe supports Intel High Definition Audio controllers. It produces
+#  the EDK II Simple Audio Output Protocol on a child handle for each output.
+#
+#  Copyright (c) 2026, Ethin Probst. All rights reserved.<BR>
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = HdaAudioDxe
+  MODULE_UNI_FILE                = HdaAudioDxe.uni
+  FILE_GUID                      = F7D93789-B783-430C-B862-F183610A1DA5
+  MODULE_TYPE                    = UEFI_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = HdaAudioDxeEntryPoint
+
+#
+# The following information is for reference only and not required by the build tools.
+#
+#  VALID_ARCHITECTURES           = IA32 X64 AARCH64 RISCV64 LOONGARCH64
+#
+#  DRIVER_BINDING                =  gHdaAudioDriverBinding
+#  COMPONENT_NAME                =  gHdaAudioComponentName
+#  COMPONENT_NAME2               =  gHdaAudioComponentName2
+#
+
+[Sources]
+  ComponentName.c
+  HdaAudioDxe.c
+  HdaAudioDxe.h
+  HdaCodec.c
+  HdaController.c
+  HdaQuirks.c
+  HdaStream.c
+  SimpleAudioOutput.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  DevicePathLib
+  MemoryAllocationLib
+  PrintLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+
+[Protocols]
+  gEfiPciIoProtocolGuid                  ## TO_START
+  gEfiDevicePathProtocolGuid             ## TO_START
+  gEfiDevicePathProtocolGuid             ## BY_START
+  gEdkiiSimpleAudioOutputProtocolGuid    ## BY_START
+
+[Guids]
+  gEfiEventExitBootServicesGuid          ## SOMETIMES_CONSUMES ## Event
+
+# [Event]
+# EVENT_TYPE_PERIODIC_TIMER ## CONSUMES
+
+[UserExtensions.TianoCore."ExtraFiles"]
+  HdaAudioDxeExtra.uni
