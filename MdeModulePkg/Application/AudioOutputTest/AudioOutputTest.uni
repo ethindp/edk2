@@ -1,0 +1,15 @@
+// /** @file
+// UEFI Shell application that exercises the EDK II Simple Audio Output
+// Protocol.
+//
+// Copyright (c) 2026, Ethin Probst. All rights reserved.<BR>
+//
+// SPDX-License-Identifier: BSD-2-Clause-Patent
+//
+// **/
+
+
+#string STR_MODULE_ABSTRACT             #language en-US "EDK II Simple Audio Output Protocol test application"
+
+#string STR_MODULE_DESCRIPTION          #language en-US "This shell application plays test tones through the EDK II Simple Audio Output Protocol and exercises the device selection of the EDK II Audio Output Manager Protocol."
+
